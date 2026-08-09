@@ -1,6 +1,6 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { CartItem, FREE_SHIPPING_THRESHOLD, SHIPPING_COST } from '../models/cart.model';
-import { Product } from '../models/product.model';
+import { Product, isInStock } from '../models/product.model';
 
 @Injectable({ providedIn: 'root' })
 export class CartService {
@@ -42,7 +42,7 @@ export class CartService {
   );
 
   add(product: Product, quantity = 1): void {
-    if (!product.inStock) {
+    if (!isInStock(product)) {
       return;
     }
 

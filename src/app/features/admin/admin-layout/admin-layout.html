@@ -1,0 +1,99 @@
+<!--
+  Layout administrativo: sin hero, sin fotografía a sangre y con la densidad
+  invertida respecto a la tienda. Aquí manda la tabla, no la imagen.
+-->
+<div class="flex min-h-screen bg-linen">
+  <!-- Barra lateral -->
+  <aside
+    class="fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-moss transition-transform duration-300 ease-[cubic-bezier(.22,1,.36,1)] lg:translate-x-0"
+    [class.translate-x-0]="isSidebarOpen()"
+    [class.-translate-x-full]="!isSidebarOpen()"
+  >
+    <div class="flex h-16 items-center border-b border-bone/10 px-5">
+      <a routerLink="/" class="font-display text-lg text-bone">
+        Agricultores <span class="text-sage">Orgánicos</span>
+      </a>
+    </div>
+
+    <nav class="flex flex-1 flex-col gap-1 p-3" aria-label="Secciones de administración">
+      @for (item of navItems(); track item.path) {
+        <a
+          [routerLink]="item.path"
+          routerLinkActive="bg-bone/12 text-bone"
+          class="flex items-center justify-between rounded-md px-3 py-2.5 text-sm text-bone/70 transition-colors duration-200 hover:bg-bone/8 hover:text-bone"
+          (click)="closeSidebar()"
+        >
+          {{ item.label }}
+          @if (item.badge && item.badge(); as count) {
+            <span class="tabular rounded-full bg-clay px-2 py-0.5 text-[11px] font-semibold text-bone">
+              {{ count }}
+            </span>
+          }
+        </a>
+      }
+    </nav>
+
+    <div class="border-t border-bone/10 p-3">
+      <a
+        routerLink="/"
+        class="block rounded-md px-3 py-2.5 text-sm text-bone/60 transition-colors duration-200 hover:bg-bone/8 hover:text-bone"
+      >
+        ← Volver a la tienda
+      </a>
+    </div>
+  </aside>
+
+  <!-- Velo para móvil -->
+  @if (isSidebarOpen()) {
+    <div
+      class="animate-fade-in fixed inset-0 z-40 bg-moss-deep/40 lg:hidden"
+      (click)="closeSidebar()"
+      aria-hidden="true"
+    ></div>
+  }
+
+  <!-- Columna de contenido -->
+  <div class="flex min-w-0 flex-1 flex-col lg:pl-64">
+    <header class="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-sand bg-bone/90 px-5 backdrop-blur-md">
+      <button
+        type="button"
+        class="flex size-10 items-center justify-center rounded-md text-ink-soft transition-colors duration-200 hover:bg-linen lg:hidden"
+        aria-label="Abrir menú de administración"
+        (click)="toggleSidebar()"
+      >
+        <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+          <path d="M4 8h16M4 16h16" />
+        </svg>
+      </button>
+
+      <div class="min-w-0 flex-1">
+        <p class="truncate text-sm font-medium text-ink">Panel de administración</p>
+        <p class="truncate text-xs text-ink-muted">{{ roleLabel() }}</p>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <div class="hidden text-right sm:block">
+          <p class="text-sm text-ink">{{ auth.user()?.name }}</p>
+          <p class="text-xs text-ink-muted">{{ auth.user()?.email }}</p>
+        </div>
+        <span
+          class="flex size-9 shrink-0 items-center justify-center rounded-full bg-moss text-xs font-semibold text-bone"
+          aria-hidden="true"
+        >
+          {{ initials() }}
+        </span>
+        <button
+          type="button"
+          class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
+          (click)="logout()"
+        >
+          Salir
+        </button>
+      </div>
+    </header>
+
+    <main class="flex-1 p-5 lg:p-8">
+      <router-outlet />
+    </main>
+  </div>
+</div>

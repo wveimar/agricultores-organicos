@@ -1,0 +1,98 @@
+<header>
+  <h1 class="text-h2 text-ink">Hola, {{ firstName() }}</h1>
+  <p class="mt-1 text-sm text-ink-soft">Esto es lo que necesita atención hoy.</p>
+</header>
+
+<div class="mt-6 grid gap-4 lg:grid-cols-2">
+  @if (canInventory()) {
+    <a
+      routerLink="/admin/inventario"
+      class="group rounded-lg border bg-bone p-6 transition-colors duration-200 hover:border-moss"
+      [class]="store.alertCount() > 0 ? 'border-honey' : 'border-sand'"
+    >
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h2 class="text-h3 text-ink">Inventario</h2>
+          <p class="mt-1 text-sm text-ink-soft">Precios y existencias del catálogo.</p>
+        </div>
+        <span class="text-ink-muted transition-transform duration-300 group-hover:translate-x-1">→</span>
+      </div>
+
+      <dl class="mt-6 grid grid-cols-3 gap-4 border-t border-sand pt-4">
+        <div>
+          <dt class="text-xs text-ink-muted">Referencias</dt>
+          <dd class="tabular mt-1 font-display text-h3 text-ink">{{ store.products().length }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-ink-muted">Bajo mínimo</dt>
+          <dd
+            class="tabular mt-1 font-display text-h3"
+            [class]="store.alertCount() > 0 ? 'text-clay-deep' : 'text-ink'"
+          >
+            {{ store.alertCount() }}
+          </dd>
+        </div>
+        <div>
+          <dt class="text-xs text-ink-muted">Valor</dt>
+          <dd class="tabular mt-1 text-sm text-ink">{{ store.inventoryValue() | cop }}</dd>
+        </div>
+      </dl>
+    </a>
+  }
+
+  @if (canOrders()) {
+    <a
+      routerLink="/admin/pedidos"
+      class="group rounded-lg border bg-bone p-6 transition-colors duration-200 hover:border-moss"
+      [class]="store.pendingCount() > 0 ? 'border-honey' : 'border-sand'"
+    >
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h2 class="text-h3 text-ink">Pedidos</h2>
+          <p class="mt-1 text-sm text-ink-soft">Aprobar descuenta inventario al instante.</p>
+        </div>
+        <span class="text-ink-muted transition-transform duration-300 group-hover:translate-x-1">→</span>
+      </div>
+
+      <dl class="mt-6 grid grid-cols-3 gap-4 border-t border-sand pt-4">
+        <div>
+          <dt class="text-xs text-ink-muted">Total</dt>
+          <dd class="tabular mt-1 font-display text-h3 text-ink">{{ store.orders().length }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-ink-muted">Pendientes</dt>
+          <dd
+            class="tabular mt-1 font-display text-h3"
+            [class]="store.pendingCount() > 0 ? 'text-clay-deep' : 'text-ink'"
+          >
+            {{ store.pendingCount() }}
+          </dd>
+        </div>
+      </dl>
+    </a>
+  }
+
+  @if (!canInventory() && !canOrders()) {
+    <div class="rounded-lg border border-dashed border-sand p-8 text-center lg:col-span-2">
+      <p class="text-h3 text-ink">Tu cuenta no tiene módulos asignados</p>
+      <p class="mt-2 text-sm text-ink-soft">Pide acceso a administración general.</p>
+    </div>
+  }
+</div>
+
+<!-- Reinicio de la demo -->
+<div class="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-dashed border-stone/60 p-5">
+  <div>
+    <p class="text-sm font-medium text-ink">Datos de demostración</p>
+    <p class="mt-1 text-sm text-ink-soft">
+      Los cambios se guardan en este navegador. Reinicia para volver al estado de fábrica.
+    </p>
+  </div>
+  <button
+    type="button"
+    class="rounded-full border border-sand px-5 py-2.5 text-sm text-ink-soft transition-colors duration-200 hover:border-berry hover:text-berry"
+    (click)="reset()"
+  >
+    Reiniciar datos
+  </button>
+</div>

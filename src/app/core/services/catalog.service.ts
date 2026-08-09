@@ -1,6 +1,7 @@
-import { Injectable, computed, signal } from '@angular/core';
-import { CATEGORIES, PRODUCTS } from '../data/mock-catalog';
-import { Category, CategoryId, Product, SortOption } from '../models/product.model';
+import { Injectable, computed, inject, signal } from '@angular/core';
+import { CATEGORIES } from '../data/mock-catalog';
+import { Category, CategoryId, Product, SortOption, isInStock } from '../models/product.model';
+import { AdminStoreService } from './admin-store.service';
 
 /** Peso de cada etiqueta en el orden "Destacados". */
 const BADGE_WEIGHT: Record<string, number> = {
@@ -14,8 +15,12 @@ const BADGE_WEIGHT: Record<string, number> = {
 export class CatalogService {
   readonly categories: readonly Category[] = CATEGORIES;
 
-  /** Fuente de datos. Al conectar un backend, esto pasa a ser un resource(). */
-  private readonly all = signal<readonly Product[]>(PRODUCTS);
+  /**
+   * El catálogo público lee del mismo inventario que edita el panel. Es una
+   * señal, no una copia: si un pedido se aprueba y descuenta unidades, la
+   * rejilla de la tienda lo refleja en el acto.
+   */
+  private readonly all = inject(AdminStoreService).products;
 
   readonly activeCategory = signal<CategoryId | 'todos'>('todos');
   readonly sort = signal<SortOption>('destacados');
@@ -97,8 +102,8 @@ export class CatalogService {
           const weightA = a.badge ? BADGE_WEIGHT[a.badge] : 90;
           const weightB = b.badge ? BADGE_WEIGHT[b.badge] : 90;
           // Lo agotado siempre cae al final, tenga la etiqueta que tenga.
-          const stockA = a.inStock ? 0 : 1;
-          const stockB = b.inStock ? 0 : 1;
+          const stockA = isInStock(a) ? 0 : 1;
+          const stockB = isInStock(b) ? 0 : 1;
           return stockA - stockB || weightA - weightB || b.reviewCount - a.reviewCount;
         });
     }

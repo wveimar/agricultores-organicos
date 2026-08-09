@@ -10,7 +10,7 @@
       [src]="product().image"
       [alt]="product().imageAlt"
       class="size-full object-cover transition-transform duration-[600ms] ease-[cubic-bezier(.22,1,.36,1)] group-hover:scale-105"
-      [class.opacity-60]="!product().inStock"
+      [class.opacity-60]="!available()"
       [attr.loading]="isPriority() ? 'eager' : 'lazy'"
       [attr.fetchpriority]="isPriority() ? 'high' : 'auto'"
       decoding="async"
@@ -46,7 +46,7 @@
     }
 
     <!-- Velo de agotado -->
-    @if (!product().inStock) {
+    @if (!available()) {
       <div class="absolute inset-0 flex items-center justify-center bg-bone/55">
         <span class="text-overline rounded-full bg-moss px-4 py-2 font-semibold uppercase text-bone">
           Agotado
@@ -55,7 +55,7 @@
     }
 
     <!-- Botón flotante: oculto hasta el hover solo en escritorio (lg:) -->
-    @if (product().inStock) {
+    @if (available()) {
       <div
         class="absolute inset-x-3 bottom-3 transition-all duration-300 ease-[cubic-bezier(.22,1,.36,1)] lg:translate-y-3 lg:opacity-0 lg:group-focus-within:translate-y-0 lg:group-focus-within:opacity-100 lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
       >

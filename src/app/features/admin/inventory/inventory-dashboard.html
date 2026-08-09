@@ -1,0 +1,282 @@
+<header class="flex flex-col gap-1">
+  <h1 class="text-h2 text-ink">Inventario</h1>
+  <p class="text-sm text-ink-soft">
+    Precios y existencias del catálogo. Los cambios se aplican al instante en la tienda.
+  </p>
+</header>
+
+<!-- Indicadores -->
+<div class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+  <div class="rounded-lg border border-sand bg-bone p-5">
+    <p class="text-overline font-semibold uppercase text-ink-muted">Referencias</p>
+    <p class="tabular mt-2 font-display text-h3 text-ink">{{ store.products().length }}</p>
+  </div>
+
+  <div class="rounded-lg border border-sand bg-bone p-5">
+    <p class="text-overline font-semibold uppercase text-ink-muted">Unidades en bodega</p>
+    <p class="tabular mt-2 font-display text-h3 text-ink">{{ store.totalUnits() }}</p>
+  </div>
+
+  <div
+    class="rounded-lg border bg-bone p-5"
+    [class]="store.alertCount() > 0 ? 'border-honey' : 'border-sand'"
+  >
+    <p class="text-overline font-semibold uppercase text-ink-muted">Bajo stock de seguridad</p>
+    <p
+      class="tabular mt-2 font-display text-h3"
+      [class]="store.alertCount() > 0 ? 'text-clay-deep' : 'text-ink'"
+    >
+      {{ store.alertCount() }}
+    </p>
+    @if (store.outOfStockCount() > 0) {
+      <p class="mt-1 text-xs text-berry">{{ store.outOfStockCount() }} agotadas</p>
+    }
+  </div>
+
+  <div class="rounded-lg border border-sand bg-bone p-5">
+    <p class="text-overline font-semibold uppercase text-ink-muted">Valor a precio de venta</p>
+    <p class="tabular mt-2 font-display text-h3 text-ink">{{ store.inventoryValue() | cop }}</p>
+  </div>
+</div>
+
+<!-- Filtros -->
+<div class="mt-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+  <div class="flex flex-wrap gap-2" role="tablist" aria-label="Filtrar por grupo">
+    @for (group of groups; track group.value) {
+      @let isActive = activeGroup() === group.value;
+      <button
+        type="button"
+        role="tab"
+        [attr.aria-selected]="isActive"
+        class="flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-all duration-200"
+        [class]="
+          isActive
+            ? 'border-moss bg-moss text-bone'
+            : 'border-sand bg-bone text-ink-soft hover:border-stone'
+        "
+        (click)="setGroup(group.value)"
+      >
+        {{ group.label }}
+        <span
+          class="tabular rounded-full px-1.5 py-0.5 text-[11px] leading-none"
+          [class]="isActive ? 'bg-bone/20 text-bone' : 'bg-linen text-ink-muted'"
+        >
+          {{ countsByGroup()[group.value] ?? 0 }}
+        </span>
+      </button>
+    }
+  </div>
+
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+    <label class="flex cursor-pointer items-center gap-2 text-sm text-ink-soft">
+      <input
+        type="checkbox"
+        class="size-4 accent-clay"
+        [checked]="onlyAlerts()"
+        (change)="onlyAlerts.set(!onlyAlerts())"
+      />
+      Solo lo que hay que reponer
+    </label>
+
+    <div class="relative">
+      <label for="buscar-inv" class="sr-only">Buscar producto</label>
+      <input
+        id="buscar-inv"
+        type="search"
+        placeholder="Buscar producto o finca…"
+        class="w-full rounded-full border border-sand bg-bone py-2.5 pl-10 pr-4 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss sm:w-64"
+        [value]="query()"
+        (input)="onQuery($event)"
+      />
+      <svg
+        class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-muted"
+        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"
+      >
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" stroke-linecap="round" />
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- Tabla -->
+<div class="mt-5 overflow-hidden rounded-lg border border-sand bg-bone">
+  <div class="overflow-x-auto">
+    <table class="w-full min-w-[52rem] border-collapse text-left">
+      <caption class="sr-only">Inventario de productos con precio, existencias y estado de reposición</caption>
+      <thead>
+        <tr class="border-b border-sand bg-linen/60">
+          <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Producto</th>
+          <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Precio</th>
+          <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Existencias</th>
+          <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Estado</th>
+          <th scope="col" class="text-overline px-5 py-3 text-right font-semibold uppercase text-ink-muted">Acción</th>
+        </tr>
+      </thead>
+
+      <tbody class="divide-y divide-sand">
+        @for (product of rows(); track product.id) {
+          @let level = levelOf(product);
+
+          <tr class="align-middle" [class.bg-honey]="false">
+            <th scope="row" class="px-5 py-4 font-normal">
+              <div class="flex items-center gap-3">
+                <img
+                  [src]="product.image"
+                  [alt]="product.imageAlt"
+                  class="size-11 shrink-0 rounded-md bg-linen object-cover"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-medium text-ink">{{ product.name }}</p>
+                  <p class="truncate text-xs text-ink-muted">{{ product.origin }}</p>
+                </div>
+              </div>
+            </th>
+
+            <td class="tabular px-5 py-4 text-sm text-ink">
+              {{ product.price | cop }}
+              <span class="text-ink-muted">/ {{ unitLabels[product.unit] }}</span>
+            </td>
+
+            <td class="px-5 py-4">
+              <p class="tabular text-sm text-ink">
+                {{ product.stock }}
+                <span class="text-ink-muted">· mín. {{ product.safetyStock }}</span>
+              </p>
+              <!-- Barra: llena = el doble del umbral de seguridad -->
+              <div class="mt-1.5 h-1.5 w-28 overflow-hidden rounded-full bg-linen">
+                <div
+                  class="h-full rounded-full transition-[width] duration-500"
+                  [class]="
+                    level === 'agotado' ? 'bg-berry' : level === 'critico' ? 'bg-honey' : 'bg-sage'
+                  "
+                  [style.width.%]="fillPercent(product)"
+                ></div>
+              </div>
+            </td>
+
+            <td class="px-5 py-4">
+              <span
+                class="text-overline inline-block rounded-full px-3 py-1.5 font-semibold uppercase"
+                [class]="stockStyles[level].chip"
+              >
+                {{ stockStyles[level].label }}
+              </span>
+            </td>
+
+            <td class="px-5 py-4 text-right">
+              @if (savedId() === product.id) {
+                <span class="text-sm font-medium text-moss">Guardado ✓</span>
+              } @else {
+                <button
+                  type="button"
+                  class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+                  (click)="startEdit(product)"
+                >
+                  Editar
+                </button>
+              }
+            </td>
+          </tr>
+
+          <!-- Formulario reactivo, desplegado bajo la fila que se edita -->
+          @if (editingId() === product.id) {
+            <tr>
+              <td colspan="5" class="bg-linen/70 px-5 py-5">
+                <form [formGroup]="form" (ngSubmit)="save(product.id)" novalidate>
+                  <div class="flex flex-wrap items-start gap-5">
+                    <div>
+                      <label [for]="'precio-' + product.id" class="block text-xs font-medium text-ink-soft">
+                        Precio (COP)
+                      </label>
+                      <input
+                        [id]="'precio-' + product.id"
+                        type="number"
+                        min="1"
+                        step="100"
+                        formControlName="price"
+                        class="tabular mt-1.5 w-36 rounded-md border bg-bone px-3 py-2 text-sm text-ink"
+                        [class]="showError('price') ? 'border-berry' : 'border-sand focus:border-moss'"
+                        [attr.aria-invalid]="showError('price')"
+                      />
+                      @if (showError('price')) {
+                        <p class="mt-1 text-xs text-berry">Debe ser mayor que cero.</p>
+                      }
+                    </div>
+
+                    <div>
+                      <label [for]="'stock-' + product.id" class="block text-xs font-medium text-ink-soft">
+                        Existencias
+                      </label>
+                      <input
+                        [id]="'stock-' + product.id"
+                        type="number"
+                        min="0"
+                        formControlName="stock"
+                        class="tabular mt-1.5 w-28 rounded-md border bg-bone px-3 py-2 text-sm text-ink"
+                        [class]="showError('stock') ? 'border-berry' : 'border-sand focus:border-moss'"
+                        [attr.aria-invalid]="showError('stock')"
+                      />
+                      @if (showError('stock')) {
+                        <p class="mt-1 text-xs text-berry">No puede ser negativo.</p>
+                      }
+                    </div>
+
+                    <div>
+                      <label [for]="'minimo-' + product.id" class="block text-xs font-medium text-ink-soft">
+                        Stock de seguridad
+                      </label>
+                      <input
+                        [id]="'minimo-' + product.id"
+                        type="number"
+                        min="0"
+                        formControlName="safetyStock"
+                        class="tabular mt-1.5 w-28 rounded-md border bg-bone px-3 py-2 text-sm text-ink"
+                        [class]="showError('safetyStock') ? 'border-berry' : 'border-sand focus:border-moss'"
+                        [attr.aria-invalid]="showError('safetyStock')"
+                      />
+                      @if (showError('safetyStock')) {
+                        <p class="mt-1 text-xs text-berry">No puede ser negativo.</p>
+                      }
+                    </div>
+
+                    <div class="flex items-center gap-2 self-end pb-0.5">
+                      <button
+                        type="submit"
+                        class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep"
+                      >
+                        Guardar
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded-full border border-sand px-5 py-2.5 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
+                        (click)="cancelEdit()"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </td>
+            </tr>
+          }
+        } @empty {
+          <tr>
+            <td colspan="5" class="px-5 py-16 text-center">
+              <p class="text-h3 text-ink">Sin resultados</p>
+              <p class="mt-2 text-sm text-ink-soft">
+                Ajusta el filtro o la búsqueda para ver productos.
+              </p>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="tabular mt-4 text-sm text-ink-muted" aria-live="polite">
+  {{ rows().length }} {{ rows().length === 1 ? 'producto' : 'productos' }} en pantalla
+</p>

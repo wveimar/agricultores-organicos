@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { CartService } from '../../../core/services/cart.service';
-import { BADGE_LABELS, Product, UNIT_LABELS } from '../../../core/models/product.model';
+import { BADGE_LABELS, Product, UNIT_LABELS, isInStock } from '../../../core/models/product.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
 /** Color de fondo de cada etiqueta. Ver doc/plan.md §2. */
@@ -41,6 +41,9 @@ export class ProductCard {
   });
 
   protected readonly isPriority = computed(() => this.index() < 4);
+
+  /** Disponibilidad derivada del inventario, no de un booleano guardado aparte. */
+  protected readonly available = computed(() => isInStock(this.product()));
 
   protected readonly discountPercent = computed(() => {
     const { price, compareAtPrice } = this.product();

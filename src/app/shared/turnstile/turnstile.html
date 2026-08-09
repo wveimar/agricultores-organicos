@@ -1,0 +1,40 @@
+<!-- Contenedor del widget real. Turnstile lo rellena al renderizar. -->
+<div #widget [hidden]="mode() !== 'real'"></div>
+
+@if (mode() === 'demo') {
+  <!--
+    Marcador de modo demo: misma caja que el widget real (300×65) para que el
+    formulario no dé un salto de layout al configurar una sitekey de verdad.
+  -->
+  <button
+    type="button"
+    class="flex h-[65px] w-full max-w-[300px] items-center gap-3 rounded-md border border-sand bg-linen px-4 text-left transition-colors duration-200 hover:border-stone"
+    [attr.aria-pressed]="demoChecked()"
+    (click)="confirmDemo()"
+  >
+    <span
+      class="flex size-5 shrink-0 items-center justify-center rounded-sm border transition-colors duration-200"
+      [class]="demoChecked() ? 'border-moss bg-moss' : 'border-stone bg-bone'"
+    >
+      @if (demoChecked()) {
+        <svg class="size-3 text-bone" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m2.5 6 2.5 2.5 4.5-5" />
+        </svg>
+      }
+    </span>
+
+    <span class="min-w-0">
+      <span class="block text-sm text-ink">
+        {{ demoChecked() ? 'Verificación simulada' : 'Confirmo que no soy un robot' }}
+      </span>
+      <span class="block truncate text-xs text-ink-muted">Turnstile · modo demo</span>
+    </span>
+  </button>
+}
+
+@if (mode() === 'error') {
+  <p class="rounded-md border border-berry/30 bg-berry/5 px-4 py-3 text-sm text-berry">
+    No se pudo cargar la verificación de Cloudflare. Revisa tu conexión y
+    recarga la página.
+  </p>
+}

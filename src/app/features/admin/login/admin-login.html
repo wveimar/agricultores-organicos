@@ -1,0 +1,112 @@
+<div class="flex min-h-screen items-center justify-center bg-linen px-5 py-12">
+  <div class="w-full max-w-md">
+    <div class="text-center">
+      <a routerLink="/" class="font-display text-2xl text-ink">
+        Agricultores <span class="text-sage">Orgánicos</span>
+      </a>
+      <h1 class="mt-6 text-h2 text-ink">Panel de administración</h1>
+      <p class="mt-2 text-sm text-ink-soft">Entra con tu cuenta de trabajo.</p>
+    </div>
+
+    <form
+      class="mt-8 rounded-lg border border-sand bg-bone p-6 lg:p-8"
+      [formGroup]="form"
+      (ngSubmit)="submit()"
+      novalidate
+    >
+      <!-- Correo -->
+      <div>
+        <label for="email" class="block text-sm font-medium text-ink">Correo</label>
+        <input
+          id="email"
+          type="email"
+          formControlName="email"
+          autocomplete="username"
+          class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+          [class]="showError('email') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+          [attr.aria-invalid]="showError('email')"
+          [attr.aria-describedby]="showError('email') ? 'error-email' : null"
+          placeholder="tu@agricultores.co"
+        />
+        @if (showError('email')) {
+          <p id="error-email" class="mt-2 text-sm text-berry">
+            {{ form.controls.email.hasError('required')
+              ? 'El correo es obligatorio.'
+              : 'Escribe un correo con formato válido.' }}
+          </p>
+        }
+      </div>
+
+      <!-- Contraseña -->
+      <div class="mt-5">
+        <label for="password" class="block text-sm font-medium text-ink">Contraseña</label>
+        <input
+          id="password"
+          type="password"
+          formControlName="password"
+          autocomplete="current-password"
+          class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+          [class]="showError('password') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+          [attr.aria-invalid]="showError('password')"
+          [attr.aria-describedby]="showError('password') ? 'error-password' : null"
+          placeholder="••••••••"
+        />
+        @if (showError('password')) {
+          <p id="error-password" class="mt-2 text-sm text-berry">
+            {{ form.controls.password.hasError('required')
+              ? 'La contraseña es obligatoria.'
+              : 'Debe tener al menos 8 caracteres.' }}
+          </p>
+        }
+      </div>
+
+      <!-- Turnstile -->
+      <div class="mt-6">
+        <app-turnstile [siteKey]="turnstileSiteKey" (verified)="onVerified($event)" />
+      </div>
+
+      @if (errorMessage(); as message) {
+        <p
+          class="mt-5 rounded-md border border-berry/30 bg-berry/5 px-4 py-3 text-sm text-berry"
+          role="alert"
+        >
+          {{ message }}
+        </p>
+      }
+
+      <button
+        type="submit"
+        class="mt-6 w-full rounded-full bg-moss py-3.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
+        [disabled]="submitting()"
+      >
+        {{ submitting() ? 'Entrando…' : 'Entrar' }}
+      </button>
+    </form>
+
+    <!-- Cuentas de prueba -->
+    <div class="mt-6 rounded-lg border border-dashed border-stone/60 p-5">
+      <p class="text-overline font-semibold uppercase text-ink-muted">Cuentas de demostración</p>
+      <ul class="mt-3 flex flex-col gap-2">
+        @for (account of auth.demoAccounts; track account.email) {
+          <li>
+            <button
+              type="button"
+              class="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left transition-colors duration-200 hover:bg-linen"
+              (click)="fillDemo(account.email, account.password)"
+            >
+              <span class="min-w-0">
+                <span class="block truncate text-sm text-ink">{{ account.name }}</span>
+                <span class="block truncate text-xs text-ink-muted">{{ account.email }}</span>
+              </span>
+              <span class="text-overline shrink-0 font-semibold uppercase text-clay">Usar</span>
+            </button>
+          </li>
+        }
+      </ul>
+      <p class="mt-3 text-xs text-ink-muted">
+        Contraseña para todas: <span class="tabular">demo1234</span>. Sesión simulada,
+        sin backend: no uses credenciales reales.
+      </p>
+    </div>
+  </div>
+</div>

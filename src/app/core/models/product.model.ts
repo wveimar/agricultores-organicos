@@ -20,7 +20,17 @@ export interface Product {
   readonly rating: number;
   readonly reviewCount: number;
   readonly badge?: ProductBadge;
-  readonly inStock: boolean;
+  /**
+   * Unidades disponibles. Es la **única** fuente de verdad sobre disponibilidad:
+   * la tienda pública deriva de aquí si algo está agotado (`stock === 0`) en vez
+   * de guardar un booleano aparte que pudiera desincronizarse del inventario.
+   */
+  readonly stock: number;
+  /**
+   * Umbral de reposición. Por debajo de él el panel avisa, pero el producto
+   * sigue vendiéndose: es una alerta de compras, no un bloqueo de venta.
+   */
+  readonly safetyStock: number;
   readonly image: string;
   /** Segunda foto para el cross-fade al hacer hover. Opcional a propósito:
    *  solo se define cuando existe una toma alternativa real del producto. */
@@ -43,6 +53,42 @@ export interface Category {
   /** Se usa como subtítulo cuando la categoría está activa. */
   readonly description: string;
 }
+
+/** Disponibilidad derivada de `stock` frente a `safetyStock`. */
+export type StockLevel = 'agotado' | 'critico' | 'ok';
+
+export function stockLevelOf(product: Product): StockLevel {
+  if (product.stock <= 0) {
+    return 'agotado';
+  }
+  return product.stock <= product.safetyStock ? 'critico' : 'ok';
+}
+
+export function isInStock(product: Product): boolean {
+  return product.stock > 0;
+}
+
+/**
+ * Agrupación macro que usa el panel de inventario. El catálogo público tiene
+ * seis categorías de cara al cliente; compras razona con estas tres.
+ */
+export type AdminGroup = 'frutas' | 'verduras' | 'agroindustriales';
+
+export const ADMIN_GROUP_OF: Readonly<Record<CategoryId, AdminGroup>> = {
+  frutas: 'frutas',
+  verduras: 'verduras',
+  listos: 'agroindustriales',
+  granos: 'agroindustriales',
+  despensa: 'agroindustriales',
+  canastas: 'agroindustriales',
+};
+
+export const ADMIN_GROUP_LABELS: ReadonlyArray<{ value: AdminGroup | 'todos'; label: string }> = [
+  { value: 'todos', label: 'Todo el inventario' },
+  { value: 'frutas', label: 'Frutas' },
+  { value: 'verduras', label: 'Verduras' },
+  { value: 'agroindustriales', label: 'Agroindustriales' },
+];
 
 export type SortOption = 'destacados' | 'precio-asc' | 'precio-desc' | 'mejor-valorados';
 
