@@ -1,0 +1,54 @@
+<footer class="bg-moss text-bone">
+  <div class="container-shell py-16 lg:py-20">
+    <div class="grid gap-12 lg:grid-cols-[1.4fr_repeat(3,1fr)] lg:gap-8">
+      <!-- Marca -->
+      <div class="max-w-sm">
+        <p class="font-display text-2xl">
+          Agricultores <span class="text-sage">Orgánicos</span>
+        </p>
+        <p class="mt-4 text-sm leading-relaxed text-bone/70">
+          Una cooperativa de 38 familias campesinas que vende directo, sin
+          intermediarios. El 72 % de lo que pagas se queda en la finca.
+        </p>
+
+        <div class="mt-6 flex gap-2">
+          @for (network of ['Instagram', 'Facebook', 'WhatsApp']; track network) {
+            <a
+              href="#"
+              class="rounded-full border border-bone/20 px-4 py-2 text-xs text-bone/70 transition-colors duration-200 hover:border-bone/50 hover:text-bone"
+            >
+              {{ network }}
+            </a>
+          }
+        </div>
+      </div>
+
+      <!-- Columnas de enlaces -->
+      @for (column of columns; track column.title) {
+        <div>
+          <h3 class="text-overline font-sans font-semibold uppercase text-sage">{{ column.title }}</h3>
+          <ul class="mt-5 flex flex-col gap-3">
+            @for (link of column.links; track link) {
+              <li>
+                <a
+                  href="#"
+                  class="text-sm text-bone/70 transition-colors duration-200 hover:text-bone"
+                >
+                  {{ link }}
+                </a>
+              </li>
+            }
+          </ul>
+        </div>
+      }
+    </div>
+
+    <div class="mt-14 flex flex-col gap-3 border-t border-bone/12 pt-7 text-xs text-bone/50 sm:flex-row sm:items-center sm:justify-between">
+      <p>© {{ year }} Agricultores Orgánicos · Proyecto de demostración</p>
+      <div class="flex gap-6">
+        <a href="#" class="transition-colors duration-200 hover:text-bone/80">Términos</a>
+        <a href="#" class="transition-colors duration-200 hover:text-bone/80">Privacidad</a>
+      </div>
+    </div>
+  </div>
+</footer>

@@ -1,0 +1,58 @@
+<!--
+  Hero compacto (~60vh, nunca pantalla completa): un mensaje directo y un solo
+  CTA. Ver doc/plan.md §6 — el objetivo es que la rejilla de producto empiece a
+  verse sin necesidad de hacer scroll.
+-->
+<section id="top" class="relative flex min-h-[34rem] items-end overflow-hidden lg:min-h-[60vh]">
+  <img
+    [src]="image"
+    alt="Puesto de mercado rebosante de frutas y verduras recién cosechadas"
+    class="absolute inset-0 size-full object-cover"
+    fetchpriority="high"
+    decoding="async"
+  />
+
+  <!-- Doble degradado: el vertical asienta el texto, el lateral protege el CTA -->
+  <div class="absolute inset-0 bg-gradient-to-t from-moss-deep/90 via-moss-deep/45 to-moss-deep/25"></div>
+  <div class="absolute inset-0 bg-gradient-to-r from-moss-deep/60 to-transparent"></div>
+
+  <div class="container-shell relative pb-14 pt-32 lg:pb-20 lg:pt-40">
+    <div class="max-w-2xl">
+      <p
+        class="animate-rise-in text-overline font-semibold uppercase text-sage-light"
+        style="animation-delay: 60ms"
+      >
+        Cosecha del 9 de agosto
+      </p>
+
+      <h1
+        class="animate-rise-in mt-5 text-display text-bone"
+        style="animation-delay: 140ms"
+      >
+        Del surco a tu cocina, sin escalas
+      </h1>
+
+      <p
+        class="animate-rise-in mt-5 max-w-lg text-lg text-bone/80"
+        style="animation-delay: 220ms"
+      >
+        Trabajamos con 38 familias campesinas que cosechan por la mañana y entregan
+        el mismo día. Sin bodegas, sin intermediarios, sin cámaras de maduración.
+      </p>
+
+      <div class="animate-rise-in mt-9 flex flex-wrap items-center gap-x-7 gap-y-4" style="animation-delay: 300ms">
+        <a
+          href="#tienda"
+          class="inline-flex items-center gap-2.5 rounded-full bg-clay px-8 py-4 text-sm font-semibold text-bone transition-all duration-300 ease-out hover:bg-clay-deep hover:gap-4"
+        >
+          Ver la cosecha de hoy
+          <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+            <path d="M2 8h11M9 4l4 4-4 4" />
+          </svg>
+        </a>
+
+        <p class="text-sm text-bone/70">Envío gratis desde $ 120.000</p>
+      </div>
+    </div>
+  </div>
+</section>

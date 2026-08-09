@@ -1,0 +1,8 @@
+# Cloudflare Pages — enrutado de la SPA
+#
+# Angular resuelve las rutas en el navegador, así que cualquier petición directa
+# a una URL profunda (o un F5 sobre ella) debe devolver index.html con estado 200.
+# Sin esta regla, Cloudflare buscaría un fichero con ese nombre y daría 404.
+#
+# Va al final a propósito: las reglas se evalúan en orden y esta es el comodín.
+/*    /index.html   200

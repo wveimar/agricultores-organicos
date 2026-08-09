@@ -1,0 +1,126 @@
+<!--
+  Barra transparente sobre el hero que conmuta a `moss` sólido al hacer scroll.
+  Un único bloque de clases condicionales controla las dos variantes.
+-->
+<header
+  class="fixed inset-x-0 top-0 z-50 transition-all duration-300 ease-out"
+  [class.bg-moss]="isScrolled() || isMenuOpen()"
+  [class.shadow-[0_1px_0_rgba(255,255,255,0.08)]]="isScrolled() || isMenuOpen()"
+  [class.backdrop-blur-md]="isScrolled() || isMenuOpen()"
+  [class.bg-transparent]="!isScrolled() && !isMenuOpen()"
+>
+  <div class="container-shell">
+    <div
+      class="flex items-center justify-between transition-[height] duration-300 ease-out"
+      [class.h-16]="isScrolled()"
+      [class.h-20]="!isScrolled()"
+    >
+      <!-- Marca -->
+      <a
+        href="#top"
+        class="font-display text-xl tracking-[-0.02em] text-bone lg:text-2xl"
+        (click)="closeMenu()"
+      >
+        Agricultores
+        <span class="text-sage">Orgánicos</span>
+      </a>
+
+      <!-- Navegación de escritorio -->
+      <nav class="hidden items-center gap-9 lg:flex" aria-label="Principal">
+        @for (link of links; track link.label) {
+          <a
+            [href]="link.href"
+            class="group relative text-sm text-bone/85 transition-colors duration-200 hover:text-bone"
+          >
+            {{ link.label }}
+            <!-- Subrayado que crece desde la izquierda al hacer hover -->
+            <span
+              class="absolute -bottom-1.5 left-0 h-px w-0 bg-sage transition-all duration-300 ease-out group-hover:w-full"
+            ></span>
+          </a>
+        }
+      </nav>
+
+      <!-- Acciones -->
+      <div class="flex items-center gap-1">
+        <button
+          type="button"
+          class="hidden size-11 items-center justify-center rounded-full text-bone/85 transition-colors duration-200 hover:bg-bone/10 hover:text-bone lg:flex"
+          aria-label="Buscar productos"
+        >
+          <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <!-- Carrito: el contador anima cada vez que se añade algo -->
+        <button
+          type="button"
+          class="relative flex size-11 items-center justify-center rounded-full text-bone/85 transition-colors duration-200 hover:bg-bone/10 hover:text-bone"
+          [attr.aria-label]="'Abrir carrito, ' + cart.count() + ' artículos'"
+          (click)="cart.open()"
+        >
+          <svg
+            class="size-5"
+            [class.animate-cart-pulse]="cart.justAdded()"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            aria-hidden="true"
+          >
+            <path d="M4 6h16l-1.4 10.4a2 2 0 0 1-2 1.6H7.4a2 2 0 0 1-2-1.6Z" stroke-linejoin="round" />
+            <path d="M9 10V6.5a3 3 0 0 1 6 0V10" stroke-linecap="round" />
+          </svg>
+          @if (cart.count() > 0) {
+            <span
+              class="tabular absolute right-1 top-1 flex min-w-5 items-center justify-center rounded-full bg-clay px-1.5 py-0.5 text-[11px] font-semibold leading-none text-bone"
+            >
+              {{ cart.count() }}
+            </span>
+          }
+        </button>
+
+        <!-- Disparador del menú móvil -->
+        <button
+          type="button"
+          class="flex size-11 items-center justify-center rounded-full text-bone/85 transition-colors duration-200 hover:bg-bone/10 hover:text-bone lg:hidden"
+          [attr.aria-expanded]="isMenuOpen()"
+          aria-controls="menu-movil"
+          [attr.aria-label]="isMenuOpen() ? 'Cerrar menú' : 'Abrir menú'"
+          (click)="toggleMenu()"
+        >
+          <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            @if (isMenuOpen()) {
+              <path d="m6 6 12 12M18 6 6 18" />
+            } @else {
+              <path d="M4 8h16M4 16h16" />
+            }
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel móvil -->
+  @if (isMenuOpen()) {
+    <nav
+      id="menu-movil"
+      class="animate-fade-in border-t border-bone/10 bg-moss lg:hidden"
+      aria-label="Principal (móvil)"
+    >
+      <div class="container-shell flex flex-col py-3">
+        @for (link of links; track link.label) {
+          <a
+            [href]="link.href"
+            class="border-b border-bone/8 py-4 text-bone/85 transition-colors duration-200 last:border-0 hover:text-bone"
+            (click)="closeMenu()"
+          >
+            {{ link.label }}
+          </a>
+        }
+      </div>
+    </nav>
+  }
+</header>

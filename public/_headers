@@ -1,0 +1,23 @@
+# Cloudflare Pages — cabeceras
+#
+# Angular emite los assets con hash en el nombre (main-A1B2C3.js), así que son
+# inmutables y pueden cachearse un año. index.html no lleva hash: si se cachea,
+# los usuarios seguirían pidiendo el bundle viejo tras cada despliegue.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/media/*
+  Cache-Control: public, max-age=31536000, immutable

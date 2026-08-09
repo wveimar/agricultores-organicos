@@ -1,0 +1,166 @@
+<!--
+  Slide-over lateral: permite revisar la compra sin salir de la vitrina.
+  Cierra con el backdrop, con la × o con Escape, y devuelve el foco al
+  elemento que lo abrió. Ver doc/plan.md §6 y §7.
+-->
+@if (cart.isOpen()) {
+  <!-- Backdrop -->
+  <div
+    class="animate-fade-in fixed inset-0 z-60 bg-moss-deep/40 backdrop-blur-sm"
+    (click)="cart.close()"
+    aria-hidden="true"
+  ></div>
+
+  <aside
+    class="animate-drawer-in fixed inset-y-0 right-0 z-60 flex w-full max-w-[26.25rem] flex-col bg-bone shadow-2xl"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="titulo-carrito"
+  >
+    <!-- Cabecera -->
+    <div class="flex items-center justify-between border-b border-sand px-6 py-5">
+      <h2 id="titulo-carrito" class="text-h3 text-ink">
+        Tu canasta
+        @if (cart.count() > 0) {
+          <span class="tabular text-ink-muted">({{ cart.count() }})</span>
+        }
+      </h2>
+
+      <button
+        #closeButton
+        type="button"
+        class="flex size-10 items-center justify-center rounded-full text-ink-soft transition-colors duration-200 hover:bg-linen hover:text-ink"
+        aria-label="Cerrar carrito"
+        (click)="cart.close()"
+      >
+        <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+          <path d="m6 6 12 12M18 6 6 18" />
+        </svg>
+      </button>
+    </div>
+
+    @if (cart.isEmpty()) {
+      <!-- Estado vacío -->
+      <div class="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+        <svg class="size-11 text-stone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+          <path d="M4 6h16l-1.4 10.4a2 2 0 0 1-2 1.6H7.4a2 2 0 0 1-2-1.6Z" stroke-linejoin="round" />
+          <path d="M9 10V6.5a3 3 0 0 1 6 0V10" stroke-linecap="round" />
+        </svg>
+        <h3 class="text-h3 text-ink">Todavía está vacía</h3>
+        <p class="max-w-xs text-sm text-ink-soft">
+          Lo que coseches hoy sale mañana de la finca hacia tu casa.
+        </p>
+        <button
+          type="button"
+          class="mt-2 rounded-full bg-moss px-7 py-3.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep"
+          (click)="cart.close()"
+        >
+          Seguir mirando
+        </button>
+      </div>
+    } @else {
+      <!-- Progreso hacia el envío gratis -->
+      <div class="border-b border-sand px-6 py-4">
+        @if (cart.amountToFreeShipping() > 0) {
+          <p class="text-sm text-ink-soft">
+            Te faltan
+            <span class="tabular font-semibold text-ink">{{ cart.amountToFreeShipping() | cop }}</span>
+            para el envío gratis
+          </p>
+        } @else {
+          <p class="text-sm font-semibold text-moss">Tienes envío gratis 🌿</p>
+        }
+        <div class="mt-2.5 h-1.5 overflow-hidden rounded-full bg-sand">
+          <div
+            class="h-full rounded-full bg-clay transition-[width] duration-500 ease-[cubic-bezier(.22,1,.36,1)]"
+            [style.width.%]="cart.freeShippingProgress() * 100"
+          ></div>
+        </div>
+      </div>
+
+      <!-- Líneas -->
+      <ul class="flex-1 divide-y divide-sand overflow-y-auto px-6">
+        @for (line of cart.items(); track line.product.id) {
+          <li class="flex gap-4 py-5">
+            <img
+              [src]="line.product.image"
+              [alt]="line.product.imageAlt"
+              class="size-24 shrink-0 rounded-md bg-linen object-cover"
+              loading="lazy"
+              decoding="async"
+            />
+
+            <div class="flex min-w-0 flex-1 flex-col">
+              <h3 class="truncate text-base font-medium text-ink">{{ line.product.name }}</h3>
+              <p class="truncate text-sm text-ink-muted">{{ line.product.origin }}</p>
+
+              <div class="mt-auto flex items-center justify-between gap-3 pt-3">
+                <!-- Selector de cantidad -->
+                <div class="flex items-center rounded-full border border-sand">
+                  <button
+                    type="button"
+                    class="flex size-9 items-center justify-center rounded-full text-ink-soft transition-colors duration-200 hover:bg-linen hover:text-ink"
+                    [attr.aria-label]="'Quitar una unidad de ' + line.product.name"
+                    (click)="decrease(line.product.id, line.quantity)"
+                  >
+                    <svg class="size-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+                      <path d="M3 8h10" />
+                    </svg>
+                  </button>
+
+                  <span class="tabular w-7 text-center text-sm" aria-live="polite">{{ line.quantity }}</span>
+
+                  <button
+                    type="button"
+                    class="flex size-9 items-center justify-center rounded-full text-ink-soft transition-colors duration-200 hover:bg-linen hover:text-ink"
+                    [attr.aria-label]="'Añadir una unidad de ' + line.product.name"
+                    (click)="increase(line.product.id, line.quantity)"
+                  >
+                    <svg class="size-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+                      <path d="M8 3v10M3 8h10" />
+                    </svg>
+                  </button>
+                </div>
+
+                <p class="tabular shrink-0 text-sm font-medium text-ink">
+                  {{ line.product.price * line.quantity | cop }}
+                </p>
+              </div>
+            </div>
+          </li>
+        }
+      </ul>
+
+      <!-- Resumen -->
+      <div class="border-t border-sand px-6 py-5">
+        <dl class="flex flex-col gap-2 text-sm">
+          <div class="flex justify-between text-ink-soft">
+            <dt>Subtotal</dt>
+            <dd class="tabular text-ink">{{ cart.subtotal() | cop }}</dd>
+          </div>
+          <div class="flex justify-between text-ink-soft">
+            <dt>Envío</dt>
+            <dd class="tabular" [class]="cart.shipping() === 0 ? 'text-moss font-semibold' : 'text-ink'">
+              {{ cart.shipping() === 0 ? 'Gratis' : (cart.shipping() | cop) }}
+            </dd>
+          </div>
+          <div class="mt-2 flex items-baseline justify-between border-t border-sand pt-3">
+            <dt class="text-base text-ink">Total</dt>
+            <dd class="tabular text-h3 text-ink">{{ cart.total() | cop }}</dd>
+          </div>
+        </dl>
+
+        <button
+          type="button"
+          class="mt-5 w-full rounded-full bg-clay py-4 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep"
+        >
+          Finalizar compra
+        </button>
+
+        <p class="mt-3 text-center text-xs text-ink-muted">
+          Demo visual — el pago todavía no está conectado
+        </p>
+      </div>
+    }
+  </aside>
+}

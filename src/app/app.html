@@ -1,0 +1,17 @@
+<a
+  href="#tienda"
+  class="sr-only focus:not-sr-only focus:fixed focus:left-6 focus:top-6 focus:z-70 focus:rounded-full focus:bg-moss focus:px-6 focus:py-3 focus:text-sm focus:font-semibold focus:text-bone"
+>
+  Saltar al catálogo
+</a>
+
+<app-header />
+
+<main>
+  <router-outlet />
+</main>
+
+<app-footer />
+
+<!-- Vive fuera de <main> porque es una capa flotante sobre toda la app -->
+<app-cart-drawer />

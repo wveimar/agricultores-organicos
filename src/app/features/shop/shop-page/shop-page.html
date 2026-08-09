@@ -1,0 +1,87 @@
+<app-hero />
+
+<!-- Banda de confianza: cuatro promesas cortas, sin iconos que distraigan -->
+<section class="border-b border-sand bg-linen">
+  <div class="container-shell grid gap-8 py-12 sm:grid-cols-2 lg:grid-cols-4 lg:py-14">
+    @for (item of guarantees; track item.title; let i = $index) {
+      <div [appReveal]="i * 80">
+        <h3 class="text-overline font-sans font-semibold uppercase text-clay">{{ item.title }}</h3>
+        <p class="mt-3 text-sm leading-relaxed text-ink-soft">{{ item.body }}</p>
+      </div>
+    }
+  </div>
+</section>
+
+<!-- Vitrina: filtros pegajosos + rejilla -->
+<section id="tienda" class="container-shell scroll-mt-16 pb-24">
+  <app-category-filter />
+  <app-product-grid />
+</section>
+
+<!-- Banda editorial -->
+<section id="historia" class="scroll-mt-20 border-y border-sand bg-linen">
+  <div class="container-shell grid items-center gap-12 py-20 lg:grid-cols-2 lg:gap-20 lg:py-28">
+    <div [appReveal]="0">
+      <p class="text-overline font-semibold uppercase text-clay">De la finca a tu mesa</p>
+      <h2 class="mt-5 text-h2 text-ink">
+        Conocemos el nombre de quien cultivó cada cosa que vendemos
+      </h2>
+      <p class="mt-5 leading-relaxed text-ink-soft">
+        No compramos en centrales de abastos. Cada producto viene de una de las 38
+        fincas asociadas, y en la ficha puedes ver de cuál. Cuando algo no está en
+        su punto, sencillamente no lo publicamos esa semana.
+      </p>
+
+      <dl class="mt-10 grid grid-cols-3 gap-6 border-t border-sand pt-8">
+        @for (stat of [
+          { value: '38', label: 'fincas asociadas' },
+          { value: '72 %', label: 'del precio va al campo' },
+          { value: '18 h', label: 'de la cosecha a tu casa' }
+        ]; track stat.label) {
+          <div>
+            <dt class="tabular font-display text-h3 text-moss">{{ stat.value }}</dt>
+            <dd class="mt-1 text-sm text-ink-soft">{{ stat.label }}</dd>
+          </div>
+        }
+      </dl>
+    </div>
+
+    <div [appReveal]="120" class="overflow-hidden rounded-lg">
+      <img
+        [src]="storyImage"
+        alt="Puesto de mercado con manojos de zanahorias frescas y otras verduras"
+        class="aspect-16/10 w-full object-cover"
+        loading="lazy"
+        decoding="async"
+      />
+    </div>
+  </div>
+</section>
+
+<!-- Newsletter -->
+<section class="container-shell py-20 lg:py-28">
+  <div [appReveal]="0" class="mx-auto max-w-xl text-center">
+    <h2 class="text-h2 text-ink">Te contamos qué se cosecha cada lunes</h2>
+    <p class="mt-4 text-ink-soft">
+      Un correo por semana con lo que entró, lo que se acabó y una receta para
+      aprovecharlo. Nada más.
+    </p>
+
+    <form class="mt-9 flex flex-col gap-3 sm:flex-row" (submit)="$event.preventDefault()">
+      <label for="correo" class="sr-only">Tu correo electrónico</label>
+      <input
+        id="correo"
+        type="email"
+        required
+        placeholder="tu@correo.com"
+        class="min-w-0 flex-1 rounded-full border border-sand bg-transparent px-6 py-4 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+      />
+      <button
+        type="submit"
+        class="shrink-0 rounded-full bg-moss px-8 py-4 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep"
+      >
+        Suscribirme
+      </button>
+    </form>
+  </div>
+</section>
