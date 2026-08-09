@@ -106,12 +106,13 @@ navegador. Sin este campo (o con un `wrangler.jsonc` ausente), Cloudflare no
 sabe qué carpeta servir y **todo** — incluida la raíz — devuelve 404 con el
 cuerpo vacío, no un error de Angular.
 
-> **Nota:** este proyecto usó antes `public/_redirects` / `public/_headers`,
-> el mecanismo de Cloudflare **Pages** clásico (dominio `*.pages.dev`). Si tu
-> proyecto quedó como Pages en vez de Worker (dominio `*.pages.dev` en lugar de
-> `*.workers.dev`), esos ficheros siguen siendo el camino correcto y no
-> necesitas `wrangler.jsonc`. Ambos ficheros se mantienen en `public/` porque
-> los assets de Workers también los respetan.
+> **Nota:** este proyecto probó antes `public/_redirects` con la regla de
+> Pages clásico (`/* /index.html 200`). En un Worker con static assets **no
+> se puede usar a la vez** que `not_found_handling`: ambos intentan resolver
+> el mismo comodín y Cloudflare rechaza el deploy con `Infinite loop detected
+> in this rule [code: 100324]`. Por eso `_redirects` no está en `public/` —
+> solo aplícalo si el proyecto es Pages clásico (dominio `*.pages.dev`), y en
+> ese caso no crees `wrangler.jsonc`.
 
 ### Opción A — conectando el repositorio (recomendada)
 
@@ -155,9 +156,11 @@ npm run preview        # build + wrangler dev
   despliegue. Incluye además `X-Content-Type-Options`, `Referrer-Policy`,
   `X-Frame-Options` y `Permissions-Policy`.
 
-- **`public/_redirects`** — heredado de la configuración de Pages. Con
-  `not_found_handling` ya en `wrangler.jsonc` es redundante, pero no molesta:
-  se deja por si el proyecto se moviera de vuelta a Pages clásico.
+- **`public/_redirects`** — **no debe existir en este proyecto.** Se probó con
+  la regla de Pages clásico y Cloudflare rechazó el deploy (`Infinite loop
+  detected in this rule [code: 100324]`): coexistir con `not_found_handling`
+  no es opcional, es un error de validación. Solo tiene sentido si el proyecto
+  se desplegara como Pages clásico — y en ese caso, sin `wrangler.jsonc`.
 
 ### Si algún día hiciera falta SSR
 
