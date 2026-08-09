@@ -7,8 +7,8 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "preview": "npx wrangler pages dev dist/agricultores-organicos/browser",
-    "deploy": "npm run build && npx wrangler pages deploy dist/agricultores-organicos/browser --project-name=agricultores-organicos"
+    "preview": "npm run build && npx wrangler dev",
+    "deploy": "npm run build && npx wrangler deploy"
   },
   "private": true,
   "packageManager": "npm@11.12.1",

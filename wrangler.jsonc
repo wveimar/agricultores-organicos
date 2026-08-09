@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "agricultores-organicos",
+  "compatibility_date": "2024-09-23",
+  "assets": {
+    // Salida de `ng build`: Angular anida los archivos en /browser.
+    "directory": "./dist/agricultores-organicos/browser",
+    // Sin esto, cualquier ruta que no sea un archivo exacto (deep-links,
+    // F5 sobre /algo) devuelve 404 en vez de servir index.html.
+    "not_found_handling": "single-page-application"
+  }
+}
