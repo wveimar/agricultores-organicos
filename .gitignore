@@ -39,6 +39,20 @@ testem.log
 /typings
 __screenshots__/
 
+# Cloudflare / Wrangler
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# Variables de entorno
+.env
+.env.*
+!.env.example
+
+# Claude Code — ajustes personales de cada máquina.
+# .claude/settings.json (compartido) sí se versiona; el .local no.
+.claude/settings.local.json
+
 # System files
 .DS_Store
 Thumbs.db
