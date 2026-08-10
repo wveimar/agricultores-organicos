@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(kill 1586)",
-      "Bash(kill 1686)"
+      "Bash(kill 1686)",
+      "Bash(node \"C:/Users/ADMINI~1/AppData/Local/Temp/claude/c--Users-Administrador-Documents-agenciaSoft-agricultores-organicos/b0d33b20-6a0d-426d-b943-d9e5c7b17c97/scratchpad/qa-detalle.mjs\")",
+      "Bash(kill 1766)",
+      "Bash(rm -f __v2.mjs __v3.mjs __v4.mjs)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
