@@ -10,6 +10,9 @@ import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { ProofUploader } from '../proof-uploader/proof-uploader';
 import { OrderSuccess } from '../order-success/order-success';
 
+/** Acepta dígitos, espacios, guiones y un `+` inicial: "300 214 5588", "+57 300 214 5588". */
+const PHONE_PATTERN = /^\+?[0-9][0-9\s-]{6,17}$/;
+
 @Component({
   selector: 'app-checkout-page',
   imports: [ReactiveFormsModule, CopPipe, ProofUploader, OrderSuccess],
@@ -25,17 +28,20 @@ export class CheckoutPage {
   protected readonly shortfalls = signal<readonly StockShortfall[] | null>(null);
   protected readonly copied = signal(false);
 
+  /** Se muestra solo tras un intento de envío con el formulario incompleto. */
+  protected readonly formError = signal<string | null>(null);
+
   protected readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.minLength(3)]],
-    email: ['', [Validators.required, Validators.email]],
-    city: ['', [Validators.required]],
+    phone: ['', [Validators.required, Validators.pattern(PHONE_PATTERN)]],
+    address: ['', [Validators.required, Validators.minLength(5)]],
   });
 
   protected onProofChange(proof: PaymentProof | null): void {
     this.checkout.setProof(proof);
   }
 
-  protected showError(field: 'name' | 'email' | 'city'): boolean {
+  protected showError(field: 'name' | 'phone' | 'address'): boolean {
     const control = this.form.controls[field];
     return control.invalid && (control.touched || control.dirty);
   }
@@ -56,14 +62,13 @@ export class CheckoutPage {
 
     if (this.form.invalid) {
       this.form.markAllAsTouched();
+      this.formError.set('Completa los datos obligatorios (nombre, teléfono y dirección) para continuar.');
       return;
     }
-    if (!this.checkout.canConfirm()) {
-      return;
-    }
+    this.formError.set(null);
 
-    const { name, email, city } = this.form.getRawValue();
-    const result = this.checkout.placeOrder({ name, email, city });
+    const { name, phone, address } = this.form.getRawValue();
+    const result = this.checkout.placeOrder({ name, phone, address });
 
     if (!result.ok) {
       if (result.reason === 'insufficient-stock') {

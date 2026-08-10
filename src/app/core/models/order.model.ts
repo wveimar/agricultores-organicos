@@ -46,8 +46,8 @@ export interface Order {
   readonly id: string;
   readonly reference: string;
   readonly customerName: string;
-  readonly customerEmail: string;
-  readonly city: string;
+  readonly customerPhone: string;
+  readonly customerAddress: string;
   /** ISO 8601. */
   readonly placedAt: string;
   readonly status: OrderStatus;
@@ -69,14 +69,14 @@ export interface Order {
 
 /**
  * Desglose económico. Se congela en el pedido en vez de recalcularse: si el
- * IVA o el umbral de envío cambian mañana, un pedido viejo debe seguir
- * mostrando lo que se cobró.
+ * umbral de envío cambia mañana, un pedido viejo debe seguir mostrando lo que
+ * se cobró de verdad.
+ *
+ * Sin IVA: esta tienda vende directo de finca a consumidor y no está
+ * facturando con impuesto discriminado en esta demo.
  */
 export interface OrderTotals {
   readonly subtotal: number;
-  /** Base gravada (solo agroindustriales; el fresco está excluido). */
-  readonly taxableBase: number;
-  readonly tax: number;
   readonly shipping: number;
   readonly total: number;
 }
@@ -84,11 +84,12 @@ export interface OrderTotals {
 /** Datos que aporta el cliente al finalizar la compra. */
 export interface NewOrderInput {
   readonly customerName: string;
-  readonly customerEmail: string;
-  readonly city: string;
+  readonly customerPhone: string;
+  readonly customerAddress: string;
   readonly lines: readonly OrderLine[];
   readonly totals: OrderTotals;
-  readonly paymentProof: PaymentProof;
+  /** El comprobante es opcional: se puede confirmar y adjuntarlo después. */
+  readonly paymentProof?: PaymentProof;
 }
 
 export type PlacementResult =

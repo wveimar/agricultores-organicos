@@ -3,7 +3,6 @@ import { AdminStoreService } from './admin-store.service';
 import { CartService } from './cart.service';
 import { KV_KEYS, KvStore } from './kv-store.service';
 import { FREE_SHIPPING_THRESHOLD, SHIPPING_COST } from '../models/cart.model';
-import { ADMIN_GROUP_OF } from '../models/product.model';
 import {
   NewOrderInput,
   Order,
@@ -25,16 +24,6 @@ export const BANK_DETAILS = {
   nit: 'NIT 901.482.117-3',
 } as const;
 
-/**
- * IVA general en Colombia. Se aplica **solo** a los productos agroindustriales:
- * la fruta y la verdura frescas están excluidas del impuesto.
- *
- * Es una simplificación razonable para la demo, no asesoría fiscal: el régimen
- * real distingue además tarifas del 5 % y bienes exentos. Antes de facturar de
- * verdad, esta regla la valida un contador.
- */
-const IVA_RATE = 0.19;
-
 export type CheckoutStep = 'formulario' | 'exito';
 
 @Injectable({ providedIn: 'root' })
@@ -54,36 +43,19 @@ export class CheckoutService {
    */
   readonly step = computed<CheckoutStep>(() => (this.placedOrder() ? 'exito' : 'formulario'));
 
+  /** Comprobante opcional: se puede confirmar el pedido y adjuntarlo después. */
   readonly proof = signal<PaymentProof | null>(null);
 
-  /** Regla pedida: sin comprobante no se puede confirmar. */
-  readonly canConfirm = computed(() => this.proof() !== null && !this.cart.isEmpty());
-
   readonly subtotal = this.cart.subtotal;
-
-  /** Base gravada: solo lo agroindustrial. */
-  readonly taxableBase = computed(() =>
-    this.cart
-      .items()
-      .filter((line) => ADMIN_GROUP_OF[line.product.categoryId] === 'agroindustriales')
-      .reduce((total, line) => total + line.product.price * line.quantity, 0),
-  );
-
-  readonly tax = computed(() => Math.round(this.taxableBase() * IVA_RATE));
 
   readonly shipping = computed(() =>
     this.cart.isEmpty() || this.subtotal() >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST,
   );
 
-  readonly total = computed(() => this.subtotal() + this.tax() + this.shipping());
-
-  /** Importe exento, para poder explicarlo en el desglose. */
-  readonly exemptBase = computed(() => this.subtotal() - this.taxableBase());
+  readonly total = computed(() => this.subtotal() + this.shipping());
 
   readonly totals = computed<OrderTotals>(() => ({
     subtotal: this.subtotal(),
-    taxableBase: this.taxableBase(),
-    tax: this.tax(),
     shipping: this.shipping(),
     total: this.total(),
   }));
@@ -109,17 +81,12 @@ export class CheckoutService {
    * Cierra la compra: reserva inventario, crea el pedido en estado
    * `verificacion` y vacía el carrito. El descuento de stock ocurre aquí, no al
    * aprobarlo, para que el panel de administración lo vea de inmediato.
+   *
+   * El comprobante es opcional: si el cliente no lo tiene a mano todavía, el
+   * pedido se confirma igual y queda pendiente de que lo adjunte o lo envíe
+   * por WhatsApp.
    */
-  placeOrder(customer: {
-    name: string;
-    email: string;
-    city: string;
-  }): PlacementResult {
-    const proof = this.proof();
-    if (!proof) {
-      return { ok: false, reason: 'empty-cart' };
-    }
-
+  placeOrder(customer: { name: string; phone: string; address: string }): PlacementResult {
     const lines: OrderLine[] = this.cart.items().map((line) => ({
       productId: line.product.id,
       productName: line.product.name,
@@ -127,13 +94,14 @@ export class CheckoutService {
       quantity: line.quantity,
     }));
 
+    const proof = this.proof();
     const input: NewOrderInput = {
       customerName: customer.name,
-      customerEmail: customer.email,
-      city: customer.city,
+      customerPhone: customer.phone,
+      customerAddress: customer.address,
       lines,
       totals: this.totals(),
-      paymentProof: proof,
+      ...(proof ? { paymentProof: proof } : {}),
     };
 
     const result = this.store.placeCustomerOrder(input);
@@ -172,11 +140,12 @@ export class CheckoutService {
       lines,
       '',
       totals ? `Subtotal: ${money(totals.subtotal)}` : '',
-      totals && totals.tax > 0 ? `IVA (19% sobre agroindustriales): ${money(totals.tax)}` : '',
       totals ? `Envío: ${totals.shipping === 0 ? 'Gratis' : money(totals.shipping)}` : '',
       totals ? `*Total: ${money(totals.total)}*` : '',
       '',
-      `Ya cargué el comprobante de consignación en la web (${order.paymentProof?.fileName ?? 'archivo adjunto'}).`,
+      order.paymentProof
+        ? `Ya cargué el comprobante de consignación en la web (${order.paymentProof.fileName}).`
+        : 'Te envío el comprobante de consignación por este chat.',
       'Quedo atento a la confirmación. ¡Gracias!',
     ]
       .filter((part) => part !== '')

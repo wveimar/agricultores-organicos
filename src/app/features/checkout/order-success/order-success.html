@@ -16,7 +16,7 @@
       </p>
       <h1 class="mt-4 text-h1 text-ink">Recibimos tu pedido</h1>
       <p class="mt-4 text-ink-soft">
-        Guardamos tu comprobante y reservamos
+        Reservamos
         <span class="tabular font-medium text-ink">{{ units() }}</span>
         {{ units() === 1 ? 'unidad' : 'unidades' }} a tu nombre. Falta que verifiquemos
         la transferencia en el banco.
@@ -78,10 +78,6 @@
             <dd class="tabular text-ink">{{ totals.subtotal | cop }}</dd>
           </div>
           <div class="flex justify-between text-ink-soft">
-            <dt>IVA 19% <span class="text-ink-muted">· agroindustriales</span></dt>
-            <dd class="tabular text-ink">{{ totals.tax | cop }}</dd>
-          </div>
-          <div class="flex justify-between text-ink-soft">
             <dt>Envío</dt>
             <dd class="tabular" [class]="totals.shipping === 0 ? 'font-semibold text-moss' : 'text-ink'">
               {{ totals.shipping === 0 ? 'Gratis' : (totals.shipping | cop) }}
@@ -105,6 +101,13 @@
             <p class="text-sm font-medium text-ink">Comprobante adjunto</p>
             <p class="truncate text-xs text-ink-muted">{{ proof.fileName }}</p>
           </div>
+        </div>
+      } @else {
+        <div class="mt-6 border-t border-sand pt-5">
+          <p class="text-sm text-ink-soft">
+            Todavía no adjuntaste el comprobante. Envíalo por el chat de WhatsApp
+            de arriba para agilizar la verificación.
+          </p>
         </div>
       }
     </div>

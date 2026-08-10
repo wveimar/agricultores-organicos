@@ -63,7 +63,7 @@
             </span>
           </div>
           <p class="mt-1 truncate text-sm text-ink-soft">
-            {{ order.customerName }} · {{ order.city }}
+            {{ order.customerName }} · {{ order.customerAddress }}
           </p>
         </div>
 
@@ -193,10 +193,14 @@
                 <p class="text-xs text-ink-muted">Clic en la imagen para ampliarla</p>
               </div>
             </div>
+          } @else if (order.status === 'verificacion') {
+            <p class="mt-3 rounded-md bg-honey/15 px-3 py-2 text-xs text-clay-deep">
+              El cliente no adjuntó comprobante todavía. Pídeselo por WhatsApp antes de verificar el pago.
+            </p>
           }
 
           <div class="mt-3 flex flex-wrap justify-between gap-2 border-t border-sand pt-3 text-xs text-ink-muted">
-            <p>{{ order.customerEmail }}</p>
+            <p>{{ order.customerPhone }}</p>
             @if (order.approvedBy) {
               <p>Aprobado por {{ order.approvedBy }}</p>
             }
