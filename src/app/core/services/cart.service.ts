@@ -1,10 +1,21 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { CartItem, FREE_SHIPPING_THRESHOLD, SHIPPING_COST } from '../models/cart.model';
 import { Product, isInStock } from '../models/product.model';
+import { AdminStoreService } from './admin-store.service';
+import { KV_KEYS, KvStore } from './kv-store.service';
+
+/** Lo único que se guarda del carrito: el resto se resuelve del catálogo. */
+interface StoredLine {
+  readonly productId: string;
+  readonly quantity: number;
+}
 
 @Injectable({ providedIn: 'root' })
 export class CartService {
-  private readonly lines = signal<readonly CartItem[]>([]);
+  private readonly kv = inject(KvStore);
+  private readonly store = inject(AdminStoreService);
+
+  private readonly lines = signal<readonly CartItem[]>(this.hydrate());
 
   readonly items = this.lines.asReadonly();
   readonly isOpen = signal(false);
@@ -40,6 +51,17 @@ export class CartService {
   readonly freeShippingProgress = computed(() =>
     Math.min(1, this.subtotal() / FREE_SHIPPING_THRESHOLD),
   );
+
+  constructor() {
+    // El carrito sobrevive a una recarga o a entrar directo a /checkout.
+    effect(() => {
+      const stored: StoredLine[] = this.lines().map((line) => ({
+        productId: line.product.id,
+        quantity: line.quantity,
+      }));
+      this.kv.put(KV_KEYS.cart, stored);
+    });
+  }
 
   add(product: Product, quantity = 1): void {
     if (!isInStock(product)) {
@@ -91,6 +113,30 @@ export class CartService {
 
   toggle(): void {
     this.isOpen.update((open) => !open);
+  }
+
+  /**
+   * Rehidrata contra el catálogo actual en vez de guardar el producto entero.
+   * Si algo se retiró del catálogo o se agotó mientras el carrito esperaba, la
+   * línea desaparece sola: es preferible a dejar al cliente llegar al checkout
+   * con algo que ya no se puede vender.
+   */
+  private hydrate(): readonly CartItem[] {
+    const stored = this.kv.get<StoredLine[]>(KV_KEYS.cart);
+    if (!stored?.length) {
+      return [];
+    }
+
+    const items: CartItem[] = [];
+    for (const line of stored) {
+      const product = this.store.productById(line.productId);
+      if (!product || !isInStock(product)) {
+        continue;
+      }
+      const quantity = Math.min(Math.max(1, Math.round(line.quantity)), product.stock);
+      items.push({ product, quantity });
+    }
+    return items;
   }
 
   private pulseTimer?: ReturnType<typeof setTimeout>;

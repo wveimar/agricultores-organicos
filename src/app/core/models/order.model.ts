@@ -1,11 +1,34 @@
-/** Ciclo de vida de un pedido. El flujo solo avanza: no hay vuelta atrás. */
-export type OrderStatus = 'pendiente' | 'aprobado' | 'enviado';
+/**
+ * Ciclo de vida de un pedido. El flujo solo avanza: no hay vuelta atrás.
+ *
+ * - `verificacion`: llegó por la web con comprobante de consignación adjunto.
+ *   El stock **ya está reservado** (se descontó al finalizar la compra), falta
+ *   que alguien confirme que la transferencia entró al banco.
+ * - `pendiente`: entró por otro canal (teléfono, WhatsApp directo). Todavía no
+ *   ha tocado el inventario; se descuenta al aprobarlo.
+ */
+export type OrderStatus = 'verificacion' | 'pendiente' | 'aprobado' | 'enviado';
 
 export const ORDER_STATUS_LABELS: Readonly<Record<OrderStatus, string>> = {
+  verificacion: 'Pendiente de verificación',
   pendiente: 'Pendiente',
   aprobado: 'Aprobado',
   enviado: 'Enviado',
 };
+
+/** Comprobante de consignación subido por el cliente. */
+export interface PaymentProof {
+  readonly fileName: string;
+  readonly fileSize: number;
+  readonly mimeType: string;
+  /**
+   * Data URL ya redimensionada y recomprimida. Se guarda así porque no hay
+   * backend donde subir el archivo; ver el aviso de tamaño en
+   * `shared/utils/image-file.ts`.
+   */
+  readonly dataUrl: string;
+  readonly uploadedAt: string;
+}
 
 /**
  * Línea de pedido. Guarda `unitPrice` y `productName` en vez de resolverlos
@@ -32,7 +55,50 @@ export interface Order {
   /** Quién aprobó, para trazabilidad. Solo existe si `status !== 'pendiente'`. */
   readonly approvedBy?: string;
   readonly approvedAt?: string;
+
+  /**
+   * `true` cuando el inventario ya se descontó al crear el pedido (compras
+   * hechas por la web). Es lo que impide el **doble descuento**: al aprobarlo,
+   * el panel salta la resta porque las unidades ya salieron de bodega.
+   */
+  readonly stockReserved?: boolean;
+  readonly paymentProof?: PaymentProof;
+  /** Desglose calculado en el checkout, para no recalcularlo al mostrarlo. */
+  readonly totals?: OrderTotals;
 }
+
+/**
+ * Desglose económico. Se congela en el pedido en vez de recalcularse: si el
+ * IVA o el umbral de envío cambian mañana, un pedido viejo debe seguir
+ * mostrando lo que se cobró.
+ */
+export interface OrderTotals {
+  readonly subtotal: number;
+  /** Base gravada (solo agroindustriales; el fresco está excluido). */
+  readonly taxableBase: number;
+  readonly tax: number;
+  readonly shipping: number;
+  readonly total: number;
+}
+
+/** Datos que aporta el cliente al finalizar la compra. */
+export interface NewOrderInput {
+  readonly customerName: string;
+  readonly customerEmail: string;
+  readonly city: string;
+  readonly lines: readonly OrderLine[];
+  readonly totals: OrderTotals;
+  readonly paymentProof: PaymentProof;
+}
+
+export type PlacementResult =
+  | { readonly ok: true; readonly order: Order }
+  | {
+      readonly ok: false;
+      readonly reason: 'insufficient-stock';
+      readonly shortfalls: readonly StockShortfall[];
+    }
+  | { readonly ok: false; readonly reason: 'empty-cart' };
 
 export function orderTotal(order: Order): number {
   return order.lines.reduce((total, line) => total + line.unitPrice * line.quantity, 0);

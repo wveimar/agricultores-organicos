@@ -7,13 +7,14 @@ import {
   inject,
   viewChild,
 } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { CartService } from '../../core/services/cart.service';
 import { CopPipe } from '../pipes/cop.pipe';
 import { FREE_SHIPPING_THRESHOLD } from '../../core/models/cart.model';
 
 @Component({
   selector: 'app-cart-drawer',
-  imports: [CopPipe],
+  imports: [CopPipe, RouterLink],
   templateUrl: './cart-drawer.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

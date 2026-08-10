@@ -12,6 +12,7 @@ import {
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
 const STATUS_STYLES: Readonly<Record<OrderStatus, string>> = {
+  verificacion: 'bg-clay/15 text-clay-deep',
   pendiente: 'bg-honey/20 text-clay-deep',
   aprobado: 'bg-sage-light text-moss-deep',
   enviado: 'bg-linen text-ink-soft',
@@ -19,6 +20,7 @@ const STATUS_STYLES: Readonly<Record<OrderStatus, string>> = {
 
 const FILTERS: ReadonlyArray<{ value: OrderStatus | 'todos'; label: string }> = [
   { value: 'todos', label: 'Todos' },
+  { value: 'verificacion', label: 'Por verificar' },
   { value: 'pendiente', label: 'Pendientes' },
   { value: 'aprobado', label: 'Aprobados' },
   { value: 'enviado', label: 'Enviados' },
@@ -52,8 +54,13 @@ export class OrdersManager {
         ? this.store.orders()
         : this.store.orders().filter((order) => order.status === filter);
 
-    // Pendientes primero, y dentro de cada grupo lo más reciente arriba.
-    const weight: Record<OrderStatus, number> = { pendiente: 0, aprobado: 1, enviado: 2 };
+    // Lo que espera decisión primero, y dentro de cada grupo lo más reciente arriba.
+    const weight: Record<OrderStatus, number> = {
+      verificacion: 0,
+      pendiente: 1,
+      aprobado: 2,
+      enviado: 3,
+    };
     return orders
       .slice()
       .sort(

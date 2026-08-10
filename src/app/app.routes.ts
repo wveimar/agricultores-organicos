@@ -14,7 +14,15 @@ export const routes: Routes = [
       {
         path: '',
         title: 'Agricultores Orgánicos · Del surco a tu cocina',
+        // Única página con hero a sangre: el header puede ir transparente.
+        data: { transparentHeader: true },
         loadComponent: () => import('./features/shop/shop-page/shop-page').then((m) => m.ShopPage),
+      },
+      {
+        path: 'checkout',
+        title: 'Finalizar pedido · Agricultores Orgánicos',
+        loadComponent: () =>
+          import('./features/checkout/checkout-page/checkout-page').then((m) => m.CheckoutPage),
       },
     ],
   },

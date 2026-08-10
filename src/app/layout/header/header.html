@@ -4,10 +4,10 @@
 -->
 <header
   class="fixed inset-x-0 top-0 z-50 transition-all duration-300 ease-out"
-  [class.bg-moss]="isScrolled() || isMenuOpen()"
-  [class.shadow-[0_1px_0_rgba(255,255,255,0.08)]]="isScrolled() || isMenuOpen()"
-  [class.backdrop-blur-md]="isScrolled() || isMenuOpen()"
-  [class.bg-transparent]="!isScrolled() && !isMenuOpen()"
+  [class.bg-moss]="isSolid()"
+  [class.shadow-[0_1px_0_rgba(255,255,255,0.08)]]="isSolid()"
+  [class.backdrop-blur-md]="isSolid()"
+  [class.bg-transparent]="!isSolid()"
 >
   <div class="container-shell">
     <div

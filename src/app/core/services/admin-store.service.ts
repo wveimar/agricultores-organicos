@@ -2,8 +2,28 @@ import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { PRODUCTS } from '../data/mock-catalog';
 import { ORDERS } from '../data/mock-orders';
 import { AdminGroup, ADMIN_GROUP_OF, Product, stockLevelOf } from '../models/product.model';
-import { ApprovalResult, Order, StockShortfall } from '../models/order.model';
+import {
+  ApprovalResult,
+  NewOrderInput,
+  Order,
+  OrderLine,
+  PlacementResult,
+  StockShortfall,
+} from '../models/order.model';
 import { KV_KEYS, KvStore } from './kv-store.service';
+
+/**
+ * Suma las cantidades por producto. Un pedido puede repetir el mismo producto
+ * en varias líneas; sin agregar, cada línea pasaría el chequeo por separado y
+ * entre todas se llevarían más unidades de las que hay.
+ */
+function aggregateLines(lines: readonly OrderLine[]): ReadonlyMap<string, number> {
+  const required = new Map<string, number>();
+  for (const line of lines) {
+    required.set(line.productId, (required.get(line.productId) ?? 0) + line.quantity);
+  }
+  return required;
+}
 
 /**
  * Lo único que el panel puede modificar de un producto. Se persiste **solo
@@ -54,8 +74,11 @@ export class AdminStoreService {
     () => this.inventory().filter((product) => product.stock <= 0).length,
   );
 
+  /** Todo lo que espera una decisión: de la web y de otros canales. */
   readonly pendingOrders = computed(() =>
-    this.orderList().filter((order) => order.status === 'pendiente'),
+    this.orderList().filter(
+      (order) => order.status === 'pendiente' || order.status === 'verificacion',
+    ),
   );
 
   readonly pendingCount = computed(() => this.pendingOrders().length);
@@ -131,17 +154,81 @@ export class AdminStoreService {
     if (!order) {
       return { ok: false, reason: 'not-found' };
     }
-    if (order.status !== 'pendiente') {
+    if (order.status !== 'pendiente' && order.status !== 'verificacion') {
       return { ok: false, reason: 'already-approved' };
     }
 
-    // Un pedido puede repetir el mismo producto en varias líneas: se suman
-    // antes de comparar, o cada línea pasaría el chequeo por separado.
-    const required = new Map<string, number>();
-    for (const line of order.lines) {
-      required.set(line.productId, (required.get(line.productId) ?? 0) + line.quantity);
+    // Los pedidos hechos por la web ya descontaron el inventario al crearse.
+    // Volver a restar aquí los cobraría dos veces contra bodega.
+    if (!order.stockReserved) {
+      const required = aggregateLines(order.lines);
+      const shortfalls = this.findShortfalls(required);
+
+      if (shortfalls.length > 0) {
+        return { ok: false, reason: 'insufficient-stock', shortfalls };
+      }
+
+      this.decrement(required);
     }
 
+    this.patchOrder(orderId, {
+      status: 'aprobado',
+      approvedBy,
+      approvedAt: new Date().toISOString(),
+    });
+
+    return { ok: true };
+  }
+
+  /**
+   * Alta de un pedido hecho desde la tienda. Reserva el inventario en el mismo
+   * paso: el cliente ya pagó por transferencia, así que esas unidades salen de
+   * la disponibilidad aunque el pago esté sin verificar. Queda en
+   * `verificacion` y con `stockReserved`, para que aprobarlo no vuelva a restar.
+   */
+  placeCustomerOrder(input: NewOrderInput): PlacementResult {
+    if (input.lines.length === 0) {
+      return { ok: false, reason: 'empty-cart' };
+    }
+
+    const required = aggregateLines(input.lines);
+    const shortfalls = this.findShortfalls(required);
+
+    if (shortfalls.length > 0) {
+      return { ok: false, reason: 'insufficient-stock', shortfalls };
+    }
+
+    this.decrement(required);
+
+    const order: Order = {
+      id: `o-web-${Date.now()}`,
+      reference: this.nextReference(),
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      city: input.city,
+      placedAt: new Date().toISOString(),
+      status: 'verificacion',
+      lines: input.lines,
+      stockReserved: true,
+      paymentProof: input.paymentProof,
+      totals: input.totals,
+    };
+
+    this.orderList.update((orders) => [order, ...orders]);
+
+    return { ok: true, order };
+  }
+
+  /** Siguiente número de referencia, continuando la serie existente. */
+  private nextReference(): string {
+    const highest = this.orderList().reduce((max, order) => {
+      const parsed = Number.parseInt(order.reference.replace(/\D/g, ''), 10);
+      return Number.isFinite(parsed) ? Math.max(max, parsed) : max;
+    }, 1000);
+    return `ORD-${highest + 1}`;
+  }
+
+  private findShortfalls(required: ReadonlyMap<string, number>): StockShortfall[] {
     const shortfalls: StockShortfall[] = [];
     for (const [productId, quantity] of required) {
       const product = this.productById(productId);
@@ -155,25 +242,16 @@ export class AdminStoreService {
         });
       }
     }
+    return shortfalls;
+  }
 
-    if (shortfalls.length > 0) {
-      return { ok: false, reason: 'insufficient-stock', shortfalls };
-    }
-
+  private decrement(required: ReadonlyMap<string, number>): void {
     this.inventory.update((products) =>
       products.map((product) => {
         const quantity = required.get(product.id);
         return quantity ? { ...product, stock: product.stock - quantity } : product;
       }),
     );
-
-    this.patchOrder(orderId, {
-      status: 'aprobado',
-      approvedBy,
-      approvedAt: new Date().toISOString(),
-    });
-
-    return { ok: true };
   }
 
   /** Solo se puede enviar lo que ya está aprobado. */

@@ -85,6 +85,15 @@
           </button>
 
           @switch (order.status) {
+            @case ('verificacion') {
+              <button
+                type="button"
+                class="rounded-full bg-clay px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep"
+                (click)="approve(order)"
+              >
+                Verificar pago
+              </button>
+            }
             @case ('pendiente') {
               <button
                 type="button"
@@ -160,6 +169,31 @@
               }
             </tbody>
           </table>
+
+          @if (order.stockReserved) {
+            <p class="mt-3 rounded-md bg-sage-light/50 px-3 py-2 text-xs text-moss-deep">
+              Pedido web: el inventario ya se descontó al confirmarlo. Verificar el
+              pago <strong>no</strong> vuelve a restar unidades.
+            </p>
+          }
+
+          <!-- Comprobante de consignación subido por el cliente -->
+          @if (order.paymentProof; as proof) {
+            <div class="mt-3 flex items-center gap-4 rounded-md border border-sand bg-bone p-3">
+              <a [href]="proof.dataUrl" target="_blank" rel="noopener noreferrer" class="shrink-0">
+                <img
+                  [src]="proof.dataUrl"
+                  [alt]="'Comprobante de consignación del pedido ' + order.reference"
+                  class="size-16 rounded-md border border-sand object-cover transition-opacity duration-200 hover:opacity-80"
+                />
+              </a>
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-ink">Comprobante adjunto</p>
+                <p class="truncate text-xs text-ink-muted">{{ proof.fileName }}</p>
+                <p class="text-xs text-ink-muted">Clic en la imagen para ampliarla</p>
+              </div>
+            </div>
+          }
 
           <div class="mt-3 flex flex-wrap justify-between gap-2 border-t border-sand pt-3 text-xs text-ink-muted">
             <p>{{ order.customerEmail }}</p>

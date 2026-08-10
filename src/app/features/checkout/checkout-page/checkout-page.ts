@@ -1,0 +1,79 @@
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { CartService } from '../../../core/services/cart.service';
+import {
+  BANK_DETAILS,
+  CheckoutService,
+} from '../../../core/services/checkout.service';
+import { PaymentProof, StockShortfall } from '../../../core/models/order.model';
+import { CopPipe } from '../../../shared/pipes/cop.pipe';
+import { ProofUploader } from '../proof-uploader/proof-uploader';
+import { OrderSuccess } from '../order-success/order-success';
+
+@Component({
+  selector: 'app-checkout-page',
+  imports: [ReactiveFormsModule, CopPipe, ProofUploader, OrderSuccess],
+  templateUrl: './checkout-page.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class CheckoutPage {
+  protected readonly cart = inject(CartService);
+  protected readonly checkout = inject(CheckoutService);
+  private readonly fb = inject(FormBuilder);
+
+  protected readonly bank = BANK_DETAILS;
+  protected readonly shortfalls = signal<readonly StockShortfall[] | null>(null);
+  protected readonly copied = signal(false);
+
+  protected readonly form = this.fb.nonNullable.group({
+    name: ['', [Validators.required, Validators.minLength(3)]],
+    email: ['', [Validators.required, Validators.email]],
+    city: ['', [Validators.required]],
+  });
+
+  protected onProofChange(proof: PaymentProof | null): void {
+    this.checkout.setProof(proof);
+  }
+
+  protected showError(field: 'name' | 'email' | 'city'): boolean {
+    const control = this.form.controls[field];
+    return control.invalid && (control.touched || control.dirty);
+  }
+
+  /** Copia el número de cuenta: escribirlo a mano es donde se cuelan errores. */
+  protected async copyAccount(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.bank.accountNumber);
+      this.copied.set(true);
+      setTimeout(() => this.copied.set(false), 2000);
+    } catch {
+      // Sin permiso de portapapeles no pasa nada: el número está a la vista.
+    }
+  }
+
+  protected submit(): void {
+    this.shortfalls.set(null);
+
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+    if (!this.checkout.canConfirm()) {
+      return;
+    }
+
+    const { name, email, city } = this.form.getRawValue();
+    const result = this.checkout.placeOrder({ name, email, city });
+
+    if (!result.ok) {
+      if (result.reason === 'insufficient-stock') {
+        this.shortfalls.set(result.shortfalls);
+      }
+      return;
+    }
+
+    // El botón está al final del formulario: sin esto, la pantalla de éxito
+    // aparecería con el scroll a mitad y el cliente no vería la confirmación.
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+}
