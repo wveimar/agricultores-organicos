@@ -1,0 +1,19 @@
+{
+  // TSConfig aparte del de Angular: el Worker corre sobre el runtime de
+  // Cloudflare, no sobre el navegador. Mezclar los `lib` de DOM con los de
+  // Workers deja pasar APIs que en producción no existen.
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "lib": ["es2022"],
+    "types": ["@cloudflare/workers-types"],
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "noEmit": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -1,4 +1,7 @@
-import { Category, Product } from '../models/product.model';
+// `import type` explícito: garantiza que la importación se borra al compilar y
+// permite que herramientas que solo eliminan tipos (como el generador del seed
+// del Worker) puedan cargar este archivo sin un compilador completo.
+import type { Category, Product } from '../models/product.model';
 import { photo, wide } from './catalog-images';
 
 /**

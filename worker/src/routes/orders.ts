@@ -1,0 +1,444 @@
+import { ApiError, json, readJson, requireInt, requireString } from '../http';
+import { Env, JwtPayload } from '../types';
+import { requireRole } from '../auth/middleware';
+
+interface IncomingItem {
+  productId?: unknown;
+  cantidad?: unknown;
+}
+
+interface CreateOrderBody {
+  clienteNombre?: unknown;
+  clienteTelefono?: unknown;
+  clienteDireccion?: unknown;
+  items?: unknown;
+  envio?: unknown;
+  comprobanteNombre?: unknown;
+  comprobanteUrl?: unknown;
+}
+
+interface StockRow {
+  id: string;
+  nombre: string;
+  precio: number;
+  precio_costo: number;
+  stock_actual: number;
+}
+
+/** Faltante concreto, para que el cliente sepa qué ajustar. */
+interface Shortfall {
+  productId: string;
+  productName: string;
+  requested: number;
+  available: number;
+}
+
+/**
+ * Agrega cantidades por producto.
+ *
+ * Un mismo producto puede llegar repetido en el cuerpo de la petición. Sin
+ * sumarlo antes, cada línea pasaría el chequeo de stock por separado y entre
+ * todas se llevarían más unidades de las que hay. La restricción
+ * UNIQUE(order_id, product_id) del esquema cierra el mismo agujero en la base.
+ */
+function aggregate(items: readonly IncomingItem[]): Map<string, number> {
+  const required = new Map<string, number>();
+
+  for (const item of items) {
+    const productId = requireString(item.productId, 'items[].productId', 64);
+    const cantidad = requireInt(item.cantidad, 'items[].cantidad', 1);
+    required.set(productId, (required.get(productId) ?? 0) + cantidad);
+  }
+
+  return required;
+}
+
+/** Lee stock y precios actuales de los productos pedidos, en una sola consulta. */
+async function loadProducts(env: Env, ids: readonly string[]): Promise<Map<string, StockRow>> {
+  const placeholders = ids.map((_, index) => `?${index + 1}`).join(', ');
+  const { results } = await env.DB.prepare(
+    `SELECT id, nombre, precio, precio_costo, stock_actual
+       FROM products
+      WHERE activo = 1 AND id IN (${placeholders})`,
+  )
+    .bind(...ids)
+    .all<StockRow>();
+
+  return new Map(results.map((row) => [row.id, row]));
+}
+
+/**
+ * POST /api/orders — cierra una compra desde la tienda.
+ *
+ * Reserva el inventario en el mismo paso: el cliente ya consignó, así que esas
+ * unidades salen de la disponibilidad aunque el pago esté sin verificar. El
+ * pedido nace en estado `verificacion` con `stock_reservado = 1`, y por eso
+ * aprobarlo después **no** vuelve a descontar.
+ */
+export async function create(request: Request, env: Env): Promise<Response> {
+  const body = await readJson<CreateOrderBody>(request);
+
+  const clienteNombre = requireString(body.clienteNombre, 'clienteNombre', 120);
+  const clienteTelefono = requireString(body.clienteTelefono, 'clienteTelefono', 40);
+  const clienteDireccion = requireString(body.clienteDireccion, 'clienteDireccion', 240);
+  const envio = body.envio === undefined ? 0 : requireInt(body.envio, 'envio', 0);
+
+  if (!Array.isArray(body.items) || body.items.length === 0) {
+    throw ApiError.badRequest('carrito-vacio', 'El pedido no tiene productos.');
+  }
+  if (body.items.length > 100) {
+    throw ApiError.badRequest('carrito-grande', 'Un pedido admite máximo 100 líneas.');
+  }
+
+  const required = aggregate(body.items as IncomingItem[]);
+  const products = await loadProducts(env, [...required.keys()]);
+
+  // Validación amable: se responde con los faltantes exactos antes de intentar
+  // escribir. El CHECK de la base sigue siendo la garantía real ante carreras.
+  const shortfalls: Shortfall[] = [];
+  for (const [productId, cantidad] of required) {
+    const product = products.get(productId);
+    if (!product) {
+      throw ApiError.badRequest(
+        'producto-invalido',
+        `El producto ${productId} no existe o ya no está a la venta.`,
+      );
+    }
+    if (product.stock_actual < cantidad) {
+      shortfalls.push({
+        productId,
+        productName: product.nombre,
+        requested: cantidad,
+        available: product.stock_actual,
+      });
+    }
+  }
+
+  if (shortfalls.length > 0) {
+    throw ApiError.badRequest(
+      'stock-insuficiente',
+      'No hay unidades suficientes para completar el pedido.',
+      { shortfalls },
+    );
+  }
+
+  const orderId = crypto.randomUUID();
+  const subtotal = [...required.entries()].reduce(
+    (total, [productId, cantidad]) => total + products.get(productId)!.precio * cantidad,
+    0,
+  );
+
+  const statements: D1PreparedStatement[] = [
+    // La referencia se calcula dentro de la propia transacción: leerla antes y
+    // escribirla después dejaría una ventana para asignar el mismo número dos
+    // veces. El UNIQUE de la columna es la red de seguridad.
+    env.DB.prepare(
+      `INSERT INTO orders (
+         id, referencia, cliente_nombre, cliente_telefono, cliente_direccion,
+         estado, stock_reservado, subtotal, envio, total,
+         comprobante_nombre, comprobante_url
+       ) VALUES (
+         ?1,
+         'ORD-' || (SELECT COALESCE(MAX(CAST(substr(referencia, 5) AS INTEGER)), 1000) + 1 FROM orders),
+         ?2, ?3, ?4, 'verificacion', 1, ?5, ?6, ?7, ?8, ?9
+       )`,
+    ).bind(
+      orderId,
+      clienteNombre,
+      clienteTelefono,
+      clienteDireccion,
+      subtotal,
+      envio,
+      subtotal + envio,
+      typeof body.comprobanteNombre === 'string' ? body.comprobanteNombre.slice(0, 200) : null,
+      typeof body.comprobanteUrl === 'string' ? body.comprobanteUrl.slice(0, 500) : null,
+    ),
+  ];
+
+  for (const [productId, cantidad] of required) {
+    const product = products.get(productId)!;
+
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO order_items
+           (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+      ).bind(orderId, productId, product.nombre, product.precio, product.precio_costo, cantidad),
+    );
+
+    // Si entre la validación y este UPDATE otra petición se llevó las unidades,
+    // el CHECK (stock_actual >= 0) hace fallar la sentencia y D1 revierte
+    // **todo** el batch: no queda un pedido creado sin su descuento.
+    statements.push(
+      env.DB.prepare(
+        `UPDATE products
+            SET stock_actual = stock_actual - ?1, actualizado_en = datetime('now')
+          WHERE id = ?2`,
+      ).bind(cantidad, productId),
+    );
+  }
+
+  try {
+    await env.DB.batch(statements);
+  } catch (error) {
+    throw translateConstraint(error);
+  }
+
+  const created = await loadOrder(env, orderId);
+  return json({ order: created }, 201);
+}
+
+/**
+ * POST /api/admin/orders/:id/aprobar — acción crítica.
+ *
+ * Todo ocurre en un único `batch()`, que en D1 es una transacción implícita:
+ * o se aplican todas las sentencias o ninguna. D1 no admite transacciones
+ * interactivas (BEGIN/COMMIT con awaits en medio), así que `batch()` es el
+ * primitivo correcto aquí, no un atajo.
+ *
+ * La idempotencia se consigue con `aprobacion_token`:
+ *  1. La primera sentencia marca el pedido **solo si** `aprobacion_token IS NULL`.
+ *  2. Cada descuento de stock lleva un WHERE que exige que el token guardado
+ *     sea exactamente el que generamos en esta petición.
+ *
+ * Si dos aprobaciones del mismo pedido llegan a la vez, la segunda encuentra el
+ * token ya puesto por la primera: su UPDATE inicial afecta 0 filas y sus
+ * descuentos tampoco casan. Sin ese token, la segunda transacción restaría el
+ * inventario por segunda vez.
+ */
+export async function approve(
+  env: Env,
+  user: JwtPayload,
+  orderId: string,
+): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const order = await env.DB.prepare(
+    `SELECT id, estado, stock_reservado FROM orders WHERE id = ?1`,
+  )
+    .bind(orderId)
+    .first<{ id: string; estado: string; stock_reservado: number }>();
+
+  if (!order) {
+    throw ApiError.notFound('Ese pedido no existe.');
+  }
+  if (order.estado !== 'pendiente' && order.estado !== 'verificacion') {
+    throw ApiError.conflict('ya-aprobado', `El pedido ya está en estado "${order.estado}".`);
+  }
+
+  const { results: items } = await env.DB.prepare(
+    `SELECT product_id, producto_nombre, cantidad FROM order_items WHERE order_id = ?1`,
+  )
+    .bind(orderId)
+    .all<{ product_id: string; producto_nombre: string; cantidad: number }>();
+
+  if (items.length === 0) {
+    throw ApiError.badRequest('pedido-vacio', 'El pedido no tiene líneas que aprobar.');
+  }
+
+  const necesitaDescuento = order.stock_reservado === 0;
+
+  if (necesitaDescuento) {
+    const products = await loadProducts(env, items.map((item) => item.product_id));
+    const shortfalls: Shortfall[] = [];
+
+    for (const item of items) {
+      const available = products.get(item.product_id)?.stock_actual ?? 0;
+      if (available < item.cantidad) {
+        shortfalls.push({
+          productId: item.product_id,
+          productName: item.producto_nombre,
+          requested: item.cantidad,
+          available,
+        });
+      }
+    }
+
+    if (shortfalls.length > 0) {
+      throw ApiError.badRequest(
+        'stock-insuficiente',
+        'No se aprobó: falta inventario. No se descontó ninguna unidad.',
+        { shortfalls },
+      );
+    }
+  }
+
+  const token = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(
+      `UPDATE orders
+          SET estado = 'aprobado', aprobado_por = ?2, aprobado_en = ?3, aprobacion_token = ?4
+        WHERE id = ?1
+          AND aprobacion_token IS NULL
+          AND estado IN ('pendiente', 'verificacion')`,
+    ).bind(orderId, user.sub, now, token),
+  ];
+
+  if (necesitaDescuento) {
+    for (const item of items) {
+      statements.push(
+        env.DB.prepare(
+          `UPDATE products
+              SET stock_actual = stock_actual - ?2, actualizado_en = ?4
+            WHERE id = ?1
+              AND (SELECT aprobacion_token FROM orders WHERE id = ?3) = ?5`,
+        ).bind(item.product_id, item.cantidad, orderId, now, token),
+      );
+    }
+  }
+
+  let batchResults: D1Result[];
+  try {
+    batchResults = await env.DB.batch(statements);
+  } catch (error) {
+    throw translateConstraint(error);
+  }
+
+  // Si el UPDATE del pedido no tocó ninguna fila, otra petición ganó la carrera.
+  // Gracias al token, sus descuentos tampoco se aplicaron: no hay nada que deshacer.
+  if (batchResults[0].meta.changes === 0) {
+    throw ApiError.conflict('ya-aprobado', 'Otro usuario aprobó este pedido primero.');
+  }
+
+  const updated = await loadOrder(env, orderId);
+  return json({ order: updated });
+}
+
+/** POST /api/admin/orders/:id/enviar — solo se envía lo ya aprobado. */
+export async function ship(env: Env, user: JwtPayload, orderId: string): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const result = await env.DB.prepare(
+    `UPDATE orders SET estado = 'enviado' WHERE id = ?1 AND estado = 'aprobado'`,
+  )
+    .bind(orderId)
+    .run();
+
+  if (result.meta.changes === 0) {
+    throw ApiError.conflict(
+      'estado-invalido',
+      'Solo se puede marcar como enviado un pedido aprobado.',
+    );
+  }
+
+  return json({ order: await loadOrder(env, orderId) });
+}
+
+/**
+ * GET /api/admin/orders — lista con sus líneas.
+ *
+ * Dos consultas en un `batch()` (una de pedidos y otra de líneas) y el cruce en
+ * memoria, en vez de una consulta por pedido. Con N pedidos son 2 viajes a D1
+ * en lugar de N+1, que es lo que dispara la latencia en el edge.
+ */
+export async function list(env: Env, user: JwtPayload, url: URL): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const estado = url.searchParams.get('estado');
+  const soloAbiertos = url.searchParams.get('abiertos') === '1';
+  const limit = Math.min(Number.parseInt(url.searchParams.get('limit') ?? '100', 10) || 100, 200);
+
+  const filters: string[] = [];
+  const bindings: unknown[] = [];
+
+  if (estado) {
+    bindings.push(estado);
+    filters.push(`estado = ?${bindings.length}`);
+  }
+  if (soloAbiertos) {
+    filters.push('closing_id IS NULL');
+  }
+
+  const where = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+  bindings.push(limit);
+
+  const { results: orders } = await env.DB.prepare(
+    `SELECT id, referencia, cliente_nombre AS clienteNombre, cliente_telefono AS clienteTelefono,
+            cliente_direccion AS clienteDireccion, estado, stock_reservado AS stockReservado,
+            subtotal, envio, total, comprobante_nombre AS comprobanteNombre,
+            comprobante_url AS comprobanteUrl, aprobado_en AS aprobadoEn,
+            closing_id AS closingId, creado_en AS creadoEn
+       FROM orders ${where}
+      ORDER BY creado_en DESC
+      LIMIT ?${bindings.length}`,
+  )
+    .bind(...bindings)
+    .all();
+
+  if (orders.length === 0) {
+    return json({ orders: [] });
+  }
+
+  const ids = orders.map((order) => (order as { id: string }).id);
+  const placeholders = ids.map((_, index) => `?${index + 1}`).join(', ');
+
+  const { results: items } = await env.DB.prepare(
+    `SELECT order_id AS orderId, product_id AS productId, producto_nombre AS productoNombre,
+            precio_unitario AS precioUnitario, costo_unitario AS costoUnitario, cantidad
+       FROM order_items
+      WHERE order_id IN (${placeholders})`,
+  )
+    .bind(...ids)
+    .all<{ orderId: string }>();
+
+  const byOrder = new Map<string, unknown[]>();
+  for (const item of items) {
+    const bucket = byOrder.get(item.orderId) ?? [];
+    bucket.push(item);
+    byOrder.set(item.orderId, bucket);
+  }
+
+  return json({
+    orders: orders.map((order) => ({
+      ...order,
+      items: byOrder.get((order as { id: string }).id) ?? [],
+    })),
+  });
+}
+
+async function loadOrder(env: Env, orderId: string): Promise<unknown> {
+  const [orderResult, itemsResult] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT id, referencia, cliente_nombre AS clienteNombre, cliente_telefono AS clienteTelefono,
+              cliente_direccion AS clienteDireccion, estado, stock_reservado AS stockReservado,
+              subtotal, envio, total, comprobante_nombre AS comprobanteNombre,
+              aprobado_en AS aprobadoEn, closing_id AS closingId, creado_en AS creadoEn
+         FROM orders WHERE id = ?1`,
+    ).bind(orderId),
+    env.DB.prepare(
+      `SELECT product_id AS productId, producto_nombre AS productoNombre,
+              precio_unitario AS precioUnitario, costo_unitario AS costoUnitario, cantidad
+         FROM order_items WHERE order_id = ?1`,
+    ).bind(orderId),
+  ]);
+
+  const order = orderResult.results[0];
+  if (!order) {
+    throw ApiError.notFound('Ese pedido no existe.');
+  }
+
+  return { ...order, items: itemsResult.results };
+}
+
+/**
+ * Traduce la violación del CHECK de stock a un 400 comprensible. Sin esto, una
+ * carrera perdida le llegaría al cliente como un 500 opaco.
+ */
+function translateConstraint(error: unknown): ApiError {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.includes('CHECK constraint failed') && message.includes('stock_actual')) {
+    return ApiError.badRequest(
+      'stock-insuficiente',
+      'Otra venta se llevó esas unidades mientras procesábamos el pedido. No se aplicó ningún cambio.',
+    );
+  }
+
+  if (message.includes('UNIQUE constraint failed')) {
+    return ApiError.conflict('duplicado', 'Ese registro ya existe.');
+  }
+
+  return new ApiError(500, 'error-base-datos', 'No se pudo completar la operación.');
+}

@@ -117,4 +117,6 @@ export const KV_KEYS = {
   lastOrder: 'last-order',
   cart: 'cart',
   closings: 'closings',
+  /** Sesión emitida por el backend real (JWT firmado). */
+  apiSession: 'api-session',
 } as const;

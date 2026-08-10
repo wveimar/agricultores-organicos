@@ -1,12 +1,43 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "agricultores-organicos",
-  "compatibility_date": "2024-09-23",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2025-05-05",
+  // Habilita las APIs de Node que usa el bundler; sin esto, algunas
+  // dependencias transitivas fallan al empaquetar.
+  "compatibility_flags": ["nodejs_compat"],
+
   "assets": {
     // Salida de `ng build`: Angular anida los archivos en /browser.
     "directory": "./dist/agricultores-organicos/browser",
     // Sin esto, cualquier ruta que no sea un archivo exacto (deep-links,
-    // F5 sobre /algo) devuelve 404 en vez de servir index.html.
-    "not_found_handling": "single-page-application"
+    // F5 sobre /checkout) devuelve 404 en vez de servir index.html.
+    "not_found_handling": "single-page-application",
+    // Necesario para poder llamar a env.ASSETS.fetch() desde el Worker.
+    "binding": "ASSETS",
+    // Clave: solo /api/* pasa por el Worker. Todo lo demás lo sirve el router
+    // de assets directamente, sin arrancar JavaScript.
+    //
+    // Sin esta lista, `not_found_handling: single-page-application` se tragaría
+    // las rutas de la API y devolvería index.html en vez de JSON.
+    "run_worker_first": ["/api/*"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "agricultores-organicos",
+      // Sustituye por el id real que imprime:
+      //   npx wrangler d1 create agricultores-organicos
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
   }
+
+  // JWT_SECRET NO va aquí: este fichero se versiona. Se inyecta con
+  //   npx wrangler secret put JWT_SECRET
+  // y en local desde .dev.vars (que está en .gitignore).
 }
