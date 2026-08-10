@@ -321,3 +321,4 @@ cierre de caja con aritmética exacta contra los pedidos aprobados.
 
 **Pendiente** (siguiente iteración) — checkout y pagos, autenticación, página de
 detalle de producto, buscador con backend, i18n y analítica.
+soluciones
