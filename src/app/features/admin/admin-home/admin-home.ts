@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { AdminStoreService } from '../../../core/services/admin-store.service';
-import { AuthService } from '../../../core/services/auth.service';
+import { TokenStore } from '../../../core/api/token-store';
+import { AdminApiService } from '../../../core/services/admin-api.service';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
 /**
@@ -15,16 +15,22 @@ import { CopPipe } from '../../../shared/pipes/cop.pipe';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AdminHome {
-  protected readonly store = inject(AdminStoreService);
-  protected readonly auth = inject(AuthService);
+  protected readonly adminApi = inject(AdminApiService);
+  protected readonly tokens = inject(TokenStore);
 
-  protected readonly canInventory = computed(() => this.auth.can('ADMIN_INVENTARIO'));
-  protected readonly canOrders = computed(() => this.auth.can('GESTOR_PEDIDOS'));
+  protected readonly canInventory = computed(() => this.tokens.can('ADMIN_INVENTARIO'));
+  protected readonly canOrders = computed(() => this.tokens.can('GESTOR_PEDIDOS'));
 
   /** Primer nombre, para que el saludo no suene a carta formal. */
-  protected readonly firstName = computed(() => this.auth.user()?.name.split(' ')[0] ?? '');
+  protected readonly firstName = computed(
+    () => this.tokens.user()?.nombre.split(' ')[0] ?? '',
+  );
 
-  protected reset(): void {
-    this.store.resetDemo();
+  protected readonly inventoryValue = computed(() =>
+    this.adminApi.products().reduce((total, p) => total + p.stock * p.precio, 0),
+  );
+
+  protected refresh(): void {
+    this.adminApi.refreshHome();
   }
 }

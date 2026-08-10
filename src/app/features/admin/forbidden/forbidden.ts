@@ -1,7 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { AuthService } from '../../../core/services/auth.service';
-import { ROLE_LABELS } from '../../../core/models/user.model';
+import { TokenStore } from '../../../core/api/token-store';
 
 /**
  * Autenticado pero sin el rol necesario. Es un caso distinto de "no has
@@ -16,8 +15,8 @@ import { ROLE_LABELS } from '../../../core/models/user.model';
       <p class="text-overline font-semibold uppercase text-clay">Acceso restringido</p>
       <h1 class="mt-4 text-h2 text-ink">Tu rol no abre esta sección</h1>
       <p class="mt-3 text-sm text-ink-soft">
-        Entraste como <span class="font-medium text-ink">{{ auth.user()?.name }}</span>, con permisos
-        de {{ roleLabel() }}. Si necesitas acceso, pídeselo a administración general.
+        Entraste como <span class="font-medium text-ink">{{ tokens.user()?.nombre }}</span>, con permisos
+        de {{ tokens.roleLabel() || 'ningún rol asignado' }}. Si necesitas acceso, pídeselo a administración general.
       </p>
 
       <div class="mt-8 flex flex-wrap justify-center gap-3">
@@ -39,9 +38,5 @@ import { ROLE_LABELS } from '../../../core/models/user.model';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class Forbidden {
-  protected readonly auth = inject(AuthService);
-
-  protected roleLabel(): string {
-    return this.auth.roles().map((role) => ROLE_LABELS[role]).join(' · ') || 'sin rol asignado';
-  }
+  protected readonly tokens = inject(TokenStore);
 }

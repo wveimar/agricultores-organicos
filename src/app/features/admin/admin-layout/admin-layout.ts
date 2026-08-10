@@ -1,8 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { AdminStoreService } from '../../../core/services/admin-store.service';
-import { AuthService } from '../../../core/services/auth.service';
-import { ROLE_LABELS, UserRole } from '../../../core/models/user.model';
+import { ApiClient } from '../../../core/api/api-client';
+import { TokenStore } from '../../../core/api/token-store';
+import { AdminApiService } from '../../../core/services/admin-api.service';
+import { UserRole } from '../../../core/models/user.model';
 
 interface NavItem {
   readonly path: string;
@@ -18,37 +19,39 @@ interface NavItem {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AdminLayout {
-  protected readonly auth = inject(AuthService);
-  protected readonly store = inject(AdminStoreService);
+  protected readonly tokens = inject(TokenStore);
+  protected readonly adminApi = inject(AdminApiService);
+  private readonly api = inject(ApiClient);
   private readonly router = inject(Router);
 
   protected readonly isSidebarOpen = signal(false);
 
   private readonly allItems: readonly NavItem[] = [
-    { path: '/admin/inventario', label: 'Inventario', roles: ['ADMIN_INVENTARIO'], badge: this.store.alertCount },
-    { path: '/admin/pedidos', label: 'Pedidos', roles: ['GESTOR_PEDIDOS'], badge: this.store.pendingCount },
+    {
+      path: '/admin/inventario',
+      label: 'Inventario',
+      roles: ['ADMIN_INVENTARIO'],
+      badge: this.adminApi.alertCount,
+    },
+    {
+      path: '/admin/pedidos',
+      label: 'Pedidos',
+      roles: ['GESTOR_PEDIDOS'],
+      badge: this.adminApi.pendingCount,
+    },
     { path: '/admin/reportes', label: 'Reportes', roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'] },
   ];
 
   /** El menú solo muestra lo que el rol puede abrir de verdad. */
   protected readonly navItems = computed(() =>
-    this.allItems.filter((item) => this.auth.can(...item.roles)),
+    this.allItems.filter((item) => this.tokens.can(...item.roles)),
   );
 
-  protected readonly roleLabel = computed(() => {
-    const roles = this.auth.roles();
-    return roles.map((role) => ROLE_LABELS[role]).join(' · ');
-  });
-
-  protected readonly initials = computed(() => {
-    const name = this.auth.user()?.name ?? '';
-    return name
-      .split(' ')
-      .slice(0, 2)
-      .map((part) => part[0] ?? '')
-      .join('')
-      .toUpperCase();
-  });
+  constructor() {
+    // Los badges del menú necesitan inventario y pedidos aunque el usuario
+    // aterrice directo en Reportes; se cargan una vez al montar el layout.
+    this.adminApi.refreshHome();
+  }
 
   protected toggleSidebar(): void {
     this.isSidebarOpen.update((open) => !open);
@@ -59,7 +62,7 @@ export class AdminLayout {
   }
 
   protected logout(): void {
-    this.auth.logout();
+    this.api.logout();
     void this.router.navigate(['/admin/login']);
   }
 }

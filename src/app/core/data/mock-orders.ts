@@ -1,4 +1,4 @@
-import { Order } from '../models/order.model';
+import type { Order } from '../models/order.model';
 
 /**
  * Pedidos simulados. Las cantidades están pensadas para que el panel tenga

@@ -1,6 +1,6 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { KV_KEYS, KvStore } from '../services/kv-store.service';
-import { UserRole } from '../models/user.model';
+import { ROLE_LABELS, UserRole } from '../models/user.model';
 
 export interface ApiSession {
   readonly token: string;
@@ -33,6 +33,20 @@ export class TokenStore {
   readonly user = computed(() => this.session()?.user ?? null);
   readonly isAuthenticated = computed(() => this.session() !== null);
 
+  readonly roles = computed<readonly UserRole[]>(() => this.user()?.roles ?? []);
+
+  readonly roleLabel = computed(() => this.roles().map((role) => ROLE_LABELS[role]).join(' · '));
+
+  readonly initials = computed(() => {
+    const name = this.user()?.nombre ?? '';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((part) => part[0] ?? '')
+      .join('')
+      .toUpperCase();
+  });
+
   constructor() {
     effect(() => {
       const session = this.session();
@@ -50,6 +64,19 @@ export class TokenStore {
 
   clear(): void {
     this.session.set(null);
+  }
+
+  /**
+   * SUPER_ADMIN abre cualquier puerta; el resto necesita el rol exacto.
+   * Es la misma regla que aplica `requireRole` en el Worker — la de aquí
+   * decide qué se pinta, la del servidor decide qué se permite de verdad.
+   */
+  can(...allowed: readonly UserRole[]): boolean {
+    const roles = this.roles();
+    if (roles.includes('SUPER_ADMIN')) {
+      return true;
+    }
+    return allowed.some((role) => roles.includes(role));
   }
 
   /** Descarta la sesión guardada si ya expiró, sin esperar a un 401. */

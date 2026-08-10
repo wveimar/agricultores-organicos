@@ -2,13 +2,22 @@
   <h1 class="text-h2 text-ink">Pedidos</h1>
   <p class="text-sm text-ink-soft">
     Aprobar un pedido descuenta las unidades del inventario en el acto.
-    @if (archivedCount() > 0) {
-      <span class="text-ink-muted">
-        · {{ archivedCount() }} archivados en cierres anteriores (ver Reportes).
-      </span>
-    }
   </p>
 </header>
+
+@if (adminApi.ordersError(); as message) {
+  <div class="mt-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4" role="alert">
+    <p class="text-sm font-semibold text-berry">No se pudieron cargar los pedidos.</p>
+    <p class="mt-1 text-sm text-ink-soft">{{ message }}</p>
+    <button
+      type="button"
+      class="mt-3 rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+      (click)="adminApi.loadOrders()"
+    >
+      Reintentar
+    </button>
+  </div>
+}
 
 <!-- Filtros por estado -->
 <div class="mt-6 flex flex-wrap gap-2" role="tablist" aria-label="Filtrar por estado">
@@ -46,177 +55,187 @@
   </p>
 }
 
-<!-- Lista de pedidos -->
-<div class="mt-5 flex flex-col gap-3">
-  @for (order of visible(); track order.id) {
-    @let shortfalls = shortfallsFor(order.id);
+@if (adminApi.ordersLoading() && adminApi.orders().length === 0) {
+  <div class="mt-5 rounded-lg border border-dashed border-sand py-20 text-center">
+    <p class="text-sm text-ink-soft">Cargando pedidos…</p>
+  </div>
+} @else {
+  <!-- Lista de pedidos -->
+  <div class="mt-5 flex flex-col gap-3">
+    @for (order of visible(); track order.id) {
+      @let shortfalls = shortfallsFor(order.id);
+      @let isWorking = workingId() === order.id;
 
-    <article
-      class="overflow-hidden rounded-lg border bg-bone transition-colors duration-200"
-      [class]="shortfalls ? 'border-berry' : 'border-sand'"
-    >
-      <!-- Cabecera -->
-      <div class="flex flex-wrap items-center gap-4 p-5">
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-3">
-            <p class="tabular text-sm font-semibold text-ink">{{ order.reference }}</p>
-            <span
-              class="text-overline rounded-full px-3 py-1 font-semibold uppercase"
-              [class]="statusStyles[order.status]"
-            >
-              {{ statusLabels[order.status] }}
-            </span>
-          </div>
-          <p class="mt-1 truncate text-sm text-ink-soft">
-            {{ order.customerName }} · {{ order.customerAddress }}
-          </p>
-        </div>
-
-        <div class="text-right">
-          <p class="tabular text-sm font-semibold text-ink">{{ total(order) | cop }}</p>
-          <p class="tabular text-xs text-ink-muted">
-            {{ units(order) }} {{ units(order) === 1 ? 'unidad' : 'unidades' }}
-          </p>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
-            [attr.aria-expanded]="expandedId() === order.id"
-            (click)="toggle(order.id)"
-          >
-            {{ expandedId() === order.id ? 'Ocultar' : 'Detalle' }}
-          </button>
-
-          @switch (order.status) {
-            @case ('verificacion') {
-              <button
-                type="button"
-                class="rounded-full bg-clay px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep"
-                (click)="approve(order)"
+      <article
+        class="overflow-hidden rounded-lg border bg-bone transition-colors duration-200"
+        [class]="shortfalls ? 'border-berry' : 'border-sand'"
+      >
+        <!-- Cabecera -->
+        <div class="flex flex-wrap items-center gap-4 p-5">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-3">
+              <p class="tabular text-sm font-semibold text-ink">{{ order.referencia }}</p>
+              <span
+                class="text-overline rounded-full px-3 py-1 font-semibold uppercase"
+                [class]="statusStyles[order.estado]"
               >
-                Verificar pago
-              </button>
-            }
-            @case ('pendiente') {
-              <button
-                type="button"
-                class="rounded-full bg-clay px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep"
-                (click)="approve(order)"
-              >
-                Aprobar compra
-              </button>
-            }
-            @case ('aprobado') {
-              <button
-                type="button"
-                class="rounded-full bg-moss px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep"
-                (click)="ship(order)"
-              >
-                Marcar enviado
-              </button>
-            }
-          }
-        </div>
-      </div>
-
-      <!-- Bloqueo por stock insuficiente -->
-      @if (shortfalls) {
-        <div class="border-t border-berry/30 bg-berry/5 px-5 py-4" role="alert">
-          <p class="text-sm font-semibold text-berry">
-            No se aprobó: falta inventario. No se descontó ninguna unidad.
-          </p>
-          <ul class="mt-2 flex flex-col gap-1">
-            @for (item of shortfalls; track item.productId) {
-              <li class="tabular text-sm text-ink-soft">
-                <span class="font-medium text-ink">{{ item.productName }}</span>
-                — pide {{ item.requested }}, hay {{ item.available }}
-                (faltan {{ item.requested - item.available }})
-              </li>
-            }
-          </ul>
-          <p class="mt-2 text-xs text-ink-muted">
-            Repón existencias en Inventario y vuelve a intentarlo.
-          </p>
-        </div>
-      }
-
-      <!-- Detalle -->
-      @if (expandedId() === order.id) {
-        <div class="border-t border-sand bg-linen/50 px-5 py-4">
-          <table class="w-full text-left text-sm">
-            <caption class="sr-only">Líneas del pedido {{ order.reference }}</caption>
-            <thead>
-              <tr class="text-ink-muted">
-                <th scope="col" class="pb-2 font-medium">Producto</th>
-                <th scope="col" class="pb-2 text-right font-medium">Cantidad</th>
-                <th scope="col" class="pb-2 text-right font-medium">Disponible</th>
-                <th scope="col" class="pb-2 text-right font-medium">Importe</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-sand">
-              @for (line of order.lines; track line.productId) {
-                @let available = availableFor(line.productId);
-                <tr>
-                  <td class="py-2.5 text-ink">{{ line.productName }}</td>
-                  <td class="tabular py-2.5 text-right text-ink">{{ line.quantity }}</td>
-                  <td
-                    class="tabular py-2.5 text-right"
-                    [class]="available < line.quantity ? 'font-semibold text-berry' : 'text-ink-soft'"
-                  >
-                    {{ available }}
-                  </td>
-                  <td class="tabular py-2.5 text-right text-ink">
-                    {{ line.unitPrice * line.quantity | cop }}
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-
-          @if (order.stockReserved) {
-            <p class="mt-3 rounded-md bg-sage-light/50 px-3 py-2 text-xs text-moss-deep">
-              Pedido web: el inventario ya se descontó al confirmarlo. Verificar el
-              pago <strong>no</strong> vuelve a restar unidades.
-            </p>
-          }
-
-          <!-- Comprobante de consignación subido por el cliente -->
-          @if (order.paymentProof; as proof) {
-            <div class="mt-3 flex items-center gap-4 rounded-md border border-sand bg-bone p-3">
-              <a [href]="proof.dataUrl" target="_blank" rel="noopener noreferrer" class="shrink-0">
-                <img
-                  [src]="proof.dataUrl"
-                  [alt]="'Comprobante de consignación del pedido ' + order.reference"
-                  class="size-16 rounded-md border border-sand object-cover transition-opacity duration-200 hover:opacity-80"
-                />
-              </a>
-              <div class="min-w-0">
-                <p class="text-sm font-medium text-ink">Comprobante adjunto</p>
-                <p class="truncate text-xs text-ink-muted">{{ proof.fileName }}</p>
-                <p class="text-xs text-ink-muted">Clic en la imagen para ampliarla</p>
-              </div>
+                {{ statusLabels[order.estado] }}
+              </span>
             </div>
-          } @else if (order.status === 'verificacion') {
-            <p class="mt-3 rounded-md bg-honey/15 px-3 py-2 text-xs text-clay-deep">
-              El cliente no adjuntó comprobante todavía. Pídeselo por WhatsApp antes de verificar el pago.
+            <p class="mt-1 truncate text-sm text-ink-soft">
+              {{ order.clienteNombre }} · {{ order.clienteDireccion }}
             </p>
-          }
+          </div>
 
-          <div class="mt-3 flex flex-wrap justify-between gap-2 border-t border-sand pt-3 text-xs text-ink-muted">
-            <p>{{ order.customerPhone }}</p>
-            @if (order.approvedBy) {
-              <p>Aprobado por {{ order.approvedBy }}</p>
+          <div class="text-right">
+            <p class="tabular text-sm font-semibold text-ink">{{ total(order) | cop }}</p>
+            <p class="tabular text-xs text-ink-muted">
+              {{ units(order) }} {{ units(order) === 1 ? 'unidad' : 'unidades' }}
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
+              [attr.aria-expanded]="expandedId() === order.id"
+              (click)="toggle(order.id)"
+            >
+              {{ expandedId() === order.id ? 'Ocultar' : 'Detalle' }}
+            </button>
+
+            @switch (order.estado) {
+              @case ('verificacion') {
+                <button
+                  type="button"
+                  class="rounded-full bg-clay px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep disabled:cursor-not-allowed disabled:opacity-60"
+                  [disabled]="isWorking"
+                  (click)="approve(order)"
+                >
+                  {{ isWorking ? 'Verificando…' : 'Verificar pago' }}
+                </button>
+              }
+              @case ('pendiente') {
+                <button
+                  type="button"
+                  class="rounded-full bg-clay px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep disabled:cursor-not-allowed disabled:opacity-60"
+                  [disabled]="isWorking"
+                  (click)="approve(order)"
+                >
+                  {{ isWorking ? 'Aprobando…' : 'Aprobar compra' }}
+                </button>
+              }
+              @case ('aprobado') {
+                <button
+                  type="button"
+                  class="rounded-full bg-moss px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
+                  [disabled]="isWorking"
+                  (click)="ship(order)"
+                >
+                  {{ isWorking ? 'Enviando…' : 'Marcar enviado' }}
+                </button>
+              }
             }
           </div>
         </div>
-      }
-    </article>
-  } @empty {
-    <div class="rounded-lg border border-dashed border-sand py-20 text-center">
-      <p class="text-h3 text-ink">No hay pedidos en este estado</p>
-      <p class="mt-2 text-sm text-ink-soft">Cambia el filtro para ver los demás.</p>
-    </div>
-  }
-</div>
+
+        <!-- Bloqueo por stock insuficiente -->
+        @if (shortfalls) {
+          <div class="border-t border-berry/30 bg-berry/5 px-5 py-4" role="alert">
+            <p class="text-sm font-semibold text-berry">
+              No se aprobó: falta inventario. No se descontó ninguna unidad.
+            </p>
+            <ul class="mt-2 flex flex-col gap-1">
+              @for (item of shortfalls; track item.productId) {
+                <li class="tabular text-sm text-ink-soft">
+                  <span class="font-medium text-ink">{{ item.productName }}</span>
+                  — pide {{ item.requested }}, hay {{ item.available }}
+                  (faltan {{ item.requested - item.available }})
+                </li>
+              }
+            </ul>
+            <p class="mt-2 text-xs text-ink-muted">
+              Repón existencias en Inventario y vuelve a intentarlo.
+            </p>
+          </div>
+        }
+
+        <!-- Detalle -->
+        @if (expandedId() === order.id) {
+          <div class="border-t border-sand bg-linen/50 px-5 py-4">
+            <table class="w-full text-left text-sm">
+              <caption class="sr-only">Líneas del pedido {{ order.referencia }}</caption>
+              <thead>
+                <tr class="text-ink-muted">
+                  <th scope="col" class="pb-2 font-medium">Producto</th>
+                  <th scope="col" class="pb-2 text-right font-medium">Cantidad</th>
+                  <th scope="col" class="pb-2 text-right font-medium">Disponible</th>
+                  <th scope="col" class="pb-2 text-right font-medium">Importe</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-sand">
+                @for (item of order.items; track item.productId) {
+                  @let available = availableFor(item.productId);
+                  <tr>
+                    <td class="py-2.5 text-ink">{{ item.productoNombre }}</td>
+                    <td class="tabular py-2.5 text-right text-ink">{{ item.cantidad }}</td>
+                    <td
+                      class="tabular py-2.5 text-right"
+                      [class]="available < item.cantidad ? 'font-semibold text-berry' : 'text-ink-soft'"
+                    >
+                      {{ available }}
+                    </td>
+                    <td class="tabular py-2.5 text-right text-ink">
+                      {{ item.precioUnitario * item.cantidad | cop }}
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+
+            @if (order.stockReservado) {
+              <p class="mt-3 rounded-md bg-sage-light/50 px-3 py-2 text-xs text-moss-deep">
+                Pedido web: el inventario ya se descontó al confirmarlo. Verificar el
+                pago <strong>no</strong> vuelve a restar unidades.
+              </p>
+            }
+
+            <!-- Comprobante de consignación subido por el cliente -->
+            @if (order.comprobanteUrl) {
+              <div class="mt-3 flex items-center gap-4 rounded-md border border-sand bg-bone p-3">
+                <a [href]="order.comprobanteUrl" target="_blank" rel="noopener noreferrer" class="shrink-0">
+                  <img
+                    [src]="order.comprobanteUrl"
+                    [alt]="'Comprobante de consignación del pedido ' + order.referencia"
+                    class="size-16 rounded-md border border-sand object-cover transition-opacity duration-200 hover:opacity-80"
+                  />
+                </a>
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-ink">Comprobante adjunto</p>
+                  <p class="truncate text-xs text-ink-muted">{{ order.comprobanteNombre }}</p>
+                  <p class="text-xs text-ink-muted">Clic en la imagen para ampliarla</p>
+                </div>
+              </div>
+            } @else if (order.estado === 'verificacion') {
+              <p class="mt-3 rounded-md bg-honey/15 px-3 py-2 text-xs text-clay-deep">
+                El cliente no adjuntó comprobante todavía. Pídeselo por WhatsApp antes de verificar el pago.
+              </p>
+            }
+
+            <div class="mt-3 flex flex-wrap justify-between gap-2 border-t border-sand pt-3 text-xs text-ink-muted">
+              <p>{{ order.clienteTelefono }}</p>
+              @if (order.aprobadoEn) {
+                <p>Aprobado el {{ order.aprobadoEn }}</p>
+              }
+            </div>
+          </div>
+        }
+      </article>
+    } @empty {
+      <div class="rounded-lg border border-dashed border-sand py-20 text-center">
+        <p class="text-h3 text-ink">No hay pedidos en este estado</p>
+        <p class="mt-2 text-sm text-ink-soft">Cambia el filtro para ver los demás.</p>
+      </div>
+    }
+  </div>
+}

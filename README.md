@@ -7,9 +7,12 @@ components**, **signals** y **zoneless change detection**, estilada con
 El plan de diseño (paleta, tipografías, arquitectura, interacciones y criterios
 de accesibilidad) está en **[doc/plan.md](doc/plan.md)**.
 
-> Entrega enfocada al 100 % en la capa visual y la UX. No hay backend, base de
-> datos ni pasarela de pago: el catálogo es un mock tipado y el carrito vive en
-> memoria.
+> **Alcance real, para no llevarte a engaño:** el **panel administrativo**
+> (`/admin`) habla con un backend de verdad — Cloudflare Worker + D1, JWT
+> firmado por el servidor, RBAC exigido en cada endpoint. La **tienda pública,
+> el carrito y el checkout** siguen siendo una demo funcional sobre
+> `localStorage`, sin pasarela de pago. El porqué de esta frontera y cómo
+> levantar el backend están en la **[sección 3](#3-backend-worker--d1)**.
 
 ---
 
@@ -66,11 +69,16 @@ Todo el estado son signals. `CatalogService.visible` es un `computed` que aplica
 categoría, búsqueda y orden: cambiar de filtro **no navega ni recarga**, solo
 recalcula la señal y Angular repinta la rejilla.
 
-### Conectar un backend más adelante
+### Conectar la tienda pública al backend
 
-Toda la app depende únicamente de la interfaz `Product`. Basta con sustituir la
-constante `PRODUCTS` de `core/data/mock-catalog.ts` por la respuesta de la API
-(por ejemplo con `httpResource`) y ningún componente necesita cambios.
+El panel admin ya habla con la API real (ver sección 3). La tienda pública
+todavía no: `CatalogService` sigue leyendo de `AdminStoreService`, que vive en
+`localStorage`. Toda la app depende únicamente de la interfaz `Product`, así
+que conectarla es sustituir esa lectura por `ApiClient.products()` — el mismo
+cliente HTTP que ya usa el panel — sin tocar ningún componente de la vitrina.
+No se hizo en esta entrega porque el checkout (subida de comprobante, enlace de
+WhatsApp) está diseñado sobre ese mismo estado local y migrarlo es un cambio
+de alcance aparte.
 
 ### Sobre las imágenes
 
@@ -82,7 +90,124 @@ actualiza también el `alt`.
 
 ---
 
-## 3. Despliegue en Cloudflare
+## 3. Backend: Worker + D1
+
+`worker/` es un Cloudflare Worker en TypeScript que corre en el **mismo**
+proyecto que sirve la SPA (ver `run_worker_first: ["/api/*"]` en
+`wrangler.jsonc`): en producción no hay CORS ni un segundo dominio que
+mantener, solo rutas `/api/*` atendidas por el Worker y todo lo demás servido
+como asset estático.
+
+```
+worker/
+├─ schema.sql              Esquema D1: products, users, orders, order_items, cash_closings
+├─ seed.sql                Generado — no editar a mano (ver más abajo)
+├─ tools/
+│  ├─ generate-seed.mjs    Reconstruye seed.sql desde el catálogo/pedidos del frontend
+│  └─ resolve-ts.mjs       Hook de Node para poder importar los .ts de Angular tal cual
+└─ src/
+   ├─ index.ts             Router: switch método+ruta, sin framework
+   ├─ types.ts             Env, JwtPayload, tipos compartidos
+   ├─ http.ts               ApiError, json(), readJson(), validadores
+   ├─ auth/
+   │  ├─ crypto.ts          JWT HS256 + PBKDF2-SHA256 (WebCrypto, sin dependencias)
+   │  └─ middleware.ts      requireAuth() / requireRole()
+   └─ routes/
+      ├─ auth.ts            POST /api/auth/login · GET /api/auth/me
+      ├─ products.ts        Catálogo público + inventario admin + recálculo ABC
+      ├─ orders.ts          Alta de pedido y aprobación transaccional
+      └─ reports.ts         Ventas por producto (ABC en SQL) + cierre de caja
+```
+
+### Arrancar el backend en local
+
+```bash
+npm run db:schema     # crea las tablas en D1 local (SQLite embebido de Wrangler)
+npm run db:seed       # siembra 3 usuarios, 25 productos y 6 pedidos de ejemplo
+# o ambos de una vez:
+npm run db:reset
+
+npm run worker:dev     # wrangler dev --local --port 8788 → sirve API + build ya hecho
+```
+
+`worker:dev` sirve **el build que ya exista** en `dist/`, no lo genera. Corre
+`npm run build` (o dejarlo en watch con `npm run watch`) en otra terminal si
+vas a tocar el frontend a la vez.
+
+Para desarrollar el frontend con recarga en caliente contra este backend:
+
+```bash
+npm start              # ng serve en :4200
+```
+
+`proxy.conf.json` reenvía `/api/*` de `:4200` a `:8788`, así que
+`ApiClient` (que usa URLs relativas) funciona igual en los dos modos.
+
+### Cuentas de la semilla
+
+| Correo | Rol | Contraseña |
+|---|---|---|
+| `inventario@agricultores.co` | `ADMIN_INVENTARIO` | `demo1234` |
+| `pedidos@agricultores.co` | `GESTOR_PEDIDOS` | `demo1234` |
+| `admin@agricultores.co` | `SUPER_ADMIN` (abre todo) | `demo1234` |
+
+`worker/tools/generate-seed.mjs` importa `PRODUCTS` y `ORDERS` directamente de
+`src/app/core/data/mock-*.ts` — los mismos datos que ve la demo local — para
+que backend y frontend nunca diverjan por transcribirlos dos veces. Si cambias
+el catálogo o los pedidos de ejemplo, regenera con `npm run db:seed:build` y
+vuelve a sembrar con `npm run db:seed` (o `db:reset` para partir de cero).
+
+### Qué hace que la aprobación de un pedido sea segura de verdad
+
+Esto es lo que más cuidado pidió del backend, así que vale explicarlo:
+
+1. **El `CHECK (stock_actual >= 0)` de la tabla `products` es la garantía
+   real**, no la validación en TypeScript. Dos aprobaciones concurrentes que
+   pasen la validación de la aplicación a la vez chocan aquí: la segunda
+   sentencia `UPDATE` viola la restricción y D1 revierte **todo su batch**, no
+   solo esa fila.
+2. **`env.DB.batch([...])` es la transacción.** D1 no soporta transacciones
+   interactivas (`BEGIN` con `await` en medio); `batch()` es el primitivo
+   correcto — todas las sentencias se aplican o ninguna.
+3. **Idempotencia con `aprobacion_token`.** La primera sentencia del batch
+   marca el pedido como aprobado *solo si* `aprobacion_token IS NULL`; cada
+   descuento de stock exige que el token guardado sea el que se acaba de
+   generar. Si dos aprobaciones del mismo pedido llegan a la vez, la segunda
+   encuentra el token ya puesto por la primera: su `UPDATE` inicial no toca
+   ninguna fila y sus descuentos tampoco casan — sin ese token, la segunda
+   restaría el inventario por partida doble.
+4. **Los pedidos web reservan stock al crearse**, no al aprobarse
+   (`stock_reservado = 1`). `approve()` comprueba ese flag y **salta** el
+   descuento si ya estaba reservado — si no, un pedido de la tienda pagaría el
+   inventario dos veces: una al confirmar la compra y otra al verificar el
+   pago.
+
+Verificado con `curl` contra D1 local: vender de más devuelve 400 con los
+faltantes exactos y el stock intacto; aprobar dos veces el mismo pedido
+devuelve 409 en el segundo intento sin duplicar el descuento; y un rol sin
+permiso recibe 403 tanto en inventario como en pedidos.
+
+### Desplegar el backend
+
+```bash
+npx wrangler d1 create agricultores-organicos
+# copia el database_id que imprime a wrangler.jsonc (ahí hay un placeholder)
+
+npx wrangler secret put JWT_SECRET
+# pega una cadena aleatoria larga — nunca la del ejemplo de .dev.vars
+
+npm run db:schema:remote
+npm run db:seed:remote     # opcional: solo si quieres los datos de ejemplo en producción
+
+npm run deploy
+```
+
+`JWT_SECRET` **nunca** va en `wrangler.jsonc` (ese fichero se versiona). En
+local se lee de `.dev.vars`, que está en `.gitignore`.
+
+---
+
+## 4. Despliegue en Cloudflare
 
 El build es **estático**: se sirve desde el edge sin runtime. Se despliega como
 **Worker con static assets** (la vía actual del dashboard unificado "Workers &
@@ -165,22 +290,34 @@ npm run preview        # build + wrangler dev
 ### Si algún día hiciera falta SSR
 
 `ng add @angular/ssr` y desplegar sobre el mismo Worker con el adaptador de
-Cloudflare. Hoy no aporta nada: sin backend y con un catálogo estático, el
-build estático es más rápido y más barato.
+Cloudflare. Hoy no aporta nada: la tienda pública sigue siendo un catálogo
+estático del lado del cliente, y el build estático es más rápido y más barato
+que renderizar en el servidor algo que no cambia por request.
 
 ---
 
-## 4. Estado de la entrega
+## 5. Estado de la entrega
 
-**Hecho** — header adaptativo, hero compacto, filtros client-side con contadores,
-rejilla responsive 1→2→3→4 columnas, tarjeta con cross-fade e "Añadir" emergente,
-carrito lateral con envío gratis progresivo, banda editorial, newsletter, footer,
+**Tienda pública** — header adaptativo, hero compacto, filtros client-side con
+contadores, rejilla responsive 1→2→3→4 columnas, tarjeta con cross-fade e
+"Añadir" emergente, carrito lateral con envío gratis progresivo, checkout con
+comprobante opcional y enlace de WhatsApp, banda editorial, newsletter, footer,
 accesibilidad (foco visible, `role="dialog"`, `aria-live`, `alt` reales,
-`prefers-reduced-motion`) y despliegue configurado.
+`prefers-reduced-motion`). Todo sobre `localStorage`, sin backend.
 
-**Verificado** en navegador a 1440×900 y 390×844: build de producción sin errores
-de consola, precios alineados en la rejilla, hover, filtrado y totales del
-carrito correctos (57.800 + 9.900 = 67.700).
+**Panel administrativo** — login contra JWT firmado por el servidor, RBAC real
+por endpoint (no solo en el frontend), inventario con precio/costo/margen
+editable, pedidos con aprobación transaccional (ver §3), reportes de ventas
+con clasificación ABC calculada en SQL y cierre de caja. Todo leído y escrito
+en Cloudflare D1 a través del Worker.
+
+**Verificado** ejecutando la app, no solo compilando: build de producción sin
+errores de consola; en el backend, `curl` contra D1 local confirmó que vender
+de más devuelve 400 con los faltantes exactos sin tocar stock, que aprobar dos
+veces el mismo pedido devuelve 409 sin duplicar el descuento, y que cada rol
+recibe 403 fuera de su módulo; en el navegador, login real, edición de
+inventario persistida en D1, aprobación de pedido con descuento visible, y
+cierre de caja con aritmética exacta contra los pedidos aprobados.
 
 **Pendiente** (siguiente iteración) — checkout y pagos, autenticación, página de
 detalle de producto, buscador con backend, i18n y analítica.

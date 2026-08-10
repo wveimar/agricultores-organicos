@@ -11,18 +11,18 @@
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <p class="text-overline font-semibold uppercase text-moss">Jornada cerrada</p>
-        <h2 class="mt-2 font-display text-h3 text-ink">{{ closing.reference }}</h2>
+        <h2 class="mt-2 font-display text-h3 text-ink">{{ closing.referencia }}</h2>
         <p class="mt-1 text-sm text-ink-soft">
-          {{ closing.orderCount }} {{ closing.orderCount === 1 ? 'pedido' : 'pedidos' }} ·
-          {{ formatDate(closing.closedAt) }} · {{ closing.closedBy }}
+          {{ closing.pedidos }} {{ closing.pedidos === 1 ? 'pedido' : 'pedidos' }} ·
+          {{ formatDate(closing.cerradoEn) }} · {{ closing.cerradoPor }}
         </p>
       </div>
 
       <div class="text-right">
         <p class="text-xs text-ink-muted">Total recaudado</p>
-        <p class="tabular font-display text-h2 text-ink">{{ closing.grossSales | cop }}</p>
+        <p class="tabular font-display text-h2 text-ink">{{ closing.totalRecaudado | cop }}</p>
         <p class="tabular mt-1 text-sm font-medium text-moss">
-          Ganancia: {{ closing.profit | cop }}
+          Ganancia: {{ closing.ganancia | cop }}
         </p>
       </div>
     </div>
@@ -45,33 +45,33 @@
 <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
   <div class="rounded-lg border border-sand bg-bone p-5">
     <p class="text-overline font-semibold uppercase text-ink-muted">Ventas brutas</p>
-    <p class="tabular mt-2 font-display text-h3 text-ink">{{ reports.grossSales() | cop }}</p>
+    <p class="tabular mt-2 font-display text-h3 text-ink">{{ (adminApi.cashSummary()?.totalRecaudado ?? 0) | cop }}</p>
     <p class="mt-1 text-xs text-ink-muted">Producto + envíos</p>
   </div>
 
   <div class="rounded-lg border border-moss/40 bg-bone p-5">
     <p class="text-overline font-semibold uppercase text-ink-muted">Ganancia</p>
-    <p class="tabular mt-2 font-display text-h3 text-moss">{{ reports.totalProfit() | cop }}</p>
+    <p class="tabular mt-2 font-display text-h3 text-moss">{{ (adminApi.cashSummary()?.ganancia ?? 0) | cop }}</p>
     <p class="tabular mt-1 text-xs text-ink-muted">
-      {{ sharePercent(reports.profitMarginPercent()) }} % de margen
+      {{ sharePercent(profitMarginPercent()) }} % de margen
     </p>
   </div>
 
   <div class="rounded-lg border border-sand bg-bone p-5">
     <p class="text-overline font-semibold uppercase text-ink-muted">Pedidos aprobados</p>
-    <p class="tabular mt-2 font-display text-h3 text-ink">{{ reports.approvedCount() }}</p>
-    <p class="tabular mt-1 text-xs text-ink-muted">{{ reports.unitsSold() }} unidades</p>
+    <p class="tabular mt-2 font-display text-h3 text-ink">{{ adminApi.cashSummary()?.pedidos ?? 0 }}</p>
+    <p class="tabular mt-1 text-xs text-ink-muted">{{ adminApi.cashSummary()?.unidades ?? 0 }} unidades</p>
   </div>
 
   <div class="rounded-lg border border-sand bg-bone p-5">
     <p class="text-overline font-semibold uppercase text-ink-muted">Envíos cobrados</p>
-    <p class="tabular mt-2 font-display text-h3 text-ink">{{ reports.shippingCollected() | cop }}</p>
+    <p class="tabular mt-2 font-display text-h3 text-ink">{{ (adminApi.cashSummary()?.enviosCobrados ?? 0) | cop }}</p>
     <p class="mt-1 text-xs text-ink-muted">No es venta de producto</p>
   </div>
 
   <div class="rounded-lg border border-sand bg-bone p-5">
     <p class="text-overline font-semibold uppercase text-ink-muted">Ticket promedio</p>
-    <p class="tabular mt-2 font-display text-h3 text-ink">{{ reports.averageTicket() | cop }}</p>
+    <p class="tabular mt-2 font-display text-h3 text-ink">{{ averageTicket() | cop }}</p>
     <p class="mt-1 text-xs text-ink-muted">Por pedido cerrado</p>
   </div>
 </div>
@@ -81,12 +81,12 @@
   <div class="rounded-lg border border-sand bg-bone p-6">
     <h2 class="text-h3 text-ink">Recaudo por método</h2>
     <ul class="mt-4 flex flex-col divide-y divide-sand">
-      @for (entry of reports.byMethod(); track entry.method) {
+      @for (entry of adminApi.cashSummary()?.porMetodo ?? []; track entry.metodo) {
         <li class="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
           <div>
-            <p class="text-sm font-medium text-ink">{{ methodLabels[entry.method] }}</p>
+            <p class="text-sm font-medium text-ink">{{ methodLabel(entry.metodo) }}</p>
             <p class="tabular text-xs text-ink-muted">
-              {{ entry.orderCount }} {{ entry.orderCount === 1 ? 'pedido' : 'pedidos' }}
+              {{ entry.pedidos }} {{ entry.pedidos === 1 ? 'pedido' : 'pedidos' }}
             </p>
           </div>
           <p class="tabular text-base text-ink">{{ entry.total | cop }}</p>
@@ -108,22 +108,28 @@
       </p>
     </div>
 
+    @if (closeError(); as message) {
+      <p class="text-sm text-berry">{{ message }}</p>
+    }
+
     @if (confirming()) {
       <div class="flex flex-col gap-3">
         <p class="text-sm font-medium text-berry">
-          Se archivarán {{ reports.approvedCount() }} pedidos. No se puede deshacer.
+          Se archivarán {{ adminApi.cashSummary()?.pedidos ?? 0 }} pedidos. No se puede deshacer.
         </p>
         <div class="flex gap-2">
           <button
             type="button"
-            class="flex-1 rounded-full bg-clay px-4 py-3 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep"
+            class="flex-1 rounded-full bg-clay px-4 py-3 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep disabled:cursor-not-allowed disabled:opacity-60"
+            [disabled]="closing()"
             (click)="confirmClose()"
           >
-            Sí, cerrar
+            {{ closing() ? 'Cerrando…' : 'Sí, cerrar' }}
           </button>
           <button
             type="button"
             class="rounded-full border border-sand px-4 py-3 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
+            [disabled]="closing()"
             (click)="cancelClose()"
           >
             Cancelar
@@ -135,17 +141,17 @@
         type="button"
         class="w-full rounded-full py-3.5 text-sm font-semibold transition-colors duration-200 disabled:cursor-not-allowed"
         [class]="
-          reports.canClose()
+          adminApi.canClose()
             ? 'bg-moss text-bone hover:bg-moss-deep'
             : 'bg-sand text-ink-muted'
         "
-        [disabled]="!reports.canClose()"
+        [disabled]="!adminApi.canClose()"
         (click)="askConfirm()"
       >
         Realizar cierre de jornada
       </button>
 
-      @if (!reports.canClose()) {
+      @if (!adminApi.canClose()) {
         <p class="text-xs text-ink-muted">
           No hay pedidos aprobados sin cerrar. Verifica pagos en Pedidos primero.
         </p>
@@ -155,15 +161,15 @@
 </div>
 
 <!-- ─────────────────────── Top 3 más vendidos ─────────────────────── -->
-@if (reports.topProducts().length > 0) {
+@if (topProducts().length > 0) {
   <section class="mt-10">
     <h2 class="font-display text-h3 text-ink">Top 3 más vendidos</h2>
     <div class="mt-4 grid gap-4 md:grid-cols-3">
-      @for (row of reports.topProducts(); track row.productId; let i = $index) {
+      @for (row of topProducts(); track row.productId; let i = $index) {
         <article class="flex gap-4 rounded-lg border border-sand bg-bone p-4">
           <img
-            [src]="row.image"
-            [alt]="row.imageAlt"
+            [src]="row.imagen"
+            [alt]="row.imagenAlt"
             class="size-20 shrink-0 rounded-md bg-linen object-cover"
             loading="lazy"
             decoding="async"
@@ -175,13 +181,13 @@
             >
               {{ medals[i].label }}
             </span>
-            <p class="mt-2 truncate text-sm font-medium text-ink">{{ row.name }}</p>
-            <p class="truncate text-xs text-ink-muted">{{ row.origin }}</p>
+            <p class="mt-2 truncate text-sm font-medium text-ink">{{ row.nombre }}</p>
+            <p class="truncate text-xs text-ink-muted">{{ row.origen }}</p>
             <p class="tabular mt-auto pt-2 text-sm text-ink">
-              {{ row.units }} uds · <span class="font-medium">{{ row.revenue | cop }}</span>
+              {{ row.unidades }} uds · <span class="font-medium">{{ row.ingresos | cop }}</span>
             </p>
             <p class="tabular text-xs text-moss-deep">
-              +{{ row.profit | cop }} de ganancia ({{ sharePercent(row.marginPercent) }} %)
+              +{{ row.ganancia | cop }} de ganancia ({{ marginPercent(row) }} %)
             </p>
           </div>
         </article>
@@ -196,8 +202,8 @@
     <h2 class="font-display text-h3 text-ink">Ventas por producto</h2>
 
     <div class="flex flex-wrap gap-2" role="tablist" aria-label="Filtrar por grupo">
-      @for (group of groups; track group.value) {
-        @let isActive = reports.group() === group.value;
+      @for (g of groups; track g.value) {
+        @let isActive = group() === g.value;
         <button
           type="button"
           role="tab"
@@ -208,21 +214,25 @@
               ? 'border-moss bg-moss text-bone'
               : 'border-sand bg-bone text-ink-soft hover:border-stone'
           "
-          (click)="setGroup(group.value)"
+          (click)="setGroup(g.value)"
         >
-          {{ group.label }}
+          {{ g.label }}
           <span
             class="tabular rounded-full px-1.5 py-0.5 text-[11px] leading-none"
             [class]="isActive ? 'bg-bone/20 text-bone' : 'bg-linen text-ink-muted'"
           >
-            {{ reports.countsByGroup()[group.value] ?? 0 }}
+            {{ countsByGroup()[g.value] ?? 0 }}
           </span>
         </button>
       }
     </div>
   </div>
 
-  @if (reports.visibleSales().length === 0) {
+  @if (adminApi.salesLoading() && adminApi.salesRows().length === 0) {
+    <div class="mt-5 rounded-lg border border-dashed border-sand py-20 text-center">
+      <p class="text-sm text-ink-soft">Cargando ventas…</p>
+    </div>
+  } @else if (visibleSales().length === 0) {
     <div class="mt-5 rounded-lg border border-dashed border-sand py-20 text-center">
       <p class="text-h3 text-ink">Todavía no hay ventas que reportar</p>
       <p class="mt-2 text-sm text-ink-soft">
@@ -232,46 +242,46 @@
   } @else {
     <!-- Móvil: tarjetas. Una tabla con scroll horizontal no se lee en el campo. -->
     <div class="mt-5 flex flex-col gap-3 lg:hidden">
-      @for (row of reports.visibleSales(); track row.productId) {
+      @for (row of visibleSales(); track row.productId) {
         <article class="rounded-lg border border-sand bg-bone p-4">
           <div class="flex gap-3">
             <img
-              [src]="row.image"
-              [alt]="row.imageAlt"
+              [src]="row.imagen"
+              [alt]="row.imagenAlt"
               class="size-14 shrink-0 rounded-md bg-linen object-cover"
               loading="lazy"
               decoding="async"
             />
             <div class="min-w-0 flex-1">
               <div class="flex items-start justify-between gap-2">
-                <p class="truncate text-sm font-medium text-ink">{{ row.name }}</p>
+                <p class="truncate text-sm font-medium text-ink">{{ row.nombre }}</p>
                 <span
                   class="text-overline shrink-0 rounded-full px-2 py-1 font-semibold uppercase"
-                  [class]="abcStyles[row.abc].chip"
+                  [class]="abcStyles[row.categoriaAbc].chip"
                 >
-                  {{ row.abc }}
+                  {{ row.categoriaAbc }}
                 </span>
               </div>
-              <p class="truncate text-xs text-ink-muted">{{ row.origin }}</p>
+              <p class="truncate text-xs text-ink-muted">{{ row.origen }}</p>
             </div>
           </div>
 
           <dl class="mt-3 grid grid-cols-3 gap-3 border-t border-sand pt-3">
             <div>
               <dt class="text-xs text-ink-muted">Vendidas</dt>
-              <dd class="tabular mt-0.5 text-sm text-ink">{{ row.units }}</dd>
+              <dd class="tabular mt-0.5 text-sm text-ink">{{ row.unidades }}</dd>
             </div>
             <div>
               <dt class="text-xs text-ink-muted">Ingresos</dt>
-              <dd class="tabular mt-0.5 text-sm text-ink">{{ row.revenue | cop }}</dd>
+              <dd class="tabular mt-0.5 text-sm text-ink">{{ row.ingresos | cop }}</dd>
             </div>
             <div>
               <dt class="text-xs text-ink-muted">Stock</dt>
               <dd
                 class="tabular mt-0.5 text-sm"
-                [class]="row.stock === 0 ? 'text-berry' : 'text-ink'"
+                [class]="row.stockRestante === 0 ? 'text-berry' : 'text-ink'"
               >
-                {{ row.stock }}
+                {{ row.stockRestante }}
               </dd>
             </div>
           </dl>
@@ -279,16 +289,16 @@
           <dl class="mt-3 grid grid-cols-2 gap-3 border-t border-sand pt-3">
             <div>
               <dt class="text-xs text-ink-muted">Costo</dt>
-              <dd class="tabular mt-0.5 text-sm text-ink">{{ row.cost | cop }}</dd>
+              <dd class="tabular mt-0.5 text-sm text-ink">{{ row.costo | cop }}</dd>
             </div>
             <div>
               <dt class="text-xs text-ink-muted">Ganancia</dt>
               <dd
                 class="tabular mt-0.5 text-sm font-medium"
-                [class]="row.profit >= 0 ? 'text-moss-deep' : 'text-berry'"
+                [class]="row.ganancia >= 0 ? 'text-moss-deep' : 'text-berry'"
               >
-                {{ row.profit | cop }}
-                <span class="font-normal text-ink-muted">({{ sharePercent(row.marginPercent) }} %)</span>
+                {{ row.ganancia | cop }}
+                <span class="font-normal text-ink-muted">({{ marginPercent(row) }} %)</span>
               </dd>
             </div>
           </dl>
@@ -317,22 +327,22 @@
           </thead>
 
           <tbody class="divide-y divide-sand">
-            @for (row of reports.visibleSales(); track row.productId) {
+            @for (row of visibleSales(); track row.productId) {
               @let medal = medalIndex(row.productId);
 
               <tr>
                 <th scope="row" class="px-5 py-4 font-normal">
                   <div class="flex items-center gap-3">
                     <img
-                      [src]="row.image"
-                      [alt]="row.imageAlt"
+                      [src]="row.imagen"
+                      [alt]="row.imagenAlt"
                       class="size-11 shrink-0 rounded-md bg-linen object-cover"
                       loading="lazy"
                       decoding="async"
                     />
                     <div class="min-w-0">
                       <div class="flex items-center gap-2">
-                        <p class="truncate text-sm font-medium text-ink">{{ row.name }}</p>
+                        <p class="truncate text-sm font-medium text-ink">{{ row.nombre }}</p>
                         @if (medal >= 0) {
                           <span
                             class="text-overline shrink-0 rounded-full px-2 py-0.5 font-semibold uppercase"
@@ -343,49 +353,49 @@
                         }
                       </div>
                       <p class="tabular text-xs text-ink-muted">
-                        {{ row.orderCount }} {{ row.orderCount === 1 ? 'pedido' : 'pedidos' }} ·
-                        {{ sharePercent(row.revenueShare) }} % de ingresos
+                        {{ row.pedidos }} {{ row.pedidos === 1 ? 'pedido' : 'pedidos' }} ·
+                        {{ sharePercent(row.participacion) }} % de ingresos
                       </p>
                     </div>
                   </div>
                 </th>
 
-                <td class="px-5 py-4 text-sm text-ink-soft">{{ row.origin }}</td>
+                <td class="px-5 py-4 text-sm text-ink-soft">{{ row.origen }}</td>
 
-                <td class="tabular px-5 py-4 text-right text-sm text-ink">{{ row.units }}</td>
+                <td class="tabular px-5 py-4 text-right text-sm text-ink">{{ row.unidades }}</td>
 
                 <td class="tabular px-5 py-4 text-right text-sm font-medium text-ink">
-                  {{ row.revenue | cop }}
+                  {{ row.ingresos | cop }}
                 </td>
 
                 <td class="tabular px-5 py-4 text-right text-sm text-ink-soft">
-                  {{ row.cost | cop }}
+                  {{ row.costo | cop }}
                 </td>
 
                 <td
                   class="tabular px-5 py-4 text-right text-sm font-medium"
-                  [class]="row.profit >= 0 ? 'text-moss-deep' : 'text-berry'"
+                  [class]="row.ganancia >= 0 ? 'text-moss-deep' : 'text-berry'"
                 >
-                  {{ row.profit | cop }}
+                  {{ row.ganancia | cop }}
                   <span class="block text-xs font-normal text-ink-muted">
-                    {{ sharePercent(row.marginPercent) }} % margen
+                    {{ marginPercent(row) }} % margen
                   </span>
                 </td>
 
                 <td
                   class="tabular px-5 py-4 text-right text-sm"
-                  [class]="row.stock === 0 ? 'font-semibold text-berry' : 'text-ink'"
+                  [class]="row.stockRestante === 0 ? 'font-semibold text-berry' : 'text-ink'"
                 >
-                  {{ row.stock }}
+                  {{ row.stockRestante }}
                 </td>
 
                 <td class="px-5 py-4 text-center">
                   <span
                     class="text-overline inline-block rounded-full px-3 py-1.5 font-semibold uppercase"
-                    [class]="abcStyles[row.abc].chip"
-                    [title]="abcStyles[row.abc].hint"
+                    [class]="abcStyles[row.categoriaAbc].chip"
+                    [title]="abcStyles[row.categoriaAbc].hint"
                   >
-                    {{ row.abc }}
+                    {{ row.categoriaAbc }}
                   </span>
                 </td>
               </tr>
@@ -407,29 +417,29 @@
 <section class="mt-12">
   <h2 class="font-display text-h3 text-ink">Historial de cierres</h2>
 
-  @if (reports.historyLog().length === 0) {
+  @if (adminApi.closings().length === 0) {
     <p class="mt-4 rounded-lg border border-dashed border-sand px-5 py-10 text-center text-sm text-ink-soft">
       Todavía no has cerrado ninguna jornada.
     </p>
   } @else {
     <ul class="mt-4 flex flex-col gap-3">
-      @for (closing of reports.historyLog(); track closing.id) {
+      @for (closing of adminApi.closings(); track closing.id) {
         <li class="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-sand bg-bone p-5">
           <div class="min-w-0">
-            <p class="tabular text-sm font-semibold text-ink">{{ closing.reference }}</p>
+            <p class="tabular text-sm font-semibold text-ink">{{ closing.referencia }}</p>
             <p class="mt-0.5 text-xs text-ink-muted">
-              {{ formatDate(closing.closedAt) }} · {{ closing.closedBy }}
+              {{ formatDate(closing.cerradoEn) }} · {{ closing.cerradoPor }}
             </p>
           </div>
 
           <div class="flex items-center gap-6">
             <div class="text-right">
               <p class="tabular text-xs text-ink-muted">
-                {{ closing.orderCount }} {{ closing.orderCount === 1 ? 'pedido' : 'pedidos' }} ·
-                {{ closing.unitCount }} uds
+                {{ closing.pedidos }} {{ closing.pedidos === 1 ? 'pedido' : 'pedidos' }} ·
+                {{ closing.unidades }} uds
               </p>
-              <p class="tabular text-base font-medium text-ink">{{ closing.grossSales | cop }}</p>
-              <p class="tabular text-xs text-moss-deep">+{{ closing.profit | cop }} ganancia</p>
+              <p class="tabular text-base font-medium text-ink">{{ closing.totalRecaudado | cop }}</p>
+              <p class="tabular text-xs text-moss-deep">+{{ closing.ganancia | cop }} ganancia</p>
             </div>
 
             <button

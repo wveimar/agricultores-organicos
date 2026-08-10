@@ -1,8 +1,22 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { AuthService } from '../../../core/services/auth.service';
+import { ApiClient, ApiErrorBody } from '../../../core/api/api-client';
+import { ROLE_LABELS } from '../../../core/models/user.model';
 import { Turnstile } from '../../../shared/turnstile/turnstile';
+
+/**
+ * Cuentas sembradas por `worker/tools/generate-seed.mjs`. Es una lista fija de
+ * display, no una consulta al servidor: un backend real nunca expone qué
+ * cuentas existen a quien todavía no inició sesión.
+ */
+const DEMO_ACCOUNTS = [
+  { email: 'inventario@agricultores.co', nombre: 'Sara Villamil', rol: ROLE_LABELS.ADMIN_INVENTARIO },
+  { email: 'pedidos@agricultores.co', nombre: 'Diana Cardona', rol: ROLE_LABELS.GESTOR_PEDIDOS },
+  { email: 'admin@agricultores.co', nombre: 'Nicolás Ruiz', rol: ROLE_LABELS.SUPER_ADMIN },
+] as const;
+
+const DEMO_PASSWORD = 'demo1234';
 
 @Component({
   selector: 'app-admin-login',
@@ -14,7 +28,9 @@ export class AdminLogin {
   private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
-  protected readonly auth = inject(AuthService);
+  private readonly api = inject(ApiClient);
+
+  protected readonly demoAccounts = DEMO_ACCOUNTS;
 
   /**
    * Sitekey pública de Turnstile. Vacía → el widget entra en modo demo.
@@ -37,8 +53,8 @@ export class AdminLogin {
     this.turnstileToken.set(token || null);
   }
 
-  protected fillDemo(email: string, password: string): void {
-    this.form.setValue({ email, password });
+  protected fillDemo(email: string): void {
+    this.form.setValue({ email, password: DEMO_PASSWORD });
     this.errorMessage.set(null);
   }
 
@@ -51,22 +67,31 @@ export class AdminLogin {
       return;
     }
 
-    this.submitting.set(true);
-    const { email, password } = this.form.getRawValue();
-    const result = this.auth.login(email, password, this.turnstileToken());
-    this.submitting.set(false);
-
-    if (!result.ok) {
-      this.errorMessage.set(
-        result.error === 'captcha'
-          ? 'Completa la verificación anti-bots antes de continuar.'
-          : 'Correo o contraseña incorrectos.',
-      );
+    if (!this.turnstileToken()) {
+      this.errorMessage.set('Completa la verificación anti-bots antes de continuar.');
       return;
     }
 
-    const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') ?? '/admin';
-    void this.router.navigateByUrl(returnUrl);
+    this.submitting.set(true);
+    const { email, password } = this.form.getRawValue();
+
+    // El login es una petición HTTP real: el JWT lo firma el Worker con
+    // JWT_SECRET, no algo que el navegador pueda fabricarse a sí mismo.
+    this.api.login(email, password).subscribe({
+      next: () => {
+        this.submitting.set(false);
+        const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') ?? '/admin';
+        void this.router.navigateByUrl(returnUrl);
+      },
+      error: (error: ApiErrorBody) => {
+        this.submitting.set(false);
+        this.errorMessage.set(
+          error.code === 'sin-conexion'
+            ? error.message
+            : 'Correo o contraseña incorrectos.',
+        );
+      },
+    });
   }
 
   protected showError(field: 'email' | 'password'): boolean {

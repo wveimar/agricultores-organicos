@@ -24,6 +24,7 @@ const load = (relative) => import(pathToFileURL(join(root, relative)).href);
 
 const { PRODUCTS } = await load('src/app/core/data/mock-catalog.ts');
 const { ADMIN_GROUP_OF } = await load('src/app/core/models/product.model.ts');
+const { ORDERS } = await load('src/app/core/data/mock-orders.ts');
 
 // ─────────────────── PBKDF2, idéntico al del Worker ───────────────────
 const PBKDF2_ITERATIONS = 210_000;
@@ -122,8 +123,56 @@ for (const p of PRODUCTS) {
   );
 }
 
+lines.push('', '-- ─────────────────────────── Pedidos ───────────────────────────');
+
+// Mapea "Diana Cardona" -> 'u-02': los pedidos de demo aprobados registran
+// quién los aprobó por nombre; la tabla real referencia el id del usuario.
+const userIdByName = new Map(USERS.map((u) => [u.nombre, u.id]));
+
+for (const order of ORDERS) {
+  const subtotal = order.lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
+  const aprobadoPor = order.approvedBy ? (userIdByName.get(order.approvedBy) ?? 'NULL') : 'NULL';
+
+  lines.push(
+    `INSERT INTO orders (id, referencia, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES (` +
+      [
+        q(order.id),
+        q(order.reference),
+        q(order.customerName),
+        q(order.customerPhone),
+        q(order.customerAddress),
+        q(order.status),
+        0,
+        subtotal,
+        0,
+        subtotal,
+        aprobadoPor === 'NULL' ? 'NULL' : q(aprobadoPor),
+        order.approvedAt ? q(order.approvedAt) : 'NULL',
+        q(order.placedAt),
+      ].join(', ') +
+      ');',
+  );
+
+  for (const line of order.lines) {
+    lines.push(
+      `INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES (` +
+        [
+          q(order.id),
+          q(line.productId),
+          q(line.productName),
+          line.unitPrice,
+          line.unitCost,
+          line.quantity,
+        ].join(', ') +
+        ');',
+    );
+  }
+}
+
 lines.push('');
 
 const out = join(root, 'worker', 'seed.sql');
 writeFileSync(out, lines.join('\n'), 'utf8');
-console.log(`seed.sql generado con ${USERS.length} usuarios y ${PRODUCTS.length} productos`);
+console.log(
+  `seed.sql generado con ${USERS.length} usuarios, ${PRODUCTS.length} productos y ${ORDERS.length} pedidos`,
+);

@@ -62,6 +62,9 @@ export interface ApiOrder {
   readonly subtotal: number;
   readonly envio: number;
   readonly total: number;
+  readonly comprobanteNombre?: string | null;
+  readonly comprobanteUrl?: string | null;
+  readonly aprobadoEn?: string | null;
   readonly closingId: string | null;
   readonly creadoEn: string;
   readonly items: readonly ApiOrderItem[];
@@ -93,6 +96,20 @@ export interface ApiCashSummary {
   readonly enviosCobrados: number;
   readonly totalRecaudado: number;
   readonly porMetodo: readonly { metodo: string; pedidos: number; total: number }[];
+}
+
+export interface ApiClosing {
+  readonly id: string;
+  readonly referencia: string;
+  readonly cerradoEn: string;
+  readonly cerradoPor: string;
+  readonly pedidos: number;
+  readonly unidades: number;
+  readonly ventaProducto: number;
+  readonly costoProducto: number;
+  readonly ganancia: number;
+  readonly enviosCobrados: number;
+  readonly totalRecaudado: number;
 }
 
 /**
@@ -202,10 +219,16 @@ export class ApiClient {
       .pipe(catchError(handleError));
   }
 
-  closeCash(): Observable<unknown> {
+  closeCash(): Observable<{ closing: ApiClosing; pedidosArchivados: number }> {
     return this.http
-      .post('/api/admin/reports/cash/close', {})
+      .post<{ closing: ApiClosing; pedidosArchivados: number }>('/api/admin/reports/cash/close', {})
       .pipe(catchError(handleError));
+  }
+
+  closings(): Observable<readonly ApiClosing[]> {
+    return this.http
+      .get<{ closings: ApiClosing[] }>('/api/admin/reports/closings')
+      .pipe(map((res) => res.closings), catchError(handleError));
   }
 }
 

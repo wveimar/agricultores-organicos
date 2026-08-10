@@ -1,20 +1,21 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { AuthService } from '../services/auth.service';
+import { TokenStore } from '../api/token-store';
 import { UserRole } from '../models/user.model';
 
 /**
  * Los guards deciden **qué se muestra**, no qué está permitido. Un usuario
- * puede saltárselos con devtools; la autorización real tiene que repetirse en
- * el servidor por cada endpoint. Ver la nota extensa en `auth.service.ts`.
+ * puede saltárselos con devtools; la autorización real vive en el Worker
+ * (`requireRole` en `worker/src/auth/middleware.ts`), que es el único lugar
+ * donde negarla de verdad importa.
  */
 
 /** Exige sesión activa. Guarda el destino para volver tras el login. */
 export const authGuard: CanActivateFn = (_route, state) => {
-  const auth = inject(AuthService);
+  const tokens = inject(TokenStore);
   const router = inject(Router);
 
-  if (auth.isAuthenticated()) {
+  if (tokens.isAuthenticated()) {
     return true;
   }
 
@@ -25,7 +26,7 @@ export const authGuard: CanActivateFn = (_route, state) => {
 
 /**
  * Exige uno de los roles indicados. `SUPER_ADMIN` siempre pasa (lo resuelve
- * `hasRole`). Se usa como fábrica en la ruta:
+ * `TokenStore.can`). Se usa como fábrica en la ruta:
  *
  * ```ts
  * { path: 'inventario', canActivate: [authGuard, roleGuard('ADMIN_INVENTARIO')], ... }
@@ -33,14 +34,14 @@ export const authGuard: CanActivateFn = (_route, state) => {
  */
 export function roleGuard(...allowed: readonly UserRole[]): CanActivateFn {
   return () => {
-    const auth = inject(AuthService);
+    const tokens = inject(TokenStore);
     const router = inject(Router);
 
-    if (!auth.isAuthenticated()) {
+    if (!tokens.isAuthenticated()) {
       return router.createUrlTree(['/admin/login']);
     }
 
-    if (auth.can(...allowed)) {
+    if (tokens.can(...allowed)) {
       return true;
     }
 
@@ -52,7 +53,7 @@ export function roleGuard(...allowed: readonly UserRole[]): CanActivateFn {
 
 /** Impide volver al login con sesión abierta. */
 export const guestGuard: CanActivateFn = () => {
-  const auth = inject(AuthService);
+  const tokens = inject(TokenStore);
   const router = inject(Router);
-  return auth.isAuthenticated() ? router.createUrlTree(['/admin']) : true;
+  return tokens.isAuthenticated() ? router.createUrlTree(['/admin']) : true;
 };

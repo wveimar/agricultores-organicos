@@ -8,7 +8,7 @@
     <a
       routerLink="/admin/inventario"
       class="group rounded-lg border bg-bone p-6 transition-colors duration-200 hover:border-moss"
-      [class]="store.alertCount() > 0 ? 'border-honey' : 'border-sand'"
+      [class]="adminApi.alertCount() > 0 ? 'border-honey' : 'border-sand'"
     >
       <div class="flex items-start justify-between gap-4">
         <div>
@@ -21,20 +21,20 @@
       <dl class="mt-6 grid grid-cols-3 gap-4 border-t border-sand pt-4">
         <div>
           <dt class="text-xs text-ink-muted">Referencias</dt>
-          <dd class="tabular mt-1 font-display text-h3 text-ink">{{ store.products().length }}</dd>
+          <dd class="tabular mt-1 font-display text-h3 text-ink">{{ adminApi.products().length }}</dd>
         </div>
         <div>
           <dt class="text-xs text-ink-muted">Bajo mínimo</dt>
           <dd
             class="tabular mt-1 font-display text-h3"
-            [class]="store.alertCount() > 0 ? 'text-clay-deep' : 'text-ink'"
+            [class]="adminApi.alertCount() > 0 ? 'text-clay-deep' : 'text-ink'"
           >
-            {{ store.alertCount() }}
+            {{ adminApi.alertCount() }}
           </dd>
         </div>
         <div>
           <dt class="text-xs text-ink-muted">Valor</dt>
-          <dd class="tabular mt-1 text-sm text-ink">{{ store.inventoryValue() | cop }}</dd>
+          <dd class="tabular mt-1 text-sm text-ink">{{ inventoryValue() | cop }}</dd>
         </div>
       </dl>
     </a>
@@ -44,7 +44,7 @@
     <a
       routerLink="/admin/pedidos"
       class="group rounded-lg border bg-bone p-6 transition-colors duration-200 hover:border-moss"
-      [class]="store.pendingCount() > 0 ? 'border-honey' : 'border-sand'"
+      [class]="adminApi.pendingCount() > 0 ? 'border-honey' : 'border-sand'"
     >
       <div class="flex items-start justify-between gap-4">
         <div>
@@ -56,16 +56,16 @@
 
       <dl class="mt-6 grid grid-cols-3 gap-4 border-t border-sand pt-4">
         <div>
-          <dt class="text-xs text-ink-muted">Total</dt>
-          <dd class="tabular mt-1 font-display text-h3 text-ink">{{ store.orders().length }}</dd>
+          <dt class="text-xs text-ink-muted">Jornada actual</dt>
+          <dd class="tabular mt-1 font-display text-h3 text-ink">{{ adminApi.orders().length }}</dd>
         </div>
         <div>
           <dt class="text-xs text-ink-muted">Pendientes</dt>
           <dd
             class="tabular mt-1 font-display text-h3"
-            [class]="store.pendingCount() > 0 ? 'text-clay-deep' : 'text-ink'"
+            [class]="adminApi.pendingCount() > 0 ? 'text-clay-deep' : 'text-ink'"
           >
-            {{ store.pendingCount() }}
+            {{ adminApi.pendingCount() }}
           </dd>
         </div>
       </dl>
@@ -97,19 +97,21 @@
   }
 </div>
 
-<!-- Reinicio de la demo -->
+<!-- Estado de los datos -->
 <div class="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-dashed border-stone/60 p-5">
   <div>
-    <p class="text-sm font-medium text-ink">Datos de demostración</p>
+    <p class="text-sm font-medium text-ink">Datos en vivo desde el servidor</p>
     <p class="mt-1 text-sm text-ink-soft">
-      Los cambios se guardan en este navegador. Reinicia para volver al estado de fábrica.
+      Inventario y pedidos vienen de la base de datos real. Si otra persona
+      hizo cambios, recarga para verlos aquí.
     </p>
   </div>
   <button
     type="button"
-    class="rounded-full border border-sand px-5 py-2.5 text-sm text-ink-soft transition-colors duration-200 hover:border-berry hover:text-berry"
-    (click)="reset()"
+    class="rounded-full border border-sand px-5 py-2.5 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+    [disabled]="adminApi.productsLoading() || adminApi.ordersLoading()"
+    (click)="refresh()"
   >
-    Reiniciar datos
+    {{ adminApi.productsLoading() || adminApi.ordersLoading() ? 'Actualizando…' : 'Recargar datos' }}
   </button>
 </div>

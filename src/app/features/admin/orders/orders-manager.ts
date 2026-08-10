@@ -1,14 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { AdminStoreService } from '../../../core/services/admin-store.service';
-import { AuthService } from '../../../core/services/auth.service';
-import {
-  ORDER_STATUS_LABELS,
-  Order,
-  OrderStatus,
-  StockShortfall,
-  orderTotal,
-  orderUnits,
-} from '../../../core/models/order.model';
+import { AdminApiService } from '../../../core/services/admin-api.service';
+import { ApiErrorBody, ApiOrder, Shortfall } from '../../../core/api/api-client';
+import { ORDER_STATUS_LABELS, OrderStatus } from '../../../core/models/order.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
 const STATUS_STYLES: Readonly<Record<OrderStatus, string>> = {
@@ -33,8 +26,7 @@ const FILTERS: ReadonlyArray<{ value: OrderStatus | 'todos'; label: string }> = 
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrdersManager {
-  protected readonly store = inject(AdminStoreService);
-  private readonly auth = inject(AuthService);
+  protected readonly adminApi = inject(AdminApiService);
 
   protected readonly filters = FILTERS;
   protected readonly statusLabels = ORDER_STATUS_LABELS;
@@ -42,18 +34,20 @@ export class OrdersManager {
 
   protected readonly activeFilter = signal<OrderStatus | 'todos'>('todos');
   protected readonly expandedId = signal<string | null>(null);
+  protected readonly workingId = signal<string | null>(null);
 
   /** Faltantes del último intento fallido, por id de pedido. */
-  protected readonly blocked = signal<{ orderId: string; shortfalls: readonly StockShortfall[] } | null>(null);
+  protected readonly blocked = signal<{ orderId: string; shortfalls: readonly Shortfall[] } | null>(null);
   protected readonly feedback = signal<string | null>(null);
 
-  protected readonly visible = computed<readonly Order[]>(() => {
+  constructor() {
+    this.adminApi.loadOrders();
+  }
+
+  protected readonly visible = computed<readonly ApiOrder[]>(() => {
     const filter = this.activeFilter();
-    // Solo la jornada en curso: lo archivado por un cierre de caja sale de aquí
-    // y se consulta desde Reportes.
-    const active = this.store.activeOrders();
-    const orders =
-      filter === 'todos' ? active : active.filter((order) => order.status === filter);
+    const orders = this.adminApi.orders();
+    const filtered = filter === 'todos' ? orders : orders.filter((order) => order.estado === filter);
 
     // Lo que espera decisión primero, y dentro de cada grupo lo más reciente arriba.
     const weight: Record<OrderStatus, number> = {
@@ -62,37 +56,35 @@ export class OrdersManager {
       aprobado: 2,
       enviado: 3,
     };
-    return orders
+    return filtered
       .slice()
       .sort(
         (a, b) =>
-          weight[a.status] - weight[b.status] ||
-          new Date(b.placedAt).getTime() - new Date(a.placedAt).getTime(),
+          weight[a.estado] - weight[b.estado] ||
+          new Date(b.creadoEn).getTime() - new Date(a.creadoEn).getTime(),
       );
   });
 
   protected readonly countsByStatus = computed<Record<string, number>>(() => {
-    const active = this.store.activeOrders();
-    const totals: Record<string, number> = { todos: active.length };
-    for (const order of active) {
-      totals[order.status] = (totals[order.status] ?? 0) + 1;
+    const orders = this.adminApi.orders();
+    const totals: Record<string, number> = { todos: orders.length };
+    for (const order of orders) {
+      totals[order.estado] = (totals[order.estado] ?? 0) + 1;
     }
     return totals;
   });
 
-  protected readonly archivedCount = computed(() => this.store.archivedOrders().length);
-
-  protected total(order: Order): number {
-    return orderTotal(order);
+  protected total(order: ApiOrder): number {
+    return order.items.reduce((sum, item) => sum + item.precioUnitario * item.cantidad, 0);
   }
 
-  protected units(order: Order): number {
-    return orderUnits(order);
+  protected units(order: ApiOrder): number {
+    return order.items.reduce((sum, item) => sum + item.cantidad, 0);
   }
 
   /** Stock actual de un producto, para pintarlo junto a la cantidad pedida. */
   protected availableFor(productId: string): number {
-    return this.store.productById(productId)?.stock ?? 0;
+    return this.adminApi.products().find((p) => p.id === productId)?.stock ?? 0;
   }
 
   protected toggle(orderId: string): void {
@@ -100,42 +92,51 @@ export class OrdersManager {
   }
 
   /**
-   * Acción crítica. El servicio valida todo el pedido antes de descontar; aquí
-   * solo se traduce el resultado a algo que el gestor pueda entender y accionar.
+   * Acción crítica. El Worker valida todo el pedido dentro de una transacción
+   * antes de descontar; aquí solo se traduce el resultado a algo accionable.
    */
-  protected approve(order: Order): void {
+  protected approve(order: ApiOrder): void {
     this.blocked.set(null);
     this.feedback.set(null);
+    this.workingId.set(order.id);
 
-    const approver = this.auth.user()?.name ?? 'Desconocido';
-    const result = this.store.approveOrder(order.id, approver);
+    this.adminApi.approveOrder(order.id).subscribe({
+      next: () => {
+        this.workingId.set(null);
+        this.feedback.set(`${order.referencia} aprobado. Inventario descontado.`);
+      },
+      error: (error: ApiErrorBody) => {
+        this.workingId.set(null);
 
-    if (result.ok) {
-      this.feedback.set(`${order.reference} aprobado. Inventario descontado.`);
-      return;
-    }
+        if (error.code === 'stock-insuficiente') {
+          const shortfalls = (error.details as { shortfalls?: Shortfall[] } | undefined)?.shortfalls ?? [];
+          this.blocked.set({ orderId: order.id, shortfalls });
+          this.expandedId.set(order.id);
+          return;
+        }
 
-    if (result.reason === 'insufficient-stock') {
-      this.blocked.set({ orderId: order.id, shortfalls: result.shortfalls });
-      this.expandedId.set(order.id);
-      return;
-    }
-
-    this.feedback.set(
-      result.reason === 'already-approved'
-        ? `${order.reference} ya había sido aprobado.`
-        : 'No se encontró el pedido.',
-    );
+        this.feedback.set(error.message);
+      },
+    });
   }
 
-  protected ship(order: Order): void {
+  protected ship(order: ApiOrder): void {
     this.blocked.set(null);
-    if (this.store.markShipped(order.id)) {
-      this.feedback.set(`${order.reference} marcado como enviado.`);
-    }
+    this.workingId.set(order.id);
+
+    this.adminApi.shipOrder(order.id).subscribe({
+      next: () => {
+        this.workingId.set(null);
+        this.feedback.set(`${order.referencia} marcado como enviado.`);
+      },
+      error: (error: ApiErrorBody) => {
+        this.workingId.set(null);
+        this.feedback.set(error.message);
+      },
+    });
   }
 
-  protected shortfallsFor(orderId: string): readonly StockShortfall[] | null {
+  protected shortfallsFor(orderId: string): readonly Shortfall[] | null {
     const current = this.blocked();
     return current?.orderId === orderId ? current.shortfalls : null;
   }
