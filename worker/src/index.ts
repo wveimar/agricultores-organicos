@@ -123,6 +123,14 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     if (pathname === '/api/admin/reports/closings' && method === 'GET') {
       return reports.closings(env, user);
     }
+
+    // Detalle de un cierre pasado: qué pedidos lo componen.
+    const closingOrdersMatch = pathname.match(
+      /^\/api\/admin\/reports\/closings\/([\w-]+)\/pedidos$/,
+    );
+    if (closingOrdersMatch && method === 'GET') {
+      return reports.closingOrders(env, user, closingOrdersMatch[1]);
+    }
   }
 
   throw ApiError.notFound(`No existe ${method} ${pathname}.`);

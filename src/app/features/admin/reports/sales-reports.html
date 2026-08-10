@@ -424,32 +424,111 @@
   } @else {
     <ul class="mt-4 flex flex-col gap-3">
       @for (closing of adminApi.closings(); track closing.id) {
-        <li class="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-sand bg-bone p-5">
-          <div class="min-w-0">
-            <p class="tabular text-sm font-semibold text-ink">{{ closing.referencia }}</p>
-            <p class="mt-0.5 text-xs text-ink-muted">
-              {{ formatDate(closing.cerradoEn) }} · {{ closing.cerradoPor }}
-            </p>
-          </div>
+        @let isOpen = expandedClosing() === closing.id;
+        @let orders = detailFor(closing.id);
 
-          <div class="flex items-center gap-6">
-            <div class="text-right">
-              <p class="tabular text-xs text-ink-muted">
-                {{ closing.pedidos }} {{ closing.pedidos === 1 ? 'pedido' : 'pedidos' }} ·
-                {{ closing.unidades }} uds
+        <li class="overflow-hidden rounded-lg border border-sand bg-bone">
+          <div class="flex flex-wrap items-center justify-between gap-4 p-5">
+            <div class="min-w-0">
+              <p class="tabular text-sm font-semibold text-ink">{{ closing.referencia }}</p>
+              <p class="mt-0.5 text-xs text-ink-muted">
+                {{ formatDate(closing.cerradoEn) }} · {{ closing.cerradoPor }}
               </p>
-              <p class="tabular text-base font-medium text-ink">{{ closing.totalRecaudado | cop }}</p>
-              <p class="tabular text-xs text-moss-deep">+{{ closing.ganancia | cop }} ganancia</p>
             </div>
 
-            <button
-              type="button"
-              class="shrink-0 rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
-              (click)="download(closing)"
-            >
-              Descargar
-            </button>
+            <div class="flex items-center gap-6">
+              <div class="text-right">
+                <p class="tabular text-xs text-ink-muted">
+                  {{ closing.pedidos }} {{ closing.pedidos === 1 ? 'pedido' : 'pedidos' }} ·
+                  {{ closing.unidades }} uds
+                </p>
+                <p class="tabular text-base font-medium text-ink">{{ closing.totalRecaudado | cop }}</p>
+                <p class="tabular text-xs text-moss-deep">+{{ closing.ganancia | cop }} ganancia</p>
+              </div>
+
+              <div class="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+                  [attr.aria-expanded]="isOpen"
+                  (click)="toggleClosing(closing)"
+                >
+                  {{ isOpen ? 'Ocultar' : 'Ver pedidos' }}
+                </button>
+                <button
+                  type="button"
+                  class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:opacity-60"
+                  [disabled]="detailLoading() === closing.id"
+                  (click)="download(closing)"
+                >
+                  {{ detailLoading() === closing.id ? 'Preparando…' : 'Descargar' }}
+                </button>
+              </div>
+            </div>
           </div>
+
+          <!-- Detalle auditable: los pedidos que componen este cierre. -->
+          @if (isOpen) {
+            <div class="border-t border-sand bg-linen/50 px-5 py-4">
+              @if (detailLoading() === closing.id) {
+                <p class="text-sm text-ink-soft">Cargando pedidos…</p>
+              } @else if (detailError(); as message) {
+                <p class="text-sm text-berry" role="alert">{{ message }}</p>
+              } @else {
+                <table class="w-full text-left text-sm">
+                  <caption class="sr-only">Pedidos incluidos en el cierre {{ closing.referencia }}</caption>
+                  <thead>
+                    <tr class="text-ink-muted">
+                      <th scope="col" class="pb-2 font-medium">Pedido</th>
+                      <th scope="col" class="pb-2 font-medium">Cliente</th>
+                      <th scope="col" class="pb-2 text-right font-medium">Uds</th>
+                      <th scope="col" class="pb-2 text-right font-medium">Envío</th>
+                      <th scope="col" class="pb-2 text-right font-medium">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-sand">
+                    @for (order of orders; track order.id) {
+                      <tr>
+                        <td class="tabular py-2.5 font-medium text-ink">{{ order.referencia }}</td>
+                        <td class="truncate py-2.5 text-ink-soft">{{ order.clienteNombre }}</td>
+                        <td class="tabular py-2.5 text-right text-ink-soft">{{ order.unidades }}</td>
+                        <td class="tabular py-2.5 text-right text-ink-soft">
+                          {{ order.envio === 0 ? '—' : (order.envio | cop) }}
+                        </td>
+                        <td class="tabular py-2.5 text-right text-ink">{{ orderTotal(order) | cop }}</td>
+                      </tr>
+                    } @empty {
+                      <tr>
+                        <td colspan="5" class="py-4 text-center text-ink-muted">
+                          Este cierre no tiene pedidos asociados.
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                  @if (orders.length) {
+                    <tfoot>
+                      <tr class="border-t-2 border-sand">
+                        <td colspan="4" class="pt-2.5 text-right text-xs text-ink-muted">
+                          Suma de los pedidos listados
+                        </td>
+                        <td class="tabular pt-2.5 text-right font-semibold text-ink">
+                          {{ detailTotal(closing.id) | cop }}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  }
+                </table>
+
+                <!-- Si la suma no cuadra con el total congelado, hay que mirarlo. -->
+                @if (orders.length && detailTotal(closing.id) !== closing.totalRecaudado) {
+                  <p class="mt-3 rounded-md border border-berry/30 bg-berry/5 px-3 py-2 text-xs text-berry" role="alert">
+                    La suma de los pedidos no coincide con el total del cierre
+                    ({{ closing.totalRecaudado | cop }}). Revisa este cierre.
+                  </p>
+                }
+              }
+            </div>
+          }
         </li>
       }
     </ul>

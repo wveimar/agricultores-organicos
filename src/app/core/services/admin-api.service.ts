@@ -4,6 +4,7 @@ import {
   ApiCashSummary,
   ApiClient,
   ApiClosing,
+  ApiClosingOrder,
   ApiErrorBody,
   ApiOrder,
   ApiOrderStatusLogEntry,
@@ -157,6 +158,11 @@ export class AdminApiService {
 
   loadClosings(): void {
     this.api.closings().subscribe({ next: (list) => this.closings.set(list) });
+  }
+
+  /** Detalle de un cierre: los pedidos que lo componen. */
+  closingOrders(id: string): Observable<readonly ApiClosingOrder[]> {
+    return this.api.closingOrders(id);
   }
 
   readonly canClose = computed(() => (this.cashSummary()?.pedidos ?? 0) > 0);

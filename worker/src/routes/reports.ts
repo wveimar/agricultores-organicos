@@ -230,6 +230,59 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
   return json({ closing, pedidosArchivados: results[1].meta.changes }, 201);
 }
 
+/**
+ * GET /api/admin/reports/closings/:id/pedidos — qué pedidos componen un cierre.
+ *
+ * No hace falta ninguna tabla puente ni un array JSON con las referencias: la
+ * relación ya está modelada en `orders.closing_id`, que es una FK a esta misma
+ * tabla y tiene su propio índice (`idx_orders_closing`). Materializar la lista
+ * en otro sitio sería guardar dos veces el mismo hecho, con el riesgo de que
+ * las dos copias acaben diciendo cosas distintas.
+ *
+ * Se devuelve también el importe y las unidades de cada pedido, que es lo que
+ * convierte el listado en algo auditable: se puede sumar a mano y comprobar
+ * que cuadra con los totales congelados en el cierre.
+ */
+export async function closingOrders(
+  env: Env,
+  user: JwtPayload,
+  closingId: string,
+): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS', 'ADMIN_INVENTARIO');
+
+  const closing = await env.DB.prepare(
+    `SELECT id FROM cash_closings WHERE id = ?1`,
+  )
+    .bind(closingId)
+    .first<{ id: string }>();
+
+  if (!closing) {
+    throw ApiError.notFound('Ese cierre no existe.');
+  }
+
+  const { results } = await env.DB.prepare(
+    `SELECT o.id,
+            o.referencia,
+            o.cliente_nombre AS clienteNombre,
+            o.estado,
+            o.envio,
+            o.creado_en      AS creadoEn,
+            o.aprobado_en    AS aprobadoEn,
+            COALESCE(SUM(i.cantidad), 0)                     AS unidades,
+            COALESCE(SUM(i.precio_unitario * i.cantidad), 0) AS ventaProducto,
+            COALESCE(SUM(i.costo_unitario  * i.cantidad), 0) AS costoProducto
+       FROM orders o
+       LEFT JOIN order_items i ON i.order_id = o.id
+      WHERE o.closing_id = ?1
+      GROUP BY o.id
+      ORDER BY o.creado_en ASC`,
+  )
+    .bind(closingId)
+    .all();
+
+  return json({ orders: results });
+}
+
 /** GET /api/admin/reports/closings — historial de cierres. */
 export async function closings(env: Env, user: JwtPayload): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS', 'ADMIN_INVENTARIO');

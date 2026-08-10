@@ -1,6 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { AdminApiService } from '../../../core/services/admin-api.service';
-import { ApiClosing, ApiErrorBody, ApiSalesRow } from '../../../core/api/api-client';
+import {
+  ApiClosing,
+  ApiClosingOrder,
+  ApiErrorBody,
+  ApiSalesRow,
+} from '../../../core/api/api-client';
 import { ADMIN_GROUP_LABELS, AdminGroup } from '../../../core/models/product.model';
 import { AbcClass, PAYMENT_METHOD_LABELS } from '../../../core/models/report.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
@@ -47,6 +52,17 @@ export class SalesReports {
   protected readonly confirming = signal(false);
   protected readonly closing = signal(false);
   protected readonly closeError = signal<string | null>(null);
+
+  /**
+   * Detalle de cada cierre, cargado al expandirlo.
+   *
+   * No se traen los pedidos de todos los cierres al abrir la pantalla: el
+   * histórico llega a 50 registros y casi siempre solo interesa auditar uno.
+   */
+  protected readonly expandedClosing = signal<string | null>(null);
+  private readonly closingDetail = signal<ReadonlyMap<string, readonly ApiClosingOrder[]>>(new Map());
+  protected readonly detailLoading = signal<string | null>(null);
+  protected readonly detailError = signal<string | null>(null);
 
   constructor() {
     this.adminApi.loadSalesReport();
@@ -119,7 +135,74 @@ export class SalesReports {
     });
   }
 
+  protected toggleClosing(closing: ApiClosing): void {
+    const opening = this.expandedClosing() !== closing.id;
+    this.expandedClosing.set(opening ? closing.id : null);
+    this.detailError.set(null);
+
+    if (opening && !this.closingDetail().has(closing.id)) {
+      this.loadClosingDetail(closing.id);
+    }
+  }
+
+  protected detailFor(closingId: string): readonly ApiClosingOrder[] {
+    return this.closingDetail().get(closingId) ?? [];
+  }
+
+  private loadClosingDetail(closingId: string): void {
+    this.detailLoading.set(closingId);
+
+    this.adminApi.closingOrders(closingId).subscribe({
+      next: (orders) => {
+        this.detailLoading.set(null);
+        this.closingDetail.update((map) => new Map(map).set(closingId, orders));
+      },
+      error: (error: ApiErrorBody) => {
+        this.detailLoading.set(null);
+        this.detailError.set(error.message);
+      },
+    });
+  }
+
+  /** Total cobrado de un pedido dentro del cierre: producto + su envío. */
+  protected orderTotal(order: ApiClosingOrder): number {
+    return order.ventaProducto + order.envio;
+  }
+
+  /**
+   * Suma de las líneas mostradas. Sirve para auditar a ojo: si no coincide con
+   * el total congelado en el cierre, algo no cuadra y hay que mirarlo.
+   */
+  protected detailTotal(closingId: string): number {
+    return this.detailFor(closingId).reduce((sum, order) => sum + this.orderTotal(order), 0);
+  }
+
+  /**
+   * El recibo incluye el detalle pedido a pedido, así que hay que tenerlo
+   * cargado antes de generarlo. Si el cierre no se ha expandido todavía, se
+   * pide primero y se descarga al llegar.
+   */
   protected download(closing: ApiClosing): void {
+    if (this.closingDetail().has(closing.id)) {
+      this.saveReceipt(closing);
+      return;
+    }
+
+    this.detailLoading.set(closing.id);
+    this.adminApi.closingOrders(closing.id).subscribe({
+      next: (orders) => {
+        this.detailLoading.set(null);
+        this.closingDetail.update((map) => new Map(map).set(closing.id, orders));
+        this.saveReceipt(closing);
+      },
+      error: (error: ApiErrorBody) => {
+        this.detailLoading.set(null);
+        this.detailError.set(error.message);
+      },
+    });
+  }
+
+  private saveReceipt(closing: ApiClosing): void {
     const blob = new Blob([this.buildReceipt(closing)], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -130,18 +213,32 @@ export class SalesReports {
   }
 
   /**
-   * El cierre no guarda la lista de referencias de pedido (el esquema solo
-   * enlaza cada pedido a su cierre por `closing_id`, no al revés), así que el
-   * recibo muestra el conteo pero no el detalle línea por línea.
+   * Los pedidos del cierre salen de `orders.closing_id`, la FK que puso el
+   * propio cierre al archivarlos. Listarlos aquí es lo que hace el documento
+   * auditable: se puede sumar la columna y comprobar que da el total.
    */
   private buildReceipt(closing: ApiClosing): string {
     const when = new Date(closing.cerradoEn).toLocaleString('es-CO');
+    const orders = this.detailFor(closing.id);
+
+    const detail = orders.length
+      ? [
+          '',
+          '--- PEDIDOS INCLUIDOS ---',
+          ...orders.map(
+            (order) =>
+              `${order.referencia}  ${order.unidades.toString().padStart(3)} uds  ` +
+              `${money(this.orderTotal(order)).padStart(12)}  ${order.clienteNombre}`,
+          ),
+        ]
+      : [];
 
     return [
       'AGRICULTORES ORGÁNICOS',
       `Cierre de jornada ${closing.referencia}`,
       `Fecha: ${when}`,
       `Responsable: ${closing.cerradoPor}`,
+      ...detail,
       '',
       '--- RESUMEN ---',
       `Pedidos cerrados:   ${closing.pedidos}`,

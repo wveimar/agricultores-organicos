@@ -158,6 +158,20 @@ export interface ApiCashSummary {
   readonly porMetodo: readonly { metodo: string; pedidos: number; total: number }[];
 }
 
+/** Una línea del detalle de un cierre: el pedido tal y como entró en la caja. */
+export interface ApiClosingOrder {
+  readonly id: string;
+  readonly referencia: string;
+  readonly clienteNombre: string;
+  readonly estado: 'verificacion' | 'pendiente' | 'aprobado' | 'enviado';
+  readonly envio: number;
+  readonly creadoEn: string;
+  readonly aprobadoEn: string | null;
+  readonly unidades: number;
+  readonly ventaProducto: number;
+  readonly costoProducto: number;
+}
+
 export interface ApiClosing {
   readonly id: string;
   readonly referencia: string;
@@ -311,6 +325,19 @@ export class ApiClient {
     return this.http
       .get<{ closings: ApiClosing[] }>('/api/admin/reports/closings')
       .pipe(map((res) => res.closings), catchError(handleError));
+  }
+
+  /**
+   * Pedidos que componen un cierre pasado.
+   *
+   * Sale de `orders.closing_id`, la FK que el propio cierre puso al archivar.
+   * No hay copia de la lista en ningún otro sitio: la relación se consulta,
+   * no se duplica.
+   */
+  closingOrders(id: string): Observable<readonly ApiClosingOrder[]> {
+    return this.http
+      .get<{ orders: ApiClosingOrder[] }>(`/api/admin/reports/closings/${id}/pedidos`)
+      .pipe(map((res) => res.orders), catchError(handleError));
   }
 }
 
