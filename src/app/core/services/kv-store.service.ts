@@ -116,4 +116,5 @@ export const KV_KEYS = {
   session: 'session',
   lastOrder: 'last-order',
   cart: 'cart',
+  closings: 'closings',
 } as const;

@@ -27,6 +27,7 @@ export class AdminLayout {
   private readonly allItems: readonly NavItem[] = [
     { path: '/admin/inventario', label: 'Inventario', roles: ['ADMIN_INVENTARIO'], badge: this.store.alertCount },
     { path: '/admin/pedidos', label: 'Pedidos', roles: ['GESTOR_PEDIDOS'], badge: this.store.pendingCount },
+    { path: '/admin/reportes', label: 'Reportes', roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'] },
   ];
 
   /** El menú solo muestra lo que el rol puede abrir de verdad. */

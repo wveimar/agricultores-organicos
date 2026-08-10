@@ -83,6 +83,21 @@ export class AdminStoreService {
 
   readonly pendingCount = computed(() => this.pendingOrders().length);
 
+  /** Pedidos de la jornada en curso: los que aún no entraron en un cierre. */
+  readonly activeOrders = computed(() => this.orderList().filter((order) => !order.closingId));
+
+  readonly archivedOrders = computed(() => this.orderList().filter((order) => order.closingId));
+
+  /**
+   * Ventas confirmadas pendientes de cerrar. Es la base del cierre de caja:
+   * solo cuenta lo que alguien verificó contra el banco, nunca lo pendiente.
+   */
+  readonly closableOrders = computed(() =>
+    this.activeOrders().filter(
+      (order) => order.status === 'aprobado' || order.status === 'enviado',
+    ),
+  );
+
   /** Unidades totales en bodega: cabecera del dashboard. */
   readonly totalUnits = computed(() =>
     this.inventory().reduce((total, product) => total + product.stock, 0),
@@ -217,6 +232,28 @@ export class AdminStoreService {
     this.orderList.update((orders) => [order, ...orders]);
 
     return { ok: true, order };
+  }
+
+  /**
+   * Marca un lote de pedidos como archivados por un cierre. No cambia su
+   * estado: un pedido archivado sigue siendo 'aprobado' o 'enviado', solo deja
+   * de contar para la jornada siguiente.
+   */
+  archiveOrders(orderIds: readonly string[], closingId: string): number {
+    const ids = new Set(orderIds);
+    let archived = 0;
+
+    this.orderList.update((orders) =>
+      orders.map((order) => {
+        if (!ids.has(order.id) || order.closingId) {
+          return order;
+        }
+        archived++;
+        return { ...order, closingId };
+      }),
+    );
+
+    return archived;
   }
 
   /** Siguiente número de referencia, continuando la serie existente. */

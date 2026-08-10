@@ -34,6 +34,13 @@ export const ADMIN_ROUTES: Routes = [
         loadComponent: () => import('./orders/orders-manager').then((m) => m.OrdersManager),
       },
       {
+        path: 'reportes',
+        // Ventas interesan tanto a compras como a quien gestiona pedidos.
+        canActivate: [roleGuard('GESTOR_PEDIDOS', 'ADMIN_INVENTARIO')],
+        title: 'Reportes · Panel',
+        loadComponent: () => import('./reports/sales-reports').then((m) => m.SalesReports),
+      },
+      {
         path: 'sin-acceso',
         title: 'Sin acceso · Panel',
         loadComponent: () => import('./forbidden/forbidden').then((m) => m.Forbidden),

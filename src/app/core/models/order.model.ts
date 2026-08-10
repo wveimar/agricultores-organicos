@@ -63,6 +63,13 @@ export interface Order {
    */
   readonly stockReserved?: boolean;
   readonly paymentProof?: PaymentProof;
+
+  /**
+   * Cierre de caja que archivó este pedido. Tenerlo apuntando al cierre (en
+   * vez de un booleano `archivado`) permite auditar después qué pedidos
+   * entraron en qué jornada.
+   */
+  readonly closingId?: string;
   /** Desglose calculado en el checkout, para no recalcularlo al mostrarlo. */
   readonly totals?: OrderTotals;
 }

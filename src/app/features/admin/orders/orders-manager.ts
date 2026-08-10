@@ -49,10 +49,11 @@ export class OrdersManager {
 
   protected readonly visible = computed<readonly Order[]>(() => {
     const filter = this.activeFilter();
+    // Solo la jornada en curso: lo archivado por un cierre de caja sale de aquí
+    // y se consulta desde Reportes.
+    const active = this.store.activeOrders();
     const orders =
-      filter === 'todos'
-        ? this.store.orders()
-        : this.store.orders().filter((order) => order.status === filter);
+      filter === 'todos' ? active : active.filter((order) => order.status === filter);
 
     // Lo que espera decisión primero, y dentro de cada grupo lo más reciente arriba.
     const weight: Record<OrderStatus, number> = {
@@ -71,12 +72,15 @@ export class OrdersManager {
   });
 
   protected readonly countsByStatus = computed<Record<string, number>>(() => {
-    const totals: Record<string, number> = { todos: this.store.orders().length };
-    for (const order of this.store.orders()) {
+    const active = this.store.activeOrders();
+    const totals: Record<string, number> = { todos: active.length };
+    for (const order of active) {
       totals[order.status] = (totals[order.status] ?? 0) + 1;
     }
     return totals;
   });
+
+  protected readonly archivedCount = computed(() => this.store.archivedOrders().length);
 
   protected total(order: Order): number {
     return orderTotal(order);

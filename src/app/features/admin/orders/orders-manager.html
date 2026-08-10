@@ -2,6 +2,11 @@
   <h1 class="text-h2 text-ink">Pedidos</h1>
   <p class="text-sm text-ink-soft">
     Aprobar un pedido descuenta las unidades del inventario en el acto.
+    @if (archivedCount() > 0) {
+      <span class="text-ink-muted">
+        · {{ archivedCount() }} archivados en cierres anteriores (ver Reportes).
+      </span>
+    }
   </p>
 </header>
 
