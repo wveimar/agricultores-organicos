@@ -71,6 +71,9 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     if (pathname === '/api/admin/products' && method === 'GET') {
       return products.listAdmin(env, user);
     }
+    if (pathname === '/api/admin/products' && method === 'POST') {
+      return products.create(request, env, user);
+    }
     if (pathname === '/api/admin/products/alerts' && method === 'GET') {
       return products.listAlerts(env, user);
     }

@@ -135,6 +135,109 @@ export async function update(
   return json({ product: updated });
 }
 
+interface CreateBody {
+  nombre?: unknown;
+  slug?: unknown;
+  tagline?: unknown;
+  categoriaId?: unknown;
+  grupoAdmin?: unknown;
+  precio?: unknown;
+  precioCosto?: unknown;
+  unidad?: unknown;
+  origen?: unknown;
+  imagen?: unknown;
+  imagenHover?: unknown;
+  imagenAlt?: unknown;
+}
+
+/**
+ * POST /api/admin/products — crear un nuevo producto.
+ *
+ * Slug se genera a partir del nombre si no viene en el cuerpo.
+ * Las imágenes son data URLs (base64 comprimidas).
+ */
+export async function create(
+  request: Request,
+  env: Env,
+  user: JwtPayload,
+): Promise<Response> {
+  requireRole(user, 'ADMIN_INVENTARIO');
+
+  const body = await readJson<CreateBody>(request);
+
+  const nombre = body.nombre as string | undefined;
+  let slug = body.slug as string | undefined;
+  const tagline = (body.tagline as string) ?? '';
+  const categoriaId = body.categoriaId as string | undefined;
+  const grupoAdmin = body.grupoAdmin as string | undefined;
+  const precio = body.precio !== undefined ? requireInt(body.precio, 'precio', 0) : undefined;
+  const precioCosto = body.precioCosto !== undefined ? requireInt(body.precioCosto, 'precioCosto', 0) : 0;
+  const unidad = body.unidad as string | undefined;
+  const origen = body.origen as string | undefined;
+  const imagen = body.imagen as string | undefined;
+  const imagenHover = body.imagenHover as string | undefined;
+  const imagenAlt = body.imagenAlt as string | undefined;
+
+  if (!nombre || nombre.trim().length === 0) {
+    throw ApiError.badRequest('nombre-requerido', 'El nombre es requerido.');
+  }
+  if (!categoriaId || categoriaId.trim().length === 0) {
+    throw ApiError.badRequest('categoria-requerida', 'La categoría es requerida.');
+  }
+  if (!grupoAdmin || !['frutas', 'verduras', 'agroindustriales'].includes(grupoAdmin)) {
+    throw ApiError.badRequest('grupo-invalido', 'El grupo debe ser frutas, verduras o agroindustriales.');
+  }
+  if (precio === undefined) {
+    throw ApiError.badRequest('precio-requerido', 'El precio es requerido.');
+  }
+  if (!unidad || unidad.trim().length === 0) {
+    throw ApiError.badRequest('unidad-requerida', 'La unidad es requerida.');
+  }
+  if (!origen || origen.trim().length === 0) {
+    throw ApiError.badRequest('origen-requerido', 'El origen es requerido.');
+  }
+  if (!imagen || imagen.trim().length === 0) {
+    throw ApiError.badRequest('imagen-requerida', 'La imagen es requerida.');
+  }
+  if (!imagenAlt || imagenAlt.trim().length === 0) {
+    throw ApiError.badRequest('imagen-alt-requerida', 'El texto alternativo de la imagen es requerido.');
+  }
+
+  if (!slug) {
+    slug = nombre
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+  }
+
+  const id = crypto.randomUUID();
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO products (
+        id, slug, nombre, tagline, categoria_id, grupo_admin,
+        precio, precio_costo, unidad, origen,
+        imagen, imagen_hover, imagen_alt
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
+    )
+      .bind(id, slug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, origen, imagen, imagenHover ?? null, imagenAlt)
+      .run();
+  } catch (error) {
+    if ((error as Error).message.includes('UNIQUE constraint failed: products.slug')) {
+      throw ApiError.badRequest('slug-duplicado', 'Ya existe un producto con ese slug.');
+    }
+    throw error;
+  }
+
+  const product = await env.DB.prepare(`SELECT ${ADMIN_COLUMNS} FROM products WHERE id = ?1`)
+    .bind(id)
+    .first();
+
+  return json({ product }, { status: 201 });
+}
+
 /**
  * POST /api/admin/products/recalcular-abc
  *

@@ -65,6 +65,27 @@ export class AdminApiService {
     });
   }
 
+  createProduct(input: {
+    nombre: string;
+    slug?: string;
+    tagline?: string;
+    categoriaId: string;
+    grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
+    precio: number;
+    precioCosto?: number;
+    unidad: string;
+    origen: string;
+    imagen: string;
+    imagenHover?: string;
+    imagenAlt: string;
+  }): Observable<ApiProduct> {
+    return this.api.createProduct(input).pipe(
+      tap((created) => {
+        this.products.update((list) => [...list, created]);
+      }),
+    );
+  }
+
   updateProduct(
     id: string,
     patch: Partial<{ precio: number; precioCosto: number; stock: number; stockSeguridad: number }>,

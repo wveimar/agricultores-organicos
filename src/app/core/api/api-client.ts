@@ -227,6 +227,25 @@ export class ApiClient {
       .pipe(map((res) => res.products), catchError(handleError));
   }
 
+  createProduct(input: {
+    nombre: string;
+    slug?: string;
+    tagline?: string;
+    categoriaId: string;
+    grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
+    precio: number;
+    precioCosto?: number;
+    unidad: string;
+    origen: string;
+    imagen: string;
+    imagenHover?: string;
+    imagenAlt: string;
+  }): Observable<ApiProduct> {
+    return this.http
+      .post<{ product: ApiProduct }>('/api/admin/products', input)
+      .pipe(map((res) => res.product), catchError(handleError));
+  }
+
   updateProduct(
     id: string,
     patch: Partial<{ precio: number; precioCosto: number; stock: number; stockSeguridad: number }>,
