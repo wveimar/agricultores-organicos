@@ -27,7 +27,9 @@ const { ADMIN_GROUP_OF } = await load('src/app/core/models/product.model.ts');
 const { ORDERS } = await load('src/app/core/data/mock-orders.ts');
 
 // ─────────────────── PBKDF2, idéntico al del Worker ───────────────────
-const PBKDF2_ITERATIONS = 210_000;
+// 100.000: tope duro del runtime real de Cloudflare Workers, no una elección
+// de estilo. Ver el comentario largo en worker/src/auth/crypto.ts.
+const PBKDF2_ITERATIONS = 100_000;
 
 function toBase64Url(bytes) {
   return Buffer.from(bytes).toString('base64url');

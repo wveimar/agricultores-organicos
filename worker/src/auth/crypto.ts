@@ -137,10 +137,18 @@ export async function verifyJwt(token: string, secret: string): Promise<JwtPaylo
 
 /**
  * PBKDF2-SHA256. Es lo que ofrece WebCrypto en Workers; bcrypt o argon2
- * necesitarían WASM. 210.000 iteraciones sigue la recomendación de OWASP
- * (2023) para PBKDF2-HMAC-SHA256.
+ * necesitarían WASM.
+ *
+ * 100.000 iteraciones, no las 210.000 que recomienda OWASP (2023) para
+ * PBKDF2-HMAC-SHA256: es el **tope duro** que impone el runtime real de
+ * Cloudflare Workers (`workerd`). Miniflare, la simulación que usa `wrangler
+ * dev --local`, no aplica ese límite — por eso el login funcionaba en local y
+ * fallaba con `NotSupportedError: Pbkdf2 failed: iteration counts above
+ * 100000 are not supported` en cuanto se probó contra el edge real
+ * (`wrangler dev --remote` o un despliegue de verdad). Solo se detecta
+ * probando contra Cloudflare de verdad, no contra la simulación.
  */
-const PBKDF2_ITERATIONS = 210_000;
+const PBKDF2_ITERATIONS = 100_000;
 const KEY_LENGTH_BITS = 256;
 
 async function derive(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {

@@ -15,11 +15,11 @@ DELETE FROM users;
 DELETE FROM products;
 
 -- ─────────────────────────── Usuarios ───────────────────────────
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-01', 'inventario@agricultores.co', 'Sara Villamil', 'pbkdf2$210000$rCeTjIBO3TSOyi5mFdB3EQ$_H_xo6QN1RLrTMn65rfo8CW5W2mtKSCjZ8w2veLkvZM');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-01', 'inventario@agricultores.co', 'Sara Villamil', 'pbkdf2$100000$vV3nlppeVvxz5kTgKSVy8Q$2V22t4VZU3D_s2O8-P6X6HBJP5rrkLR5yW4n9_fe4_g');
 INSERT INTO user_roles (user_id, role) VALUES ('u-01', 'ADMIN_INVENTARIO');
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-02', 'pedidos@agricultores.co', 'Diana Cardona', 'pbkdf2$210000$584D3mA-nsmmPeIlTXeUjw$zyjcetkXnrTHZLV8B5es2L9bJKaUaOzHyMQ7j1uGwKg');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-02', 'pedidos@agricultores.co', 'Diana Cardona', 'pbkdf2$100000$rU77AVFm3x8x1m12KSIlOA$T1VWUHGf1mgM_mpiTLCPUd2hHjlCBi9UfQeVLaVS6aE');
 INSERT INTO user_roles (user_id, role) VALUES ('u-02', 'GESTOR_PEDIDOS');
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-03', 'admin@agricultores.co', 'Nicolás Ruiz', 'pbkdf2$210000$Qkeh8iuB3Odk2fCxty3ERQ$oTOIvy_9asd1qouoHperjIjwqMtWfXWRZTg0qXMWcMs');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-03', 'admin@agricultores.co', 'Nicolás Ruiz', 'pbkdf2$100000$V_oisBa9NetooePhfnDdjg$APpiEmOhHcpemwg7M0ARpUXJkPyUwjhz0JH57BifKS8');
 INSERT INTO user_roles (user_id, role) VALUES ('u-03', 'SUPER_ADMIN');
 
 -- ─────────────────────────── Productos ───────────────────────────
