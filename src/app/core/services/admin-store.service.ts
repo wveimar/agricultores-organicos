@@ -34,12 +34,14 @@ function aggregateLines(lines: readonly OrderLine[]): ReadonlyMap<string, number
 interface InventoryPatch {
   readonly id: string;
   readonly price: number;
+  readonly costPrice: number;
   readonly stock: number;
   readonly safetyStock: number;
 }
 
 export interface InventoryEdit {
   readonly price: number;
+  readonly costPrice: number;
   readonly stock: number;
   readonly safetyStock: number;
 }
@@ -108,6 +110,14 @@ export class AdminStoreService {
     this.inventory().reduce((total, product) => total + product.stock * product.price, 0),
   );
 
+  /** Lo que costó comprar lo que hay hoy en bodega. */
+  readonly inventoryCost = computed(() =>
+    this.inventory().reduce((total, product) => total + product.stock * product.costPrice, 0),
+  );
+
+  /** Ganancia potencial si se vendiera todo el stock actual al precio de hoy. */
+  readonly potentialProfit = computed(() => this.inventoryValue() - this.inventoryCost());
+
   constructor() {
     // Persistencia automática. `effect` vuelve a correr con cada cambio de las
     // señales que lee, así que no hay que acordarse de guardar en cada acción.
@@ -115,6 +125,7 @@ export class AdminStoreService {
       const patches: InventoryPatch[] = this.inventory().map((product) => ({
         id: product.id,
         price: product.price,
+        costPrice: product.costPrice,
         stock: product.stock,
         safetyStock: product.safetyStock,
       }));
@@ -148,6 +159,7 @@ export class AdminStoreService {
           ? {
               ...product,
               price: Math.max(0, Math.round(edit.price)),
+              costPrice: Math.max(0, Math.round(edit.costPrice)),
               stock: Math.max(0, Math.round(edit.stock)),
               safetyStock: Math.max(0, Math.round(edit.safetyStock)),
             }
@@ -338,6 +350,7 @@ export class AdminStoreService {
       return {
         ...product,
         price: this.safeNumber(patch.price, product.price),
+        costPrice: this.safeNumber(patch.costPrice, product.costPrice),
         stock: this.safeNumber(patch.stock, product.stock),
         safetyStock: this.safeNumber(patch.safetyStock, product.safetyStock),
       };

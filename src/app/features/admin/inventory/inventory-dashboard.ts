@@ -7,6 +7,8 @@ import {
   Product,
   StockLevel,
   UNIT_LABELS,
+  marginOf,
+  marginPercentOf,
   stockLevelOf,
 } from '../../../core/models/product.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
@@ -43,6 +45,7 @@ export class InventoryDashboard {
 
   protected readonly form = this.fb.nonNullable.group({
     price: [0, [Validators.required, Validators.min(1)]],
+    costPrice: [0, [Validators.required, Validators.min(0)]],
     stock: [0, [Validators.required, Validators.min(0)]],
     safetyStock: [0, [Validators.required, Validators.min(0)]],
   });
@@ -81,6 +84,14 @@ export class InventoryDashboard {
     return stockLevelOf(product);
   }
 
+  protected marginOf(product: Product): number {
+    return marginOf(product);
+  }
+
+  protected marginPercent(product: Product): number {
+    return Math.round(marginPercentOf(product) * 100);
+  }
+
   /** Porcentaje de la barra de stock respecto al doble del umbral. */
   protected fillPercent(product: Product): number {
     const ceiling = Math.max(product.safetyStock * 2, 1);
@@ -92,6 +103,7 @@ export class InventoryDashboard {
     this.savedId.set(null);
     this.form.setValue({
       price: product.price,
+      costPrice: product.costPrice,
       stock: product.stock,
       safetyStock: product.safetyStock,
     });
@@ -119,7 +131,7 @@ export class InventoryDashboard {
     }, 2600);
   }
 
-  protected showError(field: 'price' | 'stock' | 'safetyStock'): boolean {
+  protected showError(field: 'price' | 'costPrice' | 'stock' | 'safetyStock'): boolean {
     const control = this.form.controls[field];
     return control.invalid && (control.touched || control.dirty);
   }

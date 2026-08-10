@@ -91,6 +91,7 @@ export class CheckoutService {
       productId: line.product.id,
       productName: line.product.name,
       unitPrice: line.product.price,
+      unitCost: line.product.costPrice,
       quantity: line.quantity,
     }));
 

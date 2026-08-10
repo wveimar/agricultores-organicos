@@ -6,7 +6,7 @@
 </header>
 
 <!-- Indicadores -->
-<div class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+<div class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
   <div class="rounded-lg border border-sand bg-bone p-5">
     <p class="text-overline font-semibold uppercase text-ink-muted">Referencias</p>
     <p class="tabular mt-2 font-display text-h3 text-ink">{{ store.products().length }}</p>
@@ -36,6 +36,13 @@
   <div class="rounded-lg border border-sand bg-bone p-5">
     <p class="text-overline font-semibold uppercase text-ink-muted">Valor a precio de venta</p>
     <p class="tabular mt-2 font-display text-h3 text-ink">{{ store.inventoryValue() | cop }}</p>
+    <p class="tabular mt-1 text-xs text-ink-muted">Costo: {{ store.inventoryCost() | cop }}</p>
+  </div>
+
+  <div class="rounded-lg border border-sand bg-bone p-5">
+    <p class="text-overline font-semibold uppercase text-ink-muted">Ganancia potencial</p>
+    <p class="tabular mt-2 font-display text-h3 text-moss">{{ store.potentialProfit() | cop }}</p>
+    <p class="mt-1 text-xs text-ink-muted">Si se vende todo el stock a hoy</p>
   </div>
 </div>
 
@@ -108,6 +115,7 @@
         <tr class="border-b border-sand bg-linen/60">
           <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Producto</th>
           <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Precio</th>
+          <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Margen</th>
           <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Existencias</th>
           <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Estado</th>
           <th scope="col" class="text-overline px-5 py-3 text-right font-semibold uppercase text-ink-muted">Acción</th>
@@ -138,6 +146,17 @@
             <td class="tabular px-5 py-4 text-sm text-ink">
               {{ product.price | cop }}
               <span class="text-ink-muted">/ {{ unitLabels[product.unit] }}</span>
+              <span class="block text-xs text-ink-muted">Costo {{ product.costPrice | cop }}</span>
+            </td>
+
+            <td class="px-5 py-4">
+              <p
+                class="tabular text-sm font-medium"
+                [class]="marginOf(product) > 0 ? 'text-moss-deep' : 'text-berry'"
+              >
+                {{ marginOf(product) | cop }}
+              </p>
+              <p class="tabular text-xs text-ink-muted">{{ marginPercent(product) }} % margen</p>
             </td>
 
             <td class="px-5 py-4">
@@ -184,7 +203,7 @@
           <!-- Formulario reactivo, desplegado bajo la fila que se edita -->
           @if (editingId() === product.id) {
             <tr>
-              <td colspan="5" class="bg-linen/70 px-5 py-5">
+              <td colspan="6" class="bg-linen/70 px-5 py-5">
                 <form [formGroup]="form" (ngSubmit)="save(product.id)" novalidate>
                   <div class="flex flex-wrap items-start gap-5">
                     <div>
@@ -203,6 +222,25 @@
                       />
                       @if (showError('price')) {
                         <p class="mt-1 text-xs text-berry">Debe ser mayor que cero.</p>
+                      }
+                    </div>
+
+                    <div>
+                      <label [for]="'costo-' + product.id" class="block text-xs font-medium text-ink-soft">
+                        Costo de compra (COP)
+                      </label>
+                      <input
+                        [id]="'costo-' + product.id"
+                        type="number"
+                        min="0"
+                        step="100"
+                        formControlName="costPrice"
+                        class="tabular mt-1.5 w-36 rounded-md border bg-bone px-3 py-2 text-sm text-ink"
+                        [class]="showError('costPrice') ? 'border-berry' : 'border-sand focus:border-moss'"
+                        [attr.aria-invalid]="showError('costPrice')"
+                      />
+                      @if (showError('costPrice')) {
+                        <p class="mt-1 text-xs text-berry">No puede ser negativo.</p>
                       }
                     </div>
 
@@ -264,7 +302,7 @@
           }
         } @empty {
           <tr>
-            <td colspan="5" class="px-5 py-16 text-center">
+            <td colspan="6" class="px-5 py-16 text-center">
               <p class="text-h3 text-ink">Sin resultados</p>
               <p class="mt-2 text-sm text-ink-soft">
                 Ajusta el filtro o la búsqueda para ver productos.

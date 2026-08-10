@@ -8,7 +8,7 @@ const NS = 'agro';
  * guardados: las entradas con versión distinta se descartan y el store vuelve
  * a sembrarse, en vez de hidratar objetos con campos que ya no existen.
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 interface Envelope<T> {
   readonly v: number;

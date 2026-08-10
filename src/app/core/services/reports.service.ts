@@ -48,7 +48,7 @@ export class ReportsService {
 
     const totals = new Map<
       string,
-      { units: number; revenue: number; orderIds: Set<string> }
+      { units: number; revenue: number; cost: number; orderIds: Set<string> }
     >();
 
     for (const order of orders) {
@@ -56,10 +56,12 @@ export class ReportsService {
         const entry = totals.get(line.productId) ?? {
           units: 0,
           revenue: 0,
+          cost: 0,
           orderIds: new Set<string>(),
         };
         entry.units += line.quantity;
         entry.revenue += line.unitPrice * line.quantity;
+        entry.cost += line.unitCost * line.quantity;
         entry.orderIds.add(order.id);
         totals.set(line.productId, entry);
       }
@@ -71,6 +73,7 @@ export class ReportsService {
     const rows = [...totals.entries()]
       .map(([productId, entry]) => {
         const product = this.store.productById(productId);
+        const profit = entry.revenue - entry.cost;
         return {
           productId,
           // Un producto retirado del catálogo sigue apareciendo en ventas
@@ -83,6 +86,9 @@ export class ReportsService {
           group: product ? ADMIN_GROUP_OF[product.categoryId] : 'agroindustriales',
           units: entry.units,
           revenue: entry.revenue,
+          cost: entry.cost,
+          profit,
+          marginPercent: entry.revenue > 0 ? profit / entry.revenue : 0,
           stock: product?.stock ?? 0,
           orderCount: entry.orderIds.size,
           revenueShare: grandTotal > 0 ? entry.revenue / grandTotal : 0,
@@ -126,6 +132,19 @@ export class ReportsService {
   readonly productRevenue = computed(() =>
     this.salesByProduct().reduce((sum, row) => sum + row.revenue, 0),
   );
+
+  /** Lo que costó comprarle a la finca lo que se vendió. No incluye envío. */
+  readonly productCost = computed(() =>
+    this.salesByProduct().reduce((sum, row) => sum + row.cost, 0),
+  );
+
+  /** Ganancia de venta de producto. El envío no es margen, se cuenta aparte. */
+  readonly totalProfit = computed(() => this.productRevenue() - this.productCost());
+
+  readonly profitMarginPercent = computed(() => {
+    const revenue = this.productRevenue();
+    return revenue > 0 ? this.totalProfit() / revenue : 0;
+  });
 
   readonly unitsSold = computed(() =>
     this.salesByProduct().reduce((sum, row) => sum + row.units, 0),
@@ -182,6 +201,8 @@ export class ReportsService {
       orderCount: orders.length,
       unitCount: this.unitsSold(),
       productRevenue: this.productRevenue(),
+      productCost: this.productCost(),
+      profit: this.totalProfit(),
       shippingCollected: this.shippingCollected(),
       grossSales: this.grossSales(),
       byMethod: this.byMethod(),
@@ -219,6 +240,8 @@ export class ReportsService {
       `Pedidos cerrados:   ${closing.orderCount}`,
       `Unidades vendidas:  ${closing.unitCount}`,
       `Venta de producto:  ${money(closing.productRevenue)}`,
+      `Costo de producto:  ${money(closing.productCost)}`,
+      `Ganancia:           ${money(closing.profit)}`,
       `Envíos cobrados:    ${money(closing.shippingCollected)}`,
       `TOTAL RECAUDADO:    ${money(closing.grossSales)}`,
       '',

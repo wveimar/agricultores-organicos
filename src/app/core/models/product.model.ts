@@ -14,6 +14,11 @@ export interface Product {
   readonly price: number;
   /** Precio anterior tachado. Solo si el producto está en oferta. */
   readonly compareAtPrice?: number;
+  /**
+   * Lo que le pagamos a la finca por unidad. Es información interna: nunca se
+   * muestra en la tienda pública, solo en el panel administrativo.
+   */
+  readonly costPrice: number;
   readonly unit: ProductUnit;
   /** Finca o región de origen — el sello de confianza de la tienda. */
   readonly origin: string;
@@ -66,6 +71,16 @@ export function stockLevelOf(product: Product): StockLevel {
 
 export function isInStock(product: Product): boolean {
   return product.stock > 0;
+}
+
+/** Ganancia por unidad al precio de venta actual. Puede ser negativa. */
+export function marginOf(product: Product): number {
+  return product.price - product.costPrice;
+}
+
+/** Margen como fracción del precio (0.3 = 30 %). 0 si el precio es 0. */
+export function marginPercentOf(product: Product): number {
+  return product.price > 0 ? marginOf(product) / product.price : 0;
 }
 
 /**

@@ -24,6 +24,12 @@ export interface ProductSales {
   readonly group: AdminGroup;
   readonly units: number;
   readonly revenue: number;
+  /** Lo que costó comprarle a la finca lo que se vendió. */
+  readonly cost: number;
+  /** revenue - cost. Lo que de verdad se ganó con este producto. */
+  readonly profit: number;
+  /** Ganancia como fracción del ingreso, 0–1. Puede ser negativa si se vendió a pérdida. */
+  readonly marginPercent: number;
   /** Existencias que quedan hoy, para cruzar venta contra reposición. */
   readonly stock: number;
   /** En cuántos pedidos distintos apareció. */
@@ -64,6 +70,10 @@ export interface CashClosing {
   readonly unitCount: number;
   /** Venta de producto, sin envíos. */
   readonly productRevenue: number;
+  /** Lo que costó comprarle a la finca lo vendido en esta jornada. */
+  readonly productCost: number;
+  /** productRevenue - productCost. No incluye el envío: eso no es margen. */
+  readonly profit: number;
   readonly shippingCollected: number;
   /** Producto + envíos: lo que realmente entró a la cuenta. */
   readonly grossSales: number;

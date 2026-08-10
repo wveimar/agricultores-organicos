@@ -39,6 +39,12 @@ export interface OrderLine {
   readonly productId: string;
   readonly productName: string;
   readonly unitPrice: number;
+  /**
+   * Costo por unidad al momento de la venta. Se congela igual que `unitPrice`:
+   * si el costo de compra cambia después, un pedido viejo debe seguir
+   * mostrando la ganancia real que dejó en su momento.
+   */
+  readonly unitCost: number;
   readonly quantity: number;
 }
 
@@ -114,6 +120,14 @@ export function orderTotal(order: Order): number {
 
 export function orderUnits(order: Order): number {
   return order.lines.reduce((total, line) => total + line.quantity, 0);
+}
+
+/** Ganancia de venta de producto, sin contar el envío. */
+export function orderProfit(order: Order): number {
+  return order.lines.reduce(
+    (total, line) => total + (line.unitPrice - line.unitCost) * line.quantity,
+    0,
+  );
 }
 
 /** Motivo por el que una aprobación no pudo completarse. */
