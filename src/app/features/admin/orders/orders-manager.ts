@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import {
   ApiErrorBody,
@@ -49,8 +56,30 @@ export class OrdersManager {
   protected readonly history = signal<ReadonlyMap<string, readonly ApiOrderStatusLogEntry[]>>(new Map());
   protected readonly historyLoading = signal<string | null>(null);
 
+  /**
+   * Comprobantes ya descargados, como object URLs (`blob:`).
+   *
+   * La imagen no puede ir en un `<img src="/api/...">` porque el endpoint pide
+   * el JWT y el navegador no lo manda en la carga de una imagen. Se baja como
+   * Blob por HttpClient (que sí pasa por el interceptor) y se envuelve en una
+   * object URL. Se cachean por pedido para no volver a pedir la misma imagen
+   * cada vez que se abre y cierra el detalle.
+   */
+  private readonly receiptUrls = signal<ReadonlyMap<string, string>>(new Map());
+  protected readonly receiptLoading = signal<string | null>(null);
+  protected readonly receiptErrors = signal<ReadonlyMap<string, string>>(new Map());
+
   constructor() {
     this.adminApi.loadOrders();
+
+    // Cada object URL retiene su blob en memoria hasta que se revoca. Sin
+    // esto, revisar veinte comprobantes en una sesión larga deja veinte
+    // imágenes vivas aunque ya no se muestre ninguna.
+    inject(DestroyRef).onDestroy(() => {
+      for (const url of this.receiptUrls().values()) {
+        URL.revokeObjectURL(url);
+      }
+    });
   }
 
   protected readonly visible = computed<readonly ApiOrder[]>(() => {
@@ -92,13 +121,55 @@ export class OrdersManager {
   }
 
 
-  protected toggle(orderId: string): void {
-    const opening = this.expandedId() !== orderId;
-    this.expandedId.set(opening ? orderId : null);
+  protected toggle(order: ApiOrder): void {
+    const opening = this.expandedId() !== order.id;
+    this.expandedId.set(opening ? order.id : null);
 
-    if (opening) {
-      this.loadHistory(orderId);
+    if (!opening) {
+      return;
     }
+
+    this.loadHistory(order.id);
+
+    // Solo si hay comprobante y no se ha bajado ya en esta sesión.
+    if (order.tieneComprobante && !this.receiptUrls().has(order.id)) {
+      this.loadReceipt(order.id);
+    }
+  }
+
+  protected receiptUrlFor(orderId: string): string | null {
+    return this.receiptUrls().get(orderId) ?? null;
+  }
+
+  protected receiptErrorFor(orderId: string): string | null {
+    return this.receiptErrors().get(orderId) ?? null;
+  }
+
+  /** Reintento manual, para cuando la descarga falló por un corte de red. */
+  protected retryReceipt(orderId: string): void {
+    this.receiptErrors.update((map) => {
+      const next = new Map(map);
+      next.delete(orderId);
+      return next;
+    });
+    this.loadReceipt(orderId);
+  }
+
+  private loadReceipt(orderId: string): void {
+    this.receiptLoading.set(orderId);
+
+    this.adminApi.orderReceipt(orderId).subscribe({
+      next: (blob) => {
+        this.receiptLoading.set(null);
+        this.receiptUrls.update((map) =>
+          new Map(map).set(orderId, URL.createObjectURL(blob)),
+        );
+      },
+      error: (error: ApiErrorBody) => {
+        this.receiptLoading.set(null);
+        this.receiptErrors.update((map) => new Map(map).set(orderId, error.message));
+      },
+    });
   }
 
   protected historyFor(orderId: string): readonly ApiOrderStatusLogEntry[] {

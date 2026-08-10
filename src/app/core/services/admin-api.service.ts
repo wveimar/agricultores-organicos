@@ -123,6 +123,11 @@ export class AdminApiService {
     return this.api.orderHistory(id);
   }
 
+  /** Imagen del comprobante (Workers KV), tras el JWT. */
+  orderReceipt(id: string): Observable<Blob> {
+    return this.api.orderReceipt(id);
+  }
+
   // ───────────────────────────────── Reportes ─────────────────────────────────
 
   readonly salesRows = signal<readonly ApiSalesRow[]>([]);

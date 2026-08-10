@@ -1,6 +1,7 @@
 import { ApiError, json, readJson, requireInt, requireString } from '../http';
 import { Env, JwtPayload } from '../types';
 import { requireRole } from '../auth/middleware';
+import { decodeDataUrl, validateDataUrl } from '../receipts';
 
 interface IncomingItem {
   productId?: unknown;
@@ -128,6 +129,13 @@ export async function create(request: Request, env: Env): Promise<Response> {
     0,
   );
 
+  const comprobanteNombre =
+    typeof body.comprobanteNombre === 'string' ? body.comprobanteNombre.slice(0, 200) : null;
+
+  // Se valida antes de tocar la base: si la imagen viene mal, el cliente
+  // recibe un 400 claro y no queda ningún pedido a medias.
+  const comprobanteUrl = validateDataUrl(body.comprobanteUrl);
+
   const statements: D1PreparedStatement[] = [
     // La referencia se calcula dentro de la propia transacción: leerla antes y
     // escribirla después dejaría una ventana para asignar el mismo número dos
@@ -150,14 +158,11 @@ export async function create(request: Request, env: Env): Promise<Response> {
       subtotal,
       envio,
       subtotal + envio,
-      typeof body.comprobanteNombre === 'string' ? body.comprobanteNombre.slice(0, 200) : null,
-      // Sin R2 configurado todavía, el comprobante viaja como data URL (JPEG
-      // recomprimido a ~150-300 KB por el cliente, ver image-file.ts) y se
-      // guarda tal cual en esta columna TEXT. No es el sitio ideal para un
-      // blob de imagen, pero es honesto: mejor esto que un límite de 500
-      // caracteres que truncaría la imagen y la dejaría corrupta en el panel.
-      // El siguiente paso real es subir a R2 y guardar solo la URL del objeto.
-      typeof body.comprobanteUrl === 'string' ? body.comprobanteUrl.slice(0, 2_000_000) : null,
+      comprobanteNombre,
+      // La imagen entra en la misma transacción que el pedido: o quedan los
+      // dos, o no queda ninguno. Nunca se selecciona en los listados; se lee
+      // solo desde GET /api/admin/orders/:id/comprobante.
+      comprobanteUrl,
     ),
     // Traza de la primera transición, en el mismo batch: si el pedido no llega
     // a crearse, tampoco debe quedar un registro de que "nació".
@@ -392,7 +397,10 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
     `SELECT id, referencia, cliente_nombre AS clienteNombre, cliente_telefono AS clienteTelefono,
             cliente_direccion AS clienteDireccion, estado, stock_reservado AS stockReservado,
             subtotal, envio, total, comprobante_nombre AS comprobanteNombre,
-            comprobante_url AS comprobanteUrl, aprobado_en AS aprobadoEn,
+            -- Nunca la imagen: solo si la hay. Los bytes se piden aparte,
+            -- cuando el admin abre el pedido concreto que quiere revisar.
+            (comprobante_url IS NOT NULL) AS tieneComprobante,
+            aprobado_en AS aprobadoEn,
             closing_id AS closingId, creado_en AS creadoEn
        FROM orders ${where}
       ORDER BY creado_en DESC
@@ -459,12 +467,68 @@ export async function history(env: Env, user: JwtPayload, orderId: string): Prom
   return json({ history: results });
 }
 
+/**
+ * GET /api/admin/orders/:id/comprobante — devuelve la imagen del comprobante.
+ *
+ * Es el **único** sitio donde se lee `orders.comprobante_url`. Mantenerlo así
+ * es lo que permite guardar la imagen en D1 sin penalizar el resto: el listado
+ * del panel trae 100 pedidos y ninguno arrastra su imagen, porque ninguna otra
+ * consulta selecciona esa columna.
+ *
+ * Protegido con el mismo rol que el resto de la gestión de pedidos: un
+ * comprobante de consignación lleva el nombre del titular, el banco y el monto.
+ * No es un recurso público.
+ */
+export async function receipt(env: Env, user: JwtPayload, orderId: string): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const order = await env.DB.prepare(
+    `SELECT comprobante_url AS url, comprobante_nombre AS nombre FROM orders WHERE id = ?1`,
+  )
+    .bind(orderId)
+    .first<{ url: string | null; nombre: string | null }>();
+
+  if (!order) {
+    throw ApiError.notFound('Ese pedido no existe.');
+  }
+  if (!order.url) {
+    throw ApiError.notFound('Este pedido no tiene comprobante adjunto.');
+  }
+
+  // Se devuelven bytes, no la cadena base64: ahorra un tercio del tráfico y
+  // deja que el navegador la trate como una imagen normal.
+  const { bytes, contentType } = decodeDataUrl(order.url);
+
+  return new Response(bytes, {
+    headers: {
+      'content-type': contentType,
+      // Privado y de vida corta: no debe quedar cacheado en ningún proxy
+      // intermedio, pero sí puede reutilizarse mientras el admin revisa.
+      'cache-control': 'private, max-age=300',
+      'content-disposition': `inline; filename="${sanitizeFileName(order.nombre)}"`,
+    },
+  });
+}
+
+/**
+ * El nombre del fichero lo eligió el cliente y acaba dentro de una cabecera
+ * HTTP: sin limpiarlo, unas comillas o un salto de línea permitirían inyectar
+ * cabeceras arbitrarias en la respuesta.
+ */
+function sanitizeFileName(name: string | null): string {
+  if (!name) {
+    return 'comprobante.jpg';
+  }
+  return name.replace(/[^\w.\- ]+/g, '_').slice(0, 100) || 'comprobante.jpg';
+}
+
 async function loadOrder(env: Env, orderId: string): Promise<unknown> {
   const [orderResult, itemsResult] = await env.DB.batch([
     env.DB.prepare(
       `SELECT id, referencia, cliente_nombre AS clienteNombre, cliente_telefono AS clienteTelefono,
               cliente_direccion AS clienteDireccion, estado, stock_reservado AS stockReservado,
               subtotal, envio, total, comprobante_nombre AS comprobanteNombre,
+              (comprobante_url IS NOT NULL) AS tieneComprobante,
               aprobado_en AS aprobadoEn, closing_id AS closingId, creado_en AS creadoEn
          FROM orders WHERE id = ?1`,
     ).bind(orderId),

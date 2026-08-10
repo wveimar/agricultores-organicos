@@ -1,6 +1,6 @@
 /** Bindings declarados en wrangler.jsonc + secretos. */
 export interface Env {
-  /** Base de datos D1. */
+  /** Base de datos D1. Única fuente de datos del proyecto, comprobantes incluidos. */
   readonly DB: D1Database;
   /** Assets estáticos del build de Angular (fallback del SPA). */
   readonly ASSETS: Fetcher;

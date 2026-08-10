@@ -103,6 +103,13 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return orders.history(env, user, historyMatch[1]);
     }
 
+    // Imagen del comprobante de consignación. Va detrás del JWT como el resto
+    // de /api/admin/*: lleva datos bancarios del cliente.
+    const receiptMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/comprobante$/);
+    if (receiptMatch && method === 'GET') {
+      return orders.receipt(env, user, receiptMatch[1]);
+    }
+
     // Reportes
     if (pathname === '/api/admin/reports/sales' && method === 'GET') {
       return reports.sales(env, user);

@@ -118,7 +118,12 @@ export interface ApiOrder {
   readonly envio: number;
   readonly total: number;
   readonly comprobanteNombre?: string | null;
-  readonly comprobanteUrl?: string | null;
+  /**
+   * Si el pedido trae comprobante adjunto. La imagen **no** viaja en el
+   * listado: vive en Workers KV y se pide aparte con `orderReceipt()` solo
+   * cuando el admin abre ese pedido concreto.
+   */
+  readonly tieneComprobante?: number | null;
   readonly aprobadoEn?: string | null;
   readonly closingId: string | null;
   readonly creadoEn: string;
@@ -263,6 +268,19 @@ export class ApiClient {
       .pipe(map((res) => res.history), catchError(handleError));
   }
 
+  /**
+   * Imagen del comprobante, desde Workers KV.
+   *
+   * Llega como `Blob` y no como URL porque el endpoint exige el JWT: un
+   * `<img src="/api/...">` no pasa por el interceptor y respondería 401. El
+   * componente convierte este blob en una object URL para pintarlo.
+   */
+  orderReceipt(id: string): Observable<Blob> {
+    return this.http
+      .get(`/api/admin/orders/${id}/comprobante`, { responseType: 'blob' })
+      .pipe(catchError(handleBlobError));
+  }
+
   // ─────────────────────────────── Reportes ───────────────────────────────
 
   salesReport(): Observable<{
@@ -316,4 +334,30 @@ function handleError(response: HttpErrorResponse): Observable<never> {
         ? 'No se pudo contactar el servidor. Revisa tu conexión.'
         : `El servidor respondió ${response.status}.`,
   } satisfies ApiErrorBody));
+}
+
+/**
+ * Variante para las respuestas `responseType: 'blob'`.
+ *
+ * Cuando la petición pide un blob, Angular entrega también el **cuerpo del
+ * error** como blob, así que el `{ error: { code } }` del Worker no se puede
+ * leer de forma síncrona. Se traduce por código de estado, que para este
+ * endpoint alcanza: lo único que el panel necesita distinguir es "no hay
+ * comprobante" de "no hay permiso" o "se cayó la conexión".
+ */
+function handleBlobError(response: HttpErrorResponse): Observable<never> {
+  const byStatus: Record<number, ApiErrorBody> = {
+    0: { code: 'sin-conexion', message: 'No se pudo contactar el servidor.' },
+    401: { code: 'sesion-expirada', message: 'Tu sesión expiró. Vuelve a entrar.' },
+    403: { code: 'sin-permiso', message: 'No tienes permiso para ver este comprobante.' },
+    404: { code: 'sin-comprobante', message: 'Este pedido no tiene comprobante adjunto.' },
+  };
+
+  return throwError(
+    () =>
+      byStatus[response.status] ?? {
+        code: 'error-desconocido',
+        message: `El servidor respondió ${response.status}.`,
+      },
+  );
 }

@@ -133,6 +133,14 @@ CREATE TABLE orders (
   total              INTEGER NOT NULL DEFAULT 0 CHECK (total >= 0),
 
   comprobante_nombre TEXT,
+  -- Imagen del comprobante de consignación, como data URL (JPEG recomprimido
+  -- por el cliente a ~150–300 KB, ver shared/utils/image-file.ts).
+  --
+  -- Vive aquí y no en un almacén de objetos aparte: mantener una sola fuente
+  -- de datos evita que un pedido y su comprobante puedan quedar
+  -- desincronizados, y hace que borrar el pedido se lleve la imagen con él.
+  -- El coste de tenerla en la fila se neutraliza no seleccionándola nunca en
+  -- los listados: solo la lee GET /api/admin/orders/:id/comprobante.
   comprobante_url    TEXT,
 
   aprobado_por       TEXT    REFERENCES users(id) ON DELETE SET NULL,

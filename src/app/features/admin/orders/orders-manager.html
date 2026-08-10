@@ -99,7 +99,7 @@
               type="button"
               class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
               [attr.aria-expanded]="expandedId() === order.id"
-              (click)="toggle(order.id)"
+              (click)="toggle(order)"
             >
               {{ expandedId() === order.id ? 'Ocultar' : 'Detalle' }}
             </button>
@@ -200,20 +200,50 @@
               </p>
             }
 
-            <!-- Comprobante de consignación subido por el cliente -->
-            @if (order.comprobanteUrl) {
+            <!-- Comprobante de consignación: la imagen vive en Workers KV y se
+                 descarga tras el JWT, por eso es un blob y no un src directo. -->
+            @if (order.tieneComprobante) {
+              @let receiptUrl = receiptUrlFor(order.id);
+              @let receiptError = receiptErrorFor(order.id);
+
               <div class="mt-3 flex items-center gap-4 rounded-md border border-sand bg-bone p-3">
-                <a [href]="order.comprobanteUrl" target="_blank" rel="noopener noreferrer" class="shrink-0">
-                  <img
-                    [src]="order.comprobanteUrl"
-                    [alt]="'Comprobante de consignación del pedido ' + order.referencia"
-                    class="size-16 rounded-md border border-sand object-cover transition-opacity duration-200 hover:opacity-80"
-                  />
-                </a>
+                @if (receiptUrl) {
+                  <a [href]="receiptUrl" target="_blank" rel="noopener noreferrer" class="shrink-0">
+                    <img
+                      [src]="receiptUrl"
+                      [alt]="'Comprobante de consignación del pedido ' + order.referencia"
+                      class="size-16 rounded-md border border-sand object-cover transition-opacity duration-200 hover:opacity-80"
+                    />
+                  </a>
+                } @else {
+                  <div
+                    class="flex size-16 shrink-0 items-center justify-center rounded-md border border-dashed border-sand"
+                    aria-hidden="true"
+                  >
+                    <span class="text-xs text-ink-muted">
+                      {{ receiptLoading() === order.id ? '…' : '—' }}
+                    </span>
+                  </div>
+                }
+
                 <div class="min-w-0">
                   <p class="text-sm font-medium text-ink">Comprobante adjunto</p>
                   <p class="truncate text-xs text-ink-muted">{{ order.comprobanteNombre }}</p>
-                  <p class="text-xs text-ink-muted">Clic en la imagen para ampliarla</p>
+
+                  @if (receiptUrl) {
+                    <p class="text-xs text-ink-muted">Clic en la imagen para ampliarla</p>
+                  } @else if (receiptLoading() === order.id) {
+                    <p class="text-xs text-ink-muted">Cargando comprobante…</p>
+                  } @else if (receiptError) {
+                    <p class="text-xs text-berry">{{ receiptError }}</p>
+                    <button
+                      type="button"
+                      class="mt-1 rounded-full border border-sand px-3 py-1 text-xs text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+                      (click)="retryReceipt(order.id)"
+                    >
+                      Reintentar
+                    </button>
+                  }
                 </div>
               </div>
             } @else if (order.estado === 'verificacion') {
