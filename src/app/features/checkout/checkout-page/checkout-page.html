@@ -178,9 +178,10 @@
           <!-- CTA -->
           <button
             type="submit"
-            class="mt-10 flex w-full items-center justify-center gap-2.5 rounded-full bg-clay py-4 text-sm font-semibold text-bone transition-all duration-300 ease-out hover:bg-clay-deep"
+            class="mt-10 flex w-full items-center justify-center gap-2.5 rounded-full bg-clay py-4 text-sm font-semibold text-bone transition-all duration-300 ease-out hover:bg-clay-deep disabled:cursor-not-allowed disabled:opacity-60"
+            [disabled]="placing()"
           >
-            Confirmar pedido
+            {{ placing() ? 'Confirmando…' : 'Confirmar pedido' }}
           </button>
         </form>
 

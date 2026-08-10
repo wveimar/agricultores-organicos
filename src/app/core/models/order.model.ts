@@ -94,26 +94,6 @@ export interface OrderTotals {
   readonly total: number;
 }
 
-/** Datos que aporta el cliente al finalizar la compra. */
-export interface NewOrderInput {
-  readonly customerName: string;
-  readonly customerPhone: string;
-  readonly customerAddress: string;
-  readonly lines: readonly OrderLine[];
-  readonly totals: OrderTotals;
-  /** El comprobante es opcional: se puede confirmar y adjuntarlo después. */
-  readonly paymentProof?: PaymentProof;
-}
-
-export type PlacementResult =
-  | { readonly ok: true; readonly order: Order }
-  | {
-      readonly ok: false;
-      readonly reason: 'insufficient-stock';
-      readonly shortfalls: readonly StockShortfall[];
-    }
-  | { readonly ok: false; readonly reason: 'empty-cart' };
-
 export function orderTotal(order: Order): number {
   return order.lines.reduce((total, line) => total + line.unitPrice * line.quantity, 0);
 }
@@ -130,15 +110,3 @@ export function orderProfit(order: Order): number {
   );
 }
 
-/** Motivo por el que una aprobación no pudo completarse. */
-export interface StockShortfall {
-  readonly productId: string;
-  readonly productName: string;
-  readonly requested: number;
-  readonly available: number;
-}
-
-export type ApprovalResult =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly reason: 'not-found' | 'already-approved' }
-  | { readonly ok: false; readonly reason: 'insufficient-stock'; readonly shortfalls: readonly StockShortfall[] };

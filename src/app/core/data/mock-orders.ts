@@ -1,8 +1,12 @@
 import type { Order } from '../models/order.model';
 
 /**
- * Pedidos simulados. Las cantidades están pensadas para que el panel tenga
- * casos interesantes desde el primer arranque:
+ * Pedidos de origen — igual que `mock-catalog.ts`, ya no los lee la app: los
+ * importa `worker/tools/generate-seed.mjs` para poblar `orders`/`order_items`
+ * en D1 al regenerar `worker/seed.sql`.
+ *
+ * Las cantidades están pensadas para que el panel tenga casos interesantes
+ * desde el primer arranque:
  *
  * - `ORD-1043` pide 12 aguacates y solo hay 6 → aprobarlo debe **fallar** y
  *   mostrar el faltante, sin tocar el inventario.

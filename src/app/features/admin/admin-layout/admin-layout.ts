@@ -49,8 +49,17 @@ export class AdminLayout {
 
   constructor() {
     // Los badges del menú necesitan inventario y pedidos aunque el usuario
-    // aterrice directo en Reportes; se cargan una vez al montar el layout.
-    this.adminApi.refreshHome();
+    // aterrice directo en Reportes, pero solo se piden los que su rol puede
+    // ver: un GESTOR_PEDIDOS sin acceso a inventario no debe ni intentar
+    // /api/admin/products — el servidor lo rechazaría con 403 igualmente,
+    // pero pedir de entrada solo lo que se tiene permiso de ver es más limpio
+    // que dejar que cada petición fallida ensucie la consola.
+    if (this.tokens.can('ADMIN_INVENTARIO')) {
+      this.adminApi.loadProducts();
+    }
+    if (this.tokens.can('GESTOR_PEDIDOS')) {
+      this.adminApi.loadOrders();
+    }
   }
 
   protected toggleSidebar(): void {

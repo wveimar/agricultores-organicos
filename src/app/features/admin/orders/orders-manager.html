@@ -175,7 +175,7 @@
               </thead>
               <tbody class="divide-y divide-sand">
                 @for (item of order.items; track item.productId) {
-                  @let available = availableFor(item.productId);
+                  @let available = item.stockDisponible ?? 0;
                   <tr>
                     <td class="py-2.5 text-ink">{{ item.productoNombre }}</td>
                     <td class="tabular py-2.5 text-right text-ink">{{ item.cantidad }}</td>
@@ -183,7 +183,7 @@
                       class="tabular py-2.5 text-right"
                       [class]="available < item.cantidad ? 'font-semibold text-berry' : 'text-ink-soft'"
                     >
-                      {{ available }}
+                      {{ item.stockDisponible === null ? '—' : available }}
                     </td>
                     <td class="tabular py-2.5 text-right text-ink">
                       {{ item.precioUnitario * item.cantidad | cop }}

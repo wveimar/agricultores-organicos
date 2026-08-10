@@ -1,7 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { CATEGORIES } from '../data/mock-catalog';
 import { Category, CategoryId, Product, SortOption, isInStock } from '../models/product.model';
-import { AdminStoreService } from './admin-store.service';
+import { ApiClient, ApiErrorBody, toProduct } from '../api/api-client';
 
 /** Peso de cada etiqueta en el orden "Destacados". */
 const BADGE_WEIGHT: Record<string, number> = {
@@ -13,18 +13,44 @@ const BADGE_WEIGHT: Record<string, number> = {
 
 @Injectable({ providedIn: 'root' })
 export class CatalogService {
+  private readonly api = inject(ApiClient);
+
   readonly categories: readonly Category[] = CATEGORIES;
 
   /**
-   * El catálogo público lee del mismo inventario que edita el panel. Es una
-   * señal, no una copia: si un pedido se aprueba y descuenta unidades, la
-   * rejilla de la tienda lo refleja en el acto.
+   * Catálogo real, leído de `GET /api/products` al arrancar el servicio.
+   * Antes esta señal venía de `AdminStoreService` (localStorage); ahora es la
+   * misma base de datos que edita el panel — aprobar un pedido o cambiar un
+   * precio en Inventario se refleja aquí en la siguiente carga, no por magia
+   * de signals compartidas entre pestañas distintas.
    */
-  private readonly all = inject(AdminStoreService).products;
+  private readonly products = signal<readonly Product[]>([]);
+  readonly loading = signal(true);
+  readonly loadError = signal<string | null>(null);
 
   readonly activeCategory = signal<CategoryId | 'todos'>('todos');
   readonly sort = signal<SortOption>('destacados');
   readonly query = signal('');
+
+  constructor() {
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.loadError.set(null);
+
+    this.api.products().subscribe({
+      next: (list) => {
+        this.products.set(list.map(toProduct));
+        this.loading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.loadError.set(error.message);
+        this.loading.set(false);
+      },
+    });
+  }
 
   /**
    * Rejilla visible. Todo el filtrado ocurre en el cliente sobre un `computed`:
@@ -34,7 +60,7 @@ export class CatalogService {
     const category = this.activeCategory();
     const term = this.query().trim().toLowerCase();
 
-    const filtered = this.all().filter((product) => {
+    const filtered = this.products().filter((product) => {
       if (category !== 'todos' && product.categoryId !== category) {
         return false;
       }
@@ -53,8 +79,8 @@ export class CatalogService {
 
   /** Nº de productos por categoría, para el contador de cada chip. */
   readonly counts = computed<Record<string, number>>(() => {
-    const totals: Record<string, number> = { todos: this.all().length };
-    for (const product of this.all()) {
+    const totals: Record<string, number> = { todos: this.products().length };
+    for (const product of this.products()) {
       totals[product.categoryId] = (totals[product.categoryId] ?? 0) + 1;
     }
     return totals;
@@ -68,6 +94,11 @@ export class CatalogService {
   );
 
   readonly hasResults = computed(() => this.visible().length > 0);
+
+  /** Usado por `CartService` para rehidratar el carrito guardado por id. */
+  productById(id: string): Product | undefined {
+    return this.products().find((product) => product.id === id);
+  }
 
   selectCategory(id: CategoryId | 'todos'): void {
     this.activeCategory.set(id);

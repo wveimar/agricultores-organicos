@@ -1,16 +1,10 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
-import { AdminStoreService } from './admin-store.service';
+import { Observable, map } from 'rxjs';
 import { CartService } from './cart.service';
 import { KV_KEYS, KvStore } from './kv-store.service';
+import { ApiClient } from '../api/api-client';
 import { FREE_SHIPPING_THRESHOLD, SHIPPING_COST } from '../models/cart.model';
-import {
-  NewOrderInput,
-  Order,
-  OrderLine,
-  OrderTotals,
-  PaymentProof,
-  PlacementResult,
-} from '../models/order.model';
+import { Order, OrderLine, OrderTotals, PaymentProof } from '../models/order.model';
 
 /** Número de la cooperativa en formato internacional, sin `+` ni espacios. */
 export const WHATSAPP_NUMBER = '573001234567';
@@ -29,7 +23,7 @@ export type CheckoutStep = 'formulario' | 'exito';
 @Injectable({ providedIn: 'root' })
 export class CheckoutService {
   private readonly cart = inject(CartService);
-  private readonly store = inject(AdminStoreService);
+  private readonly api = inject(ApiClient);
   private readonly kv = inject(KvStore);
 
   /** Pedido recién creado. Se rehidrata para que sobreviva a un F5. */
@@ -78,16 +72,22 @@ export class CheckoutService {
   }
 
   /**
-   * Cierra la compra: reserva inventario, crea el pedido en estado
-   * `verificacion` y vacía el carrito. El descuento de stock ocurre aquí, no al
-   * aprobarlo, para que el panel de administración lo vea de inmediato.
+   * Cierra la compra contra el backend real: `POST /api/orders` reserva
+   * inventario y crea el pedido en una sola transacción del lado del
+   * servidor (ver `worker/src/routes/orders.ts`). Si otra venta se llevó las
+   * últimas unidades entre que se cargó la página y este clic, el Worker
+   * responde 400 con los faltantes exactos y aquí no se toca nada más.
    *
    * El comprobante es opcional: si el cliente no lo tiene a mano todavía, el
    * pedido se confirma igual y queda pendiente de que lo adjunte o lo envíe
    * por WhatsApp.
    */
-  placeOrder(customer: { name: string; phone: string; address: string }): PlacementResult {
-    const lines: OrderLine[] = this.cart.items().map((line) => ({
+  placeOrder(customer: { name: string; phone: string; address: string }): Observable<Order> {
+    const cartLines = this.cart.items();
+    const proof = this.proof();
+    const totals = this.totals();
+
+    const lines: OrderLine[] = cartLines.map((line) => ({
       productId: line.product.id,
       productName: line.product.name,
       unitPrice: line.product.price,
@@ -95,26 +95,41 @@ export class CheckoutService {
       quantity: line.quantity,
     }));
 
-    const proof = this.proof();
-    const input: NewOrderInput = {
-      customerName: customer.name,
-      customerPhone: customer.phone,
-      customerAddress: customer.address,
-      lines,
-      totals: this.totals(),
-      ...(proof ? { paymentProof: proof } : {}),
-    };
+    return this.api
+      .createOrder({
+        clienteNombre: customer.name,
+        clienteTelefono: customer.phone,
+        clienteDireccion: customer.address,
+        envio: totals.shipping,
+        items: cartLines.map((line) => ({ productId: line.product.id, cantidad: line.quantity })),
+        ...(proof ? { comprobanteNombre: proof.fileName, comprobanteUrl: proof.dataUrl } : {}),
+      })
+      .pipe(
+        map((apiOrder) => {
+          // La pantalla de éxito se arma con lo que ya sabíamos en el
+          // navegador (líneas, totales, comprobante) más lo único que solo el
+          // servidor puede asignar: id, referencia y fecha real de creación.
+          const created: Order = {
+            id: apiOrder.id,
+            reference: apiOrder.referencia,
+            customerName: customer.name,
+            customerPhone: customer.phone,
+            customerAddress: customer.address,
+            placedAt: apiOrder.creadoEn,
+            status: apiOrder.estado,
+            lines,
+            stockReserved: true,
+            totals,
+            ...(proof ? { paymentProof: proof } : {}),
+          };
 
-    const result = this.store.placeCustomerOrder(input);
-    if (!result.ok) {
-      return result;
-    }
+          this.placedOrder.set(created);
+          this.cart.clear();
+          this.proof.set(null);
 
-    this.placedOrder.set(result.order);
-    this.cart.clear();
-    this.proof.set(null);
-
-    return result;
+          return created;
+        }),
+      );
   }
 
   /** Vuelve al formulario y olvida el pedido mostrado. */

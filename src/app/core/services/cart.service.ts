@@ -1,7 +1,7 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { CartItem, FREE_SHIPPING_THRESHOLD, SHIPPING_COST } from '../models/cart.model';
 import { Product, isInStock } from '../models/product.model';
-import { AdminStoreService } from './admin-store.service';
+import { CatalogService } from './catalog.service';
 import { KV_KEYS, KvStore } from './kv-store.service';
 
 /** Lo único que se guarda del carrito: el resto se resuelve del catálogo. */
@@ -13,9 +13,10 @@ interface StoredLine {
 @Injectable({ providedIn: 'root' })
 export class CartService {
   private readonly kv = inject(KvStore);
-  private readonly store = inject(AdminStoreService);
+  private readonly catalog = inject(CatalogService);
 
-  private readonly lines = signal<readonly CartItem[]>(this.hydrate());
+  private readonly lines = signal<readonly CartItem[]>([]);
+  private hydrated = false;
 
   readonly items = this.lines.asReadonly();
   readonly isOpen = signal(false);
@@ -53,8 +54,31 @@ export class CartService {
   );
 
   constructor() {
-    // El carrito sobrevive a una recarga o a entrar directo a /checkout.
+    /**
+     * Un solo `effect`, y el orden importa. Con dos efectos separados (uno
+     * que hidrata, otro que persiste) el de persistencia corría primero en su
+     * primera ejecución —`lines` seguía en `[]`— y sobrescribía el carrito
+     * guardado en `localStorage` con un array vacío *antes* de que el
+     * catálogo terminara de cargar. Cuando el efecto de hidratación por fin
+     * intentaba leerlo, ya no quedaba nada que leer: el carrito aparecía
+     * vacío en el checkout aunque el usuario sí hubiera añadido productos.
+     *
+     * Aquí, mientras el catálogo no haya cargado, el efecto no lee `lines()`
+     * y por tanto no depende de esa señal — no se reprograma con cada
+     * `add()`/`remove()` hasta que la rama de hidratación caiga al bloque de
+     * persistencia y la lea por primera vez, dejándola como dependencia real.
+     */
     effect(() => {
+      if (!this.hydrated) {
+        if (this.catalog.loading()) {
+          return;
+        }
+        this.hydrated = true;
+        this.lines.set(this.hydrate());
+        // Sin `return` aquí a propósito: sigue hacia abajo en esta misma
+        // ejecución para leer `lines()` y persistir el carrito ya hidratado.
+      }
+
       const stored: StoredLine[] = this.lines().map((line) => ({
         productId: line.product.id,
         quantity: line.quantity,
@@ -116,10 +140,10 @@ export class CartService {
   }
 
   /**
-   * Rehidrata contra el catálogo actual en vez de guardar el producto entero.
-   * Si algo se retiró del catálogo o se agotó mientras el carrito esperaba, la
-   * línea desaparece sola: es preferible a dejar al cliente llegar al checkout
-   * con algo que ya no se puede vender.
+   * Rehidrata contra el catálogo ya cargado en vez de guardar el producto
+   * entero. Si algo se retiró del catálogo o se agotó mientras el carrito
+   * esperaba, la línea desaparece sola: es preferible a dejar al cliente
+   * llegar al checkout con algo que ya no se puede vender.
    */
   private hydrate(): readonly CartItem[] {
     const stored = this.kv.get<StoredLine[]>(KV_KEYS.cart);
@@ -129,7 +153,7 @@ export class CartService {
 
     const items: CartItem[] = [];
     for (const line of stored) {
-      const product = this.store.productById(line.productId);
+      const product = this.catalog.productById(line.productId);
       if (!product || !isInStock(product)) {
         continue;
       }

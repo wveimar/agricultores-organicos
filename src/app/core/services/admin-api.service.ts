@@ -161,10 +161,4 @@ export class AdminApiService {
       }),
     );
   }
-
-  /** Carga lo mínimo que necesita la portada del panel para mostrar sus contadores. */
-  refreshHome(): void {
-    this.loadProducts();
-    this.loadOrders();
-  }
 }

@@ -82,10 +82,6 @@ export class OrdersManager {
     return order.items.reduce((sum, item) => sum + item.cantidad, 0);
   }
 
-  /** Stock actual de un producto, para pintarlo junto a la cantidad pedida. */
-  protected availableFor(productId: string): number {
-    return this.adminApi.products().find((p) => p.id === productId)?.stock ?? 0;
-  }
 
   protected toggle(orderId: string): void {
     this.expandedId.update((current) => (current === orderId ? null : orderId));

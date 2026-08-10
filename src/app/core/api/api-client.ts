@@ -3,6 +3,12 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, catchError, map, tap, throwError } from 'rxjs';
 import { ApiSession, TokenStore } from './token-store';
 import { UserRole } from '../models/user.model';
+import {
+  CategoryId,
+  Product,
+  ProductBadge,
+  ProductUnit,
+} from '../models/product.model';
 
 /** Forma estable de los errores del Worker: `{ error: { code, message, details } }`. */
 export interface ApiErrorBody {
@@ -43,12 +49,53 @@ export interface ApiProduct {
   readonly margenUnitario?: number;
 }
 
+/**
+ * Traduce el `ApiProduct` del Worker (columnas en español, tal cual las
+ * expone la API) al `Product` que ya consume toda la tienda pública
+ * (`nombre` → `name`, `precio` → `price`, …).
+ *
+ * Existe para que conectar el catálogo público al backend real sea cambiar
+ * **de dónde** sale el `Product[]`, no reescribir cada componente de la
+ * vitrina. `/api/products` (el endpoint público) no manda `precioCosto` ni
+ * `stockSeguridad` — son columnas solo de `/api/admin/*` — así que aquí caen
+ * a 0: la tienda pública nunca los muestra, solo el panel.
+ */
+export function toProduct(p: ApiProduct): Product {
+  return {
+    id: p.id,
+    slug: p.slug,
+    name: p.nombre,
+    tagline: p.tagline,
+    categoryId: p.categoriaId as CategoryId,
+    price: p.precio,
+    compareAtPrice: p.precioAnterior ?? undefined,
+    costPrice: p.precioCosto ?? 0,
+    unit: p.unidad as ProductUnit,
+    origin: p.origen,
+    rating: p.rating,
+    reviewCount: p.reviewCount,
+    badge: (p.badge as ProductBadge | null) ?? undefined,
+    stock: p.stock,
+    safetyStock: p.stockSeguridad ?? 0,
+    image: p.imagen,
+    imageHover: p.imagenHover ?? undefined,
+    imageAlt: p.imagenAlt,
+  };
+}
+
 export interface ApiOrderItem {
   readonly productId: string;
   readonly productoNombre: string;
   readonly precioUnitario: number;
   readonly costoUnitario: number;
   readonly cantidad: number;
+  /**
+   * Stock actual del producto, ya incluido en la línea del pedido. Así el
+   * detalle es legible también para `GESTOR_PEDIDOS`, que no tiene permiso
+   * sobre `/api/admin/products` (esa ruta expone costo y margen, que no son
+   * de su incumbencia). `null` si el producto se borró del catálogo.
+   */
+  readonly stockDisponible: number | null;
 }
 
 export interface ApiOrder {
@@ -171,6 +218,8 @@ export class ApiClient {
     envio: number;
     items: readonly { productId: string; cantidad: number }[];
     comprobanteNombre?: string;
+    /** Data URL del comprobante ya comprimido (ver `shared/utils/image-file.ts`). */
+    comprobanteUrl?: string;
   }): Observable<ApiOrder> {
     return this.http
       .post<{ order: ApiOrder }>('/api/orders', input)

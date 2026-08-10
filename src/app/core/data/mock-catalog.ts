@@ -5,9 +5,15 @@ import type { Category, Product } from '../models/product.model';
 import { photo, wide } from './catalog-images';
 
 /**
- * Datos simulados. No hay backend en esta entrega (ver doc/plan.md §9).
- * Para conectar una API real basta con reemplazar `PRODUCTS`: el resto de la
- * aplicación solo depende de la interfaz `Product`.
+ * Catálogo de origen — ya no lo consume la app en tiempo de ejecución.
+ *
+ * El panel administrativo y la tienda pública leen de Cloudflare D1 a través
+ * del Worker (`ApiClient`, ver `core/api/`). Este archivo sigue existiendo
+ * como la **fuente única** de los datos de ejemplo: `CATEGORIES` alimenta la
+ * copy estática de las categorías en `CatalogService`, y `PRODUCTS` lo importa
+ * `worker/tools/generate-seed.mjs` para generar `worker/seed.sql`. Cambia el
+ * precio o el stock de un producto aquí y corre `npm run db:seed:build &&
+ * npm run db:seed` para que la base de datos local lo refleje.
  */
 
 /** Hero: puesto de mercado desbordado de fruta y verdura. */

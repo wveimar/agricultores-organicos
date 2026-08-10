@@ -5,7 +5,8 @@ import {
   BANK_DETAILS,
   CheckoutService,
 } from '../../../core/services/checkout.service';
-import { PaymentProof, StockShortfall } from '../../../core/models/order.model';
+import { ApiErrorBody, Shortfall } from '../../../core/api/api-client';
+import { PaymentProof } from '../../../core/models/order.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { ProofUploader } from '../proof-uploader/proof-uploader';
 import { OrderSuccess } from '../order-success/order-success';
@@ -25,10 +26,12 @@ export class CheckoutPage {
   private readonly fb = inject(FormBuilder);
 
   protected readonly bank = BANK_DETAILS;
-  protected readonly shortfalls = signal<readonly StockShortfall[] | null>(null);
+  protected readonly shortfalls = signal<readonly Shortfall[] | null>(null);
   protected readonly copied = signal(false);
+  protected readonly placing = signal(false);
 
-  /** Se muestra solo tras un intento de envío con el formulario incompleto. */
+  /** Se muestra solo tras un intento de envío con el formulario incompleto,
+   *  o cuando el servidor rechaza el pedido por un motivo que no es stock. */
   protected readonly formError = signal<string | null>(null);
 
   protected readonly form = this.fb.nonNullable.group({
@@ -59,26 +62,35 @@ export class CheckoutPage {
 
   protected submit(): void {
     this.shortfalls.set(null);
+    this.formError.set(null);
 
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       this.formError.set('Completa los datos obligatorios (nombre, teléfono y dirección) para continuar.');
       return;
     }
-    this.formError.set(null);
 
+    this.placing.set(true);
     const { name, phone, address } = this.form.getRawValue();
-    const result = this.checkout.placeOrder({ name, phone, address });
 
-    if (!result.ok) {
-      if (result.reason === 'insufficient-stock') {
-        this.shortfalls.set(result.shortfalls);
-      }
-      return;
-    }
+    this.checkout.placeOrder({ name, phone, address }).subscribe({
+      next: () => {
+        this.placing.set(false);
+        // El botón está al final del formulario: sin esto, la pantalla de
+        // éxito aparecería con el scroll a mitad y el cliente no la vería.
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      },
+      error: (error: ApiErrorBody) => {
+        this.placing.set(false);
 
-    // El botón está al final del formulario: sin esto, la pantalla de éxito
-    // aparecería con el scroll a mitad y el cliente no vería la confirmación.
-    window.scrollTo({ top: 0, behavior: 'instant' });
+        if (error.code === 'stock-insuficiente') {
+          const shortfalls = (error.details as { shortfalls?: Shortfall[] } | undefined)?.shortfalls ?? [];
+          this.shortfalls.set(shortfalls);
+          return;
+        }
+
+        this.formError.set(error.message);
+      },
+    });
   }
 }

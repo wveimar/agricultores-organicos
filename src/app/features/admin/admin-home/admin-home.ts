@@ -30,7 +30,13 @@ export class AdminHome {
     this.adminApi.products().reduce((total, p) => total + p.stock * p.precio, 0),
   );
 
+  /** Solo recarga lo que el rol de esta cuenta puede ver. */
   protected refresh(): void {
-    this.adminApi.refreshHome();
+    if (this.canInventory()) {
+      this.adminApi.loadProducts();
+    }
+    if (this.canOrders()) {
+      this.adminApi.loadOrders();
+    }
   }
 }

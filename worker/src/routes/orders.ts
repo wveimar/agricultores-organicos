@@ -151,7 +151,13 @@ export async function create(request: Request, env: Env): Promise<Response> {
       envio,
       subtotal + envio,
       typeof body.comprobanteNombre === 'string' ? body.comprobanteNombre.slice(0, 200) : null,
-      typeof body.comprobanteUrl === 'string' ? body.comprobanteUrl.slice(0, 500) : null,
+      // Sin R2 configurado todavía, el comprobante viaja como data URL (JPEG
+      // recomprimido a ~150-300 KB por el cliente, ver image-file.ts) y se
+      // guarda tal cual en esta columna TEXT. No es el sitio ideal para un
+      // blob de imagen, pero es honesto: mejor esto que un límite de 500
+      // caracteres que truncaría la imagen y la dejaría corrupta en el panel.
+      // El siguiente paso real es subir a R2 y guardar solo la URL del objeto.
+      typeof body.comprobanteUrl === 'string' ? body.comprobanteUrl.slice(0, 2_000_000) : null,
     ),
   ];
 
@@ -375,10 +381,15 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
   const placeholders = ids.map((_, index) => `?${index + 1}`).join(', ');
 
   const { results: items } = await env.DB.prepare(
-    `SELECT order_id AS orderId, product_id AS productId, producto_nombre AS productoNombre,
-            precio_unitario AS precioUnitario, costo_unitario AS costoUnitario, cantidad
-       FROM order_items
-      WHERE order_id IN (${placeholders})`,
+    `SELECT oi.order_id AS orderId, oi.product_id AS productId, oi.producto_nombre AS productoNombre,
+            oi.precio_unitario AS precioUnitario, oi.costo_unitario AS costoUnitario, oi.cantidad,
+            -- GESTOR_PEDIDOS no tiene permiso sobre /api/admin/products (ve costo y margen,
+            -- que no son de su incumbencia), así que el stock disponible viaja aquí: es la
+            -- única forma en que el detalle del pedido puede mostrarlo sin ese acceso.
+            p.stock_actual AS stockDisponible
+       FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id
+      WHERE oi.order_id IN (${placeholders})`,
   )
     .bind(...ids)
     .all<{ orderId: string }>();
@@ -408,9 +419,12 @@ async function loadOrder(env: Env, orderId: string): Promise<unknown> {
          FROM orders WHERE id = ?1`,
     ).bind(orderId),
     env.DB.prepare(
-      `SELECT product_id AS productId, producto_nombre AS productoNombre,
-              precio_unitario AS precioUnitario, costo_unitario AS costoUnitario, cantidad
-         FROM order_items WHERE order_id = ?1`,
+      `SELECT oi.product_id AS productId, oi.producto_nombre AS productoNombre,
+              oi.precio_unitario AS precioUnitario, oi.costo_unitario AS costoUnitario, oi.cantidad,
+              p.stock_actual AS stockDisponible
+         FROM order_items oi
+         LEFT JOIN products p ON p.id = oi.product_id
+        WHERE oi.order_id = ?1`,
     ).bind(orderId),
   ]);
 
