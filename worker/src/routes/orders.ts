@@ -159,6 +159,12 @@ export async function create(request: Request, env: Env): Promise<Response> {
       // El siguiente paso real es subir a R2 y guardar solo la URL del objeto.
       typeof body.comprobanteUrl === 'string' ? body.comprobanteUrl.slice(0, 2_000_000) : null,
     ),
+    // Traza de la primera transición, en el mismo batch: si el pedido no llega
+    // a crearse, tampoco debe quedar un registro de que "nació".
+    env.DB.prepare(
+      `INSERT INTO order_status_log (order_id, estado, actor_id, actor_nombre)
+       VALUES (?1, 'verificacion', NULL, ?2)`,
+    ).bind(orderId, clienteNombre),
   ];
 
   for (const [productId, cantidad] of required) {
@@ -280,6 +286,19 @@ export async function approve(
           AND aprobacion_token IS NULL
           AND estado IN ('pendiente', 'verificacion')`,
     ).bind(orderId, user.sub, now, token),
+    // OJO: un INSERT normal aquí sería un bug. `batch()` es atómico ante
+    // *errores*, pero el UPDATE de arriba no lanza error si pierde la carrera
+    // de idempotencia — simplemente afecta 0 filas y el batch sigue. Un
+    // `INSERT ... VALUES` incondicional se ejecutaría igual y dejaría en el
+    // log una aprobación que en realidad no ocurrió. Por eso es un
+    // `INSERT ... SELECT ... WHERE`, con la misma condición del token que
+    // usan los UPDATE de stock más abajo: solo inserta si esta petición fue
+    // la que de verdad ganó la carrera.
+    env.DB.prepare(
+      `INSERT INTO order_status_log (order_id, estado, actor_id, actor_nombre)
+       SELECT ?1, 'aprobado', ?2, ?3
+        WHERE (SELECT aprobacion_token FROM orders WHERE id = ?1) = ?4`,
+    ).bind(orderId, user.sub, user.nombre, token),
   ];
 
   if (necesitaDescuento) {
@@ -316,13 +335,22 @@ export async function approve(
 export async function ship(env: Env, user: JwtPayload, orderId: string): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS');
 
-  const result = await env.DB.prepare(
-    `UPDATE orders SET estado = 'enviado' WHERE id = ?1 AND estado = 'aprobado'`,
-  )
-    .bind(orderId)
-    .run();
+  // Dos sentencias en un batch, no una suelta: así el registro del log queda
+  // ligado al mismo todo-o-nada que el cambio de estado, igual que en approve().
+  const [updateResult] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE orders SET estado = 'enviado' WHERE id = ?1 AND estado = 'aprobado'`,
+    ).bind(orderId),
+    // Mismo motivo que en approve(): condicionado a que el UPDATE de arriba
+    // haya encontrado de verdad un pedido en estado 'aprobado' que mover.
+    env.DB.prepare(
+      `INSERT INTO order_status_log (order_id, estado, actor_id, actor_nombre)
+       SELECT ?1, 'enviado', ?2, ?3
+        WHERE (SELECT estado FROM orders WHERE id = ?1) = 'enviado'`,
+    ).bind(orderId, user.sub, user.nombre),
+  ]);
 
-  if (result.meta.changes === 0) {
+  if (updateResult.meta.changes === 0) {
     throw ApiError.conflict(
       'estado-invalido',
       'Solo se puede marcar como enviado un pedido aprobado.',
@@ -407,6 +435,28 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
       items: byOrder.get((order as { id: string }).id) ?? [],
     })),
   });
+}
+
+/**
+ * GET /api/admin/orders/:id/historial — traza de estados.
+ *
+ * Pensado para soporte postventa por WhatsApp: responde exactamente "¿en qué
+ * va este pedido y cuándo pasó cada cosa" sin tener que reconstruirlo a ojo
+ * a partir de `aprobado_en`.
+ */
+export async function history(env: Env, user: JwtPayload, orderId: string): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const { results } = await env.DB.prepare(
+    `SELECT estado, actor_id AS actorId, actor_nombre AS actorNombre, creado_en AS creadoEn
+       FROM order_status_log
+      WHERE order_id = ?1
+      ORDER BY creado_en ASC, id ASC`,
+  )
+    .bind(orderId)
+    .all();
+
+  return json({ history: results });
 }
 
 async function loadOrder(env: Env, orderId: string): Promise<unknown> {

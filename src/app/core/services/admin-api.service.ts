@@ -6,6 +6,7 @@ import {
   ApiClosing,
   ApiErrorBody,
   ApiOrder,
+  ApiOrderStatusLogEntry,
   ApiProduct,
   ApiSalesRow,
 } from '../api/api-client';
@@ -115,6 +116,11 @@ export class AdminApiService {
         this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
       }),
     );
+  }
+
+  /** Traza de estados, para soporte postventa por WhatsApp. */
+  orderHistory(id: string): Observable<readonly ApiOrderStatusLogEntry[]> {
+    return this.api.orderHistory(id);
   }
 
   // ───────────────────────────────── Reportes ─────────────────────────────────

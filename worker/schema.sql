@@ -13,6 +13,7 @@
 
 PRAGMA foreign_keys = ON;
 
+DROP TABLE IF EXISTS order_status_log;
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS cash_closings;
@@ -174,3 +175,22 @@ CREATE TABLE order_items (
 
 CREATE INDEX idx_items_order   ON order_items (order_id);
 CREATE INDEX idx_items_product ON order_items (product_id);
+
+-- ───────────────────────── Trazabilidad de pedidos ─────────────────────────
+-- Cada cambio de estado queda registrado aquí, en la MISMA transacción que lo
+-- produce (ver el batch() de create()/approve()/ship() en routes/orders.ts).
+-- Sin eso, el log podría mostrar una transición que en realidad no llegó a
+-- confirmarse, o callarse una que sí. Es lo que permite responder por
+-- WhatsApp "¿en qué va mi pedido?" sin adivinar a partir de aprobado_en.
+CREATE TABLE order_status_log (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id      TEXT    NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  estado        TEXT    NOT NULL CHECK (estado IN ('verificacion', 'pendiente', 'aprobado', 'enviado')),
+  -- NULL en la creación del pedido: ese paso lo dispara el propio cliente,
+  -- sin sesión de administrador detrás.
+  actor_id      TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  actor_nombre  TEXT,
+  creado_en     TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_status_log_order ON order_status_log (order_id, creado_en);

@@ -98,6 +98,14 @@ export interface ApiOrderItem {
   readonly stockDisponible: number | null;
 }
 
+export interface ApiOrderStatusLogEntry {
+  readonly estado: 'verificacion' | 'pendiente' | 'aprobado' | 'enviado';
+  readonly actorId: string | null;
+  /** Nombre del cliente en la creación; nombre del admin en el resto de pasos. */
+  readonly actorNombre: string | null;
+  readonly creadoEn: string;
+}
+
 export interface ApiOrder {
   readonly id: string;
   readonly referencia: string;
@@ -246,6 +254,13 @@ export class ApiClient {
     return this.http
       .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/enviar`, {})
       .pipe(map((res) => res.order), catchError(handleError));
+  }
+
+  /** Traza de estados del pedido, para soporte postventa por WhatsApp. */
+  orderHistory(id: string): Observable<readonly ApiOrderStatusLogEntry[]> {
+    return this.http
+      .get<{ history: ApiOrderStatusLogEntry[] }>(`/api/admin/orders/${id}/historial`)
+      .pipe(map((res) => res.history), catchError(handleError));
   }
 
   // ─────────────────────────────── Reportes ───────────────────────────────

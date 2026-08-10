@@ -1,6 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { AdminApiService } from '../../../core/services/admin-api.service';
-import { ApiErrorBody, ApiOrder, Shortfall } from '../../../core/api/api-client';
+import {
+  ApiErrorBody,
+  ApiOrder,
+  ApiOrderStatusLogEntry,
+  Shortfall,
+} from '../../../core/api/api-client';
 import { ORDER_STATUS_LABELS, OrderStatus } from '../../../core/models/order.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
@@ -39,6 +44,10 @@ export class OrdersManager {
   /** Faltantes del último intento fallido, por id de pedido. */
   protected readonly blocked = signal<{ orderId: string; shortfalls: readonly Shortfall[] } | null>(null);
   protected readonly feedback = signal<string | null>(null);
+
+  /** Traza por pedido, cargada bajo demanda al abrir el detalle. */
+  protected readonly history = signal<ReadonlyMap<string, readonly ApiOrderStatusLogEntry[]>>(new Map());
+  protected readonly historyLoading = signal<string | null>(null);
 
   constructor() {
     this.adminApi.loadOrders();
@@ -84,7 +93,27 @@ export class OrdersManager {
 
 
   protected toggle(orderId: string): void {
-    this.expandedId.update((current) => (current === orderId ? null : orderId));
+    const opening = this.expandedId() !== orderId;
+    this.expandedId.set(opening ? orderId : null);
+
+    if (opening) {
+      this.loadHistory(orderId);
+    }
+  }
+
+  protected historyFor(orderId: string): readonly ApiOrderStatusLogEntry[] {
+    return this.history().get(orderId) ?? [];
+  }
+
+  private loadHistory(orderId: string): void {
+    this.historyLoading.set(orderId);
+    this.adminApi.orderHistory(orderId).subscribe({
+      next: (entries) => {
+        this.historyLoading.set(null);
+        this.history.update((map) => new Map(map).set(orderId, entries));
+      },
+      error: () => this.historyLoading.set(null),
+    });
   }
 
   /**
@@ -100,6 +129,9 @@ export class OrdersManager {
       next: () => {
         this.workingId.set(null);
         this.feedback.set(`${order.referencia} aprobado. Inventario descontado.`);
+        if (this.expandedId() === order.id) {
+          this.loadHistory(order.id);
+        }
       },
       error: (error: ApiErrorBody) => {
         this.workingId.set(null);
@@ -124,6 +156,9 @@ export class OrdersManager {
       next: () => {
         this.workingId.set(null);
         this.feedback.set(`${order.referencia} marcado como enviado.`);
+        if (this.expandedId() === order.id) {
+          this.loadHistory(order.id);
+        }
       },
       error: (error: ApiErrorBody) => {
         this.workingId.set(null);

@@ -16,7 +16,16 @@
     "db:seed": "wrangler d1 execute DB --local --file=worker/seed.sql",
     "db:reset": "npm run db:schema && npm run db:seed",
     "db:schema:remote": "wrangler d1 execute DB --remote --file=worker/schema.sql",
-    "db:seed:remote": "wrangler d1 execute DB --remote --file=worker/seed.sql"
+    "db:seed:remote": "wrangler d1 execute DB --remote --file=worker/seed.sql",
+    "db:migrate:status-log": "wrangler d1 execute DB --local --file=worker/migrations/0001_order_status_log.sql",
+    "db:migrate:status-log:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0001_order_status_log.sql",
+    "qa:fk:valid": "wrangler d1 execute DB --local --file=worker/tests/qa-fk-valid-order.sql",
+    "qa:fk:invalid": "wrangler d1 execute DB --local --file=worker/tests/qa-fk-invalid-product.sql",
+    "qa:fk:valid:remote": "wrangler d1 execute DB --remote --file=worker/tests/qa-fk-valid-order.sql",
+    "qa:fk:invalid:remote": "wrangler d1 execute DB --remote --file=worker/tests/qa-fk-invalid-product.sql",
+    "qa:stock": "node worker/tests/qa-stock-check.mjs http://localhost:8788 admin@agricultores.co demo1234",
+    "qa:cleanup": "wrangler d1 execute DB --local --file=worker/tests/qa-cleanup.sql",
+    "qa:cleanup:remote": "wrangler d1 execute DB --remote --file=worker/tests/qa-cleanup.sql"
   },
   "private": true,
   "packageManager": "npm@11.12.1",
