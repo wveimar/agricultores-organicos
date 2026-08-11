@@ -23,7 +23,9 @@
       "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" -X POST https://agricultores-organicos.wveimar-mamian.workers.dev/api/auth/login -H \"content-type: application/json\" -d '{\"email\":\"nadie@agricultores.co\",\"password\":\"demo1234\"}' --max-time 25)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST http://localhost:8788/api/auth/login -H \"content-type: application/json\" -d '{\"email\":\"admin@agricultores.co\",\"password\":\"demo1234\"}' --max-time 10)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST http://localhost:8788/api/auth/login -H \"content-type: application/json\" -d '{\"email\":\"admin@agricultores.co\",\"password\":\"malaClave1\"}' --max-time 10)",
-      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST http://localhost:8788/api/auth/login -H \"content-type: application/json\" -d '{\"email\":\"nadie@agricultores.co\",\"password\":\"demo1234\"}' --max-time 10)"
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST http://localhost:8788/api/auth/login -H \"content-type: application/json\" -d '{\"email\":\"nadie@agricultores.co\",\"password\":\"demo1234\"}' --max-time 10)",
+      "Bash(rm -f /tmp/prodsecret.txt)",
+      "Bash(git check-ignore *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"
