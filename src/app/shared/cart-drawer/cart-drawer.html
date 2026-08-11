@@ -139,6 +139,19 @@
 
       <!-- Resumen -->
       <div class="border-t border-sand px-6 py-5">
+        <!-- Ventana semanal: se pide antes del viernes o se despacha el domingo siguiente -->
+        <div
+          class="mb-4 rounded-md border px-4 py-3"
+          [class]="cutoffNear ? 'border-clay/40 bg-clay/5' : 'border-sand bg-linen/50'"
+        >
+          <p class="text-sm" [class]="cutoffNear ? 'font-semibold text-clay-deep' : 'text-ink'">
+            Pedidos hasta el {{ cutoffDay }} a las 12:00 m.
+          </p>
+          <p class="mt-0.5 text-xs text-ink-soft">
+            Lo que pidas ahora sale el {{ dispatchDay }}, después del mediodía.
+          </p>
+        </div>
+
         <dl class="flex flex-col gap-2 text-sm">
           <div class="flex justify-between text-ink-soft">
             <dt>Subtotal</dt>

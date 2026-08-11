@@ -7,6 +7,12 @@ import {
 } from '../../../core/services/checkout.service';
 import { ApiErrorBody, Shortfall } from '../../../core/api/api-client';
 import { PaymentProof } from '../../../core/models/order.model';
+import {
+  formatDay,
+  isCutoffNear,
+  nextCutoff,
+  nextDispatch,
+} from '../../../core/models/ordering-window';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { ProofUploader } from '../proof-uploader/proof-uploader';
 import { OrderSuccess } from '../order-success/order-success';
@@ -26,6 +32,12 @@ export class CheckoutPage {
   private readonly fb = inject(FormBuilder);
 
   protected readonly bank = BANK_DETAILS;
+
+  /** Ventana semanal de acopio; ver `ordering-window.ts`. */
+  protected readonly cutoffDay = formatDay(nextCutoff());
+  protected readonly dispatchDay = formatDay(nextDispatch());
+  protected readonly cutoffNear = isCutoffNear();
+
   protected readonly shortfalls = signal<readonly Shortfall[] | null>(null);
   protected readonly copied = signal(false);
   protected readonly placing = signal(false);

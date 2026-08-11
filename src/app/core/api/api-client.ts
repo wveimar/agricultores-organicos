@@ -47,6 +47,13 @@ export interface ApiProduct {
   readonly stockSeguridad?: number;
   readonly categoriaAbc?: 'A' | 'B' | 'C';
   readonly margenUnitario?: number;
+  /**
+   * 1 = se ofrece esta semana · 0 = el agricultor no tiene cosecha.
+   *
+   * Solo llega en `/api/admin/*`: el catálogo público ya viene filtrado por
+   * el servidor, así que allí todo lo que llega está activo por definición.
+   */
+  readonly activo?: number;
 }
 
 /**
@@ -248,7 +255,14 @@ export class ApiClient {
 
   updateProduct(
     id: string,
-    patch: Partial<{ precio: number; precioCosto: number; stock: number; stockSeguridad: number }>,
+    patch: Partial<{
+      precio: number;
+      precioCosto: number;
+      stock: number;
+      stockSeguridad: number;
+      /** 1 = se ofrece esta semana · 0 = sin oferta del agricultor. */
+      activo: 0 | 1;
+    }>,
   ): Observable<ApiProduct> {
     return this.http
       .patch<{ product: ApiProduct }>(`/api/admin/products/${id}`, patch)

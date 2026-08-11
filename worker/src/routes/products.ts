@@ -10,12 +10,13 @@ const PUBLIC_COLUMNS = `
   imagen, imagen_hover AS imagenHover, imagen_alt AS imagenAlt
 `;
 
-/** El panel además ve costo, umbral de reposición y clase ABC. */
+/** El panel además ve costo, umbral de reposición, clase ABC y disponibilidad. */
 const ADMIN_COLUMNS = `
   ${PUBLIC_COLUMNS},
   precio_costo AS precioCosto,
   stock_seguridad AS stockSeguridad,
   categoria_abc AS categoriaAbc,
+  activo,
   (precio - precio_costo) AS margenUnitario
 `;
 
@@ -47,12 +48,19 @@ export async function listPublic(env: Env, url: URL): Promise<Response> {
   return json({ products: results });
 }
 
-/** GET /api/admin/products — inventario completo, con costo y margen. */
+/**
+ * GET /api/admin/products — inventario completo, con costo y margen.
+ *
+ * A diferencia del catálogo público, aquí **sí** salen los productos con
+ * `activo = 0`. Filtrarlos sería una puerta de un solo sentido: al marcar uno
+ * como "sin oferta esta semana" desaparecería del panel y ya no habría forma
+ * de volver a activarlo cuando el agricultor confirme que hay cosecha.
+ */
 export async function listAdmin(env: Env, user: JwtPayload): Promise<Response> {
   requireRole(user, 'ADMIN_INVENTARIO');
 
   const { results } = await env.DB.prepare(
-    `SELECT ${ADMIN_COLUMNS} FROM products WHERE activo = 1 ORDER BY nombre COLLATE NOCASE`,
+    `SELECT ${ADMIN_COLUMNS} FROM products ORDER BY nombre COLLATE NOCASE`,
   ).all();
 
   return json({ products: results });
@@ -79,6 +87,8 @@ interface UpdateBody {
   precioCosto?: unknown;
   stock?: unknown;
   stockSeguridad?: unknown;
+  /** 1 = se ofrece esta semana · 0 = el agricultor no tiene cosecha. */
+  activo?: unknown;
 }
 
 /**
@@ -110,6 +120,15 @@ export async function update(
   if (body.stockSeguridad !== undefined) {
     push('stock_seguridad', requireInt(body.stockSeguridad, 'stockSeguridad', 0));
   }
+  if (body.activo !== undefined) {
+    // `requireInt` solo impone mínimo, y aquí el máximo importa: un 7 pasaría
+    // la validación y reventaría contra el CHECK (activo IN (0,1)) de D1 como
+    // un 500 en vez de un 400 con un mensaje útil.
+    if (body.activo !== 0 && body.activo !== 1) {
+      throw ApiError.badRequest('activo-invalido', 'El campo "activo" debe ser 0 o 1.');
+    }
+    push('activo', body.activo);
+  }
 
   if (sets.length === 0) {
     throw ApiError.badRequest('sin-cambios', 'No enviaste ningún campo para actualizar.');
@@ -118,14 +137,17 @@ export async function update(
   sets.push(`actualizado_en = datetime('now')`);
   bindings.push(productId);
 
+  // Sin `AND activo = 1`: si se excluyera, reactivar un producto marcado como
+  // sin oferta sería imposible — el propio UPDATE que lo reactiva no
+  // encontraría la fila.
   const result = await env.DB.prepare(
-    `UPDATE products SET ${sets.join(', ')} WHERE id = ?${bindings.length} AND activo = 1`,
+    `UPDATE products SET ${sets.join(', ')} WHERE id = ?${bindings.length}`,
   )
     .bind(...bindings)
     .run();
 
   if (result.meta.changes === 0) {
-    throw ApiError.notFound('Ese producto no existe o está desactivado.');
+    throw ApiError.notFound('Ese producto no existe.');
   }
 
   const updated = await env.DB.prepare(`SELECT ${ADMIN_COLUMNS} FROM products WHERE id = ?1`)
@@ -220,7 +242,7 @@ export async function updateFull(
         precio = ?6, precio_costo = ?7, unidad = ?8, origen = ?9,
         imagen = ?10, imagen_hover = ?11, imagen_alt = ?12,
         actualizado_en = datetime('now')
-       WHERE id = ?13 AND activo = 1`,
+       WHERE id = ?13`,
     )
       .bind(updateSlug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, origen, imagen, imagenHover ?? null, imagenAlt, productId)
       .run();

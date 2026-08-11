@@ -22,15 +22,18 @@
 <!-- Indicadores -->
 <div class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
   <div class="rounded-lg border border-sand bg-bone p-5">
-    <p class="text-overline font-semibold uppercase text-ink-muted">Referencias</p>
-    <p class="tabular mt-2 font-display text-h3 text-ink">{{ adminApi.products().length }}</p>
+    <p class="text-overline font-semibold uppercase text-ink-muted">Se ofrecen</p>
+    <p class="tabular mt-2 font-display text-h3 text-ink">{{ offeredCount() }}</p>
+    @if (adminApi.inactiveCount() > 0) {
+      <p class="mt-1 text-xs text-ink-muted">
+        {{ adminApi.inactiveCount() }} sin oferta esta semana
+      </p>
+    }
   </div>
 
   <div class="rounded-lg border border-sand bg-bone p-5">
     <p class="text-overline font-semibold uppercase text-ink-muted">Unidades en bodega</p>
-    <p class="tabular mt-2 font-display text-h3 text-ink">
-      {{ adminApi.products().reduce((t, p) => t + p.stock, 0) }}
-    </p>
+    <p class="tabular mt-2 font-display text-h3 text-ink">{{ offeredUnits() }}</p>
   </div>
 
   <div
@@ -91,6 +94,26 @@
   </div>
 
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+    <div
+      class="flex rounded-full border border-sand bg-bone p-0.5"
+      role="tablist"
+      aria-label="Filtrar por disponibilidad de la semana"
+    >
+      @for (filter of availabilityFilters; track filter.value) {
+        @let isOn = availability() === filter.value;
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="isOn"
+          class="rounded-full px-3.5 py-1.5 text-sm transition-colors duration-200"
+          [class]="isOn ? 'bg-moss text-bone' : 'text-ink-soft hover:text-ink'"
+          (click)="setAvailabilityFilter(filter.value)"
+        >
+          {{ filter.label }}
+        </button>
+      }
+    </div>
+
     <label class="flex cursor-pointer items-center gap-2 text-sm text-ink-soft">
       <input
         type="checkbox"
@@ -129,6 +152,13 @@
   </div>
 </div>
 
+@if (toggleError(); as message) {
+  <div class="mt-4 rounded-md border border-berry/30 bg-berry/5 px-5 py-4" role="alert">
+    <p class="text-sm font-semibold text-berry">No se pudo cambiar la disponibilidad.</p>
+    <p class="mt-1 text-sm text-ink-soft">{{ message }}</p>
+  </div>
+}
+
 @if (adminApi.productsLoading() && adminApi.products().length === 0) {
   <div class="mt-5 rounded-lg border border-dashed border-sand py-20 text-center">
     <p class="text-sm text-ink-soft">Cargando inventario…</p>
@@ -146,6 +176,7 @@
             <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Margen</th>
             <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Existencias</th>
             <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Estado</th>
+            <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Se ofrece</th>
             <th scope="col" class="text-overline px-5 py-3 text-right font-semibold uppercase text-ink-muted">Acción</th>
           </tr>
         </thead>
@@ -153,14 +184,16 @@
         <tbody class="divide-y divide-sand">
           @for (product of rows(); track product.id) {
             @let level = levelOf(product);
+            @let offered = isOffered(product);
 
-            <tr class="align-middle">
+            <tr class="align-middle" [class]="offered ? '' : 'bg-linen/40'">
               <th scope="row" class="px-5 py-4 font-normal">
                 <div class="flex items-center gap-3">
                   <img
                     [src]="product.imagen"
                     [alt]="product.imagenAlt"
-                    class="size-11 shrink-0 rounded-md bg-linen object-cover"
+                    class="size-11 shrink-0 rounded-md bg-linen object-cover transition-[filter] duration-200"
+                    [class]="offered ? '' : 'grayscale opacity-60'"
                     loading="lazy"
                     decoding="async"
                   />
@@ -205,12 +238,42 @@
               </td>
 
               <td class="px-5 py-4">
-                <span
-                  class="text-overline inline-block rounded-full px-3 py-1.5 font-semibold uppercase"
-                  [class]="stockStyles[level].chip"
+                @if (offered) {
+                  <span
+                    class="text-overline inline-block rounded-full px-3 py-1.5 font-semibold uppercase"
+                    [class]="stockStyles[level].chip"
+                  >
+                    {{ stockStyles[level].label }}
+                  </span>
+                } @else {
+                  <span class="text-overline inline-block rounded-full bg-linen px-3 py-1.5 font-semibold uppercase text-ink-muted">
+                    No se ofrece
+                  </span>
+                }
+              </td>
+
+              <!-- Disponibilidad de la semana: lo que confirma el agricultor -->
+              <td class="px-5 py-4">
+                <button
+                  type="button"
+                  role="switch"
+                  [attr.aria-checked]="offered"
+                  [attr.aria-label]="
+                    (offered ? 'Retirar de la venta ' : 'Volver a ofrecer ') + product.nombre
+                  "
+                  [disabled]="togglingId() === product.id"
+                  class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 disabled:opacity-50"
+                  [class]="offered ? 'bg-moss' : 'bg-stone/40'"
+                  (click)="toggleAvailability(product)"
                 >
-                  {{ stockStyles[level].label }}
-                </span>
+                  <span
+                    class="inline-block size-4 rounded-full bg-bone shadow transition-transform duration-200"
+                    [class]="offered ? 'translate-x-6' : 'translate-x-1'"
+                  ></span>
+                </button>
+                <p class="mt-1.5 text-xs" [class]="offered ? 'text-ink-muted' : 'text-clay-deep'">
+                  {{ offered ? 'Esta semana sí' : 'Sin cosecha' }}
+                </p>
               </td>
 
               <td class="px-5 py-4 text-right">
@@ -240,7 +303,7 @@
             <!-- Formulario reactivo, desplegado bajo la fila que se edita -->
             @if (editingId() === product.id) {
               <tr>
-                <td colspan="6" class="bg-linen/70 px-5 py-5">
+                <td colspan="7" class="bg-linen/70 px-5 py-5">
                   <form [formGroup]="form" (ngSubmit)="save(product.id)" novalidate>
                     <div class="flex flex-wrap items-start gap-5">
                       <div>
@@ -344,7 +407,7 @@
             }
           } @empty {
             <tr>
-              <td colspan="6" class="px-5 py-16 text-center">
+              <td colspan="7" class="px-5 py-16 text-center">
                 <p class="text-h3 text-ink">Sin resultados</p>
                 <p class="mt-2 text-sm text-ink-soft">
                   Ajusta el filtro o la búsqueda para ver productos.

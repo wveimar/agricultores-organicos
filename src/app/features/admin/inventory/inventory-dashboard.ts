@@ -40,6 +40,21 @@ export class InventoryDashboard {
   /** Cuando está activo, la tabla solo muestra lo que hay que reponer. */
   protected readonly onlyAlerts = signal(false);
 
+  /**
+   * Filtro por disponibilidad de la semana. Existe porque el flujo real es una
+   * llamada al agricultor: se recorre la lista completa marcando qué hay y qué
+   * no, y después conviene repasar solo lo retirado para volver a activarlo.
+   */
+  protected readonly availability = signal<'todos' | 'ofertados' | 'sin-oferta'>('todos');
+  protected readonly availabilityFilters = [
+    { value: 'todos', label: 'Todos' },
+    { value: 'ofertados', label: 'Se ofrecen' },
+    { value: 'sin-oferta', label: 'Sin oferta' },
+  ] as const;
+
+  protected readonly togglingId = signal<string | null>(null);
+  protected readonly toggleError = signal<string | null>(null);
+
   /** Producto abierto en el formulario de edición. `null` = ninguno. */
   protected readonly editingId = signal<string | null>(null);
   protected readonly savedId = signal<string | null>(null);
@@ -61,14 +76,26 @@ export class InventoryDashboard {
     const group = this.activeGroup();
     const term = this.query().trim().toLowerCase();
     const onlyAlerts = this.onlyAlerts();
+    const availability = this.availability();
 
     return this.adminApi
       .products()
       .filter((product) => {
+        const offered = product.activo !== 0;
+
         if (group !== 'todos' && product.grupoAdmin !== group) {
           return false;
         }
-        if (onlyAlerts && levelOf(product) === 'ok') {
+        if (availability === 'ofertados' && !offered) {
+          return false;
+        }
+        if (availability === 'sin-oferta' && offered) {
+          return false;
+        }
+        // Lo retirado no "hay que reponerlo": no se está vendiendo. Se excluye
+        // aquí igual que en `alertCount`, para que el número del indicador y
+        // las filas de la tabla no se contradigan.
+        if (onlyAlerts && (!offered || levelOf(product) === 'ok')) {
           return false;
         }
         if (!term) {
@@ -91,12 +118,29 @@ export class InventoryDashboard {
     return totals;
   });
 
+  /**
+   * Los indicadores de valor cuentan solo lo que se está ofreciendo.
+   *
+   * Antes el endpoint no devolvía los productos retirados, así que estos
+   * totales siempre midieron "lo vendible". Ahora que sí llegan, excluirlos
+   * explícitamente evita que el número cambie de significado sin avisar.
+   */
+  private readonly offered = computed(() =>
+    this.adminApi.products().filter((p) => p.activo !== 0),
+  );
+
+  protected readonly offeredCount = computed(() => this.offered().length);
+
+  protected readonly offeredUnits = computed(() =>
+    this.offered().reduce((total, p) => total + p.stock, 0),
+  );
+
   protected readonly inventoryValue = computed(() =>
-    this.adminApi.products().reduce((total, p) => total + p.stock * p.precio, 0),
+    this.offered().reduce((total, p) => total + p.stock * p.precio, 0),
   );
 
   protected readonly inventoryCost = computed(() =>
-    this.adminApi.products().reduce((total, p) => total + p.stock * (p.precioCosto ?? 0), 0),
+    this.offered().reduce((total, p) => total + p.stock * (p.precioCosto ?? 0), 0),
   );
 
   protected readonly potentialProfit = computed(() => this.inventoryValue() - this.inventoryCost());
@@ -184,5 +228,34 @@ export class InventoryDashboard {
 
   protected onQuery(event: Event): void {
     this.query.set((event.target as HTMLInputElement).value);
+  }
+
+  protected setAvailabilityFilter(value: 'todos' | 'ofertados' | 'sin-oferta'): void {
+    this.availability.set(value);
+    this.editingId.set(null);
+  }
+
+  protected isOffered(product: ApiProduct): boolean {
+    return product.activo !== 0;
+  }
+
+  /**
+   * Traduce la llamada semanal al agricultor: "esta semana no hay brócoli".
+   *
+   * En cuanto queda en 0 el producto sale del catálogo público y
+   * `POST /api/orders` lo rechaza, así que nadie puede pedir algo que no se
+   * podrá despachar el domingo.
+   */
+  protected toggleAvailability(product: ApiProduct): void {
+    this.toggleError.set(null);
+    this.togglingId.set(product.id);
+
+    this.adminApi.setAvailability(product.id, !this.isOffered(product)).subscribe({
+      next: () => this.togglingId.set(null),
+      error: (error: ApiErrorBody) => {
+        this.togglingId.set(null);
+        this.toggleError.set(error.message);
+      },
+    });
   }
 }

@@ -11,6 +11,12 @@ import { RouterLink } from '@angular/router';
 import { CartService } from '../../core/services/cart.service';
 import { CopPipe } from '../pipes/cop.pipe';
 import { FREE_SHIPPING_THRESHOLD } from '../../core/models/cart.model';
+import {
+  formatDay,
+  isCutoffNear,
+  nextCutoff,
+  nextDispatch,
+} from '../../core/models/ordering-window';
 
 @Component({
   selector: 'app-cart-drawer',
@@ -21,6 +27,15 @@ import { FREE_SHIPPING_THRESHOLD } from '../../core/models/cart.model';
 export class CartDrawer {
   protected readonly cart = inject(CartService);
   protected readonly freeShippingThreshold = FREE_SHIPPING_THRESHOLD;
+
+  /**
+   * Se resuelven al construir el panel, no en cada detección de cambios: son
+   * fechas fijas dentro de la sesión y recalcularlas por render sería trabajo
+   * repetido para un dato que solo cambia una vez a la semana.
+   */
+  protected readonly cutoffDay = formatDay(nextCutoff());
+  protected readonly dispatchDay = formatDay(nextDispatch());
+  protected readonly cutoffNear = isCutoffNear();
 
   private readonly closeButton = viewChild<ElementRef<HTMLButtonElement>>('closeButton');
 

@@ -41,13 +41,23 @@ export class AdminApiService {
   readonly productsLoading = signal(false);
   readonly productsError = signal<string | null>(null);
 
+  /**
+   * Las alertas de reposición solo miran lo que se está ofreciendo. Un
+   * producto marcado como sin oferta esta semana no "falta": es que no se
+   * vende, y contarlo llenaría el aviso de ruido cada vez que el agricultor
+   * dice que no hay cosecha.
+   */
   readonly alertCount = computed(
-    () => this.products().filter((p) => p.stock <= (p.stockSeguridad ?? 0)).length,
+    () =>
+      this.products().filter((p) => p.activo !== 0 && p.stock <= (p.stockSeguridad ?? 0)).length,
   );
 
   readonly outOfStockCount = computed(
-    () => this.products().filter((p) => p.stock <= 0).length,
+    () => this.products().filter((p) => p.activo !== 0 && p.stock <= 0).length,
   );
+
+  /** Productos retirados de la venta a la espera de que vuelva la cosecha. */
+  readonly inactiveCount = computed(() => this.products().filter((p) => p.activo === 0).length);
 
   loadProducts(): void {
     this.productsLoading.set(true);
@@ -88,13 +98,30 @@ export class AdminApiService {
 
   updateProduct(
     id: string,
-    patch: Partial<{ precio: number; precioCosto: number; stock: number; stockSeguridad: number }>,
+    patch: Partial<{
+      precio: number;
+      precioCosto: number;
+      stock: number;
+      stockSeguridad: number;
+      activo: 0 | 1;
+    }>,
   ): Observable<ApiProduct> {
     return this.api.updateProduct(id, patch).pipe(
       tap((updated) => {
         this.products.update((list) => list.map((p) => (p.id === id ? updated : p)));
       }),
     );
+  }
+
+  /**
+   * Marca si el producto se ofrece esta semana.
+   *
+   * Es la llamada semanal al agricultor traducida a un campo: en cuanto pasa a
+   * 0 el producto desaparece del catálogo público y `POST /api/orders` lo
+   * rechaza, así que nadie puede pedir algo que no se va a poder despachar.
+   */
+  setAvailability(id: string, disponible: boolean): Observable<ApiProduct> {
+    return this.updateProduct(id, { activo: disponible ? 1 : 0 });
   }
 
   updateProductFull(id: string, input: {

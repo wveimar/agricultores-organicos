@@ -237,6 +237,22 @@
               </div>
             </dl>
 
+            <!-- Ventana semanal: la fecha de entrega depende de cuándo se pida -->
+            <div class="mt-5 border-t border-sand pt-4">
+              <p class="text-sm font-semibold text-ink">Cuándo llega</p>
+              <p class="mt-1 text-sm text-ink-soft">
+                Los pedidos se reciben hasta el
+                <span class="font-medium text-ink">{{ cutoffDay }} a las 12:00 m.</span>
+                Con eso se arma el acopio con las fincas, y el despacho sale el
+                <span class="font-medium text-ink">{{ dispatchDay }}</span> después del mediodía.
+              </p>
+              @if (cutoffNear) {
+                <p class="mt-2 rounded-md bg-clay/5 px-3 py-2 text-xs font-semibold text-clay-deep">
+                  Queda menos de un día para el cierre de esta semana.
+                </p>
+              }
+            </div>
+
             <p class="mt-5 border-t border-sand pt-4 text-xs text-ink-muted">
               Demo sin pasarela de pago: el cobro es manual por transferencia y la
               verificación la hace una persona.
