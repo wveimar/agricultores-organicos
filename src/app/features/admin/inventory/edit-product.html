@@ -171,39 +171,26 @@
         </div>
 
         <!-- Imágenes -->
-        <div class="space-y-4 rounded-md border border-sand/50 bg-linen/30 p-5">
+        <div class="space-y-5 rounded-md border border-sand/50 bg-linen/30 p-5">
           <p class="text-sm font-semibold text-ink">Imágenes</p>
 
           <div>
-            <label for="imagen" class="block text-sm font-semibold text-ink">Imagen principal</label>
-            <input
-              id="imagen"
-              type="file"
-              accept="image/*"
-              class="mt-2 block w-full text-sm text-ink-soft file:mr-4 file:rounded-full file:border file:border-sand file:bg-bone file:px-4 file:py-2 file:text-sm file:font-semibold file:text-ink-soft hover:file:bg-linen"
-              (change)="handleImageUpload($event, 'imagen')"
+            <app-image-field
+              [control]="form.controls.imagen"
+              label="Imagen principal"
+              fieldId="imagen"
+              hint="Un enlace pesa nada y lo sirve el CDN de origen; una foto subida se guarda en la base."
             />
-            @if (form.get('imagen')?.value) {
-              <p class="mt-2 text-xs text-moss">✓ Imagen cargada</p>
-            }
             @if (showError('imagen')) {
               <p class="mt-2 text-sm text-berry">Requerida</p>
             }
           </div>
 
-          <div>
-            <label for="imagen-hover" class="block text-sm font-semibold text-ink">Imagen hover (opcional)</label>
-            <input
-              id="imagen-hover"
-              type="file"
-              accept="image/*"
-              class="mt-2 block w-full text-sm text-ink-soft file:mr-4 file:rounded-full file:border file:border-sand file:bg-bone file:px-4 file:py-2 file:text-sm file:font-semibold file:text-ink-soft hover:file:bg-linen"
-              (change)="handleImageUpload($event, 'imagenHover')"
-            />
-            @if (form.get('imagenHover')?.value) {
-              <p class="mt-2 text-xs text-moss">✓ Imagen cargada</p>
-            }
-          </div>
+          <app-image-field
+            [control]="form.controls.imagenHover"
+            label="Imagen hover (opcional)"
+            fieldId="imagen-hover"
+          />
 
           <div>
             <label for="imagen-alt" class="block text-sm font-semibold text-ink">Texto alternativo de imagen</label>

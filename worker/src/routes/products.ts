@@ -21,6 +21,29 @@ function checkImageSize(value: string | undefined, field: string): void {
   }
 }
 
+/**
+ * Una imagen es una URL https o un data URL de imagen. Nada más.
+ *
+ * El valor acaba en el `src` de un `<img>` de la tienda, así que conviene
+ * acotarlo en el servidor y no solo en el formulario. Se rechaza `http://`
+ * a propósito: el sitio va por https y el navegador bloquearía la imagen por
+ * contenido mixto, dejando una ficha rota sin decir por qué.
+ */
+function checkImageSource(value: string | undefined, field: string): void {
+  if (!value) {
+    return;
+  }
+  const ok = value.startsWith('https://') || /^data:image\/(jpeg|png|webp);base64,/.test(value);
+  if (!ok) {
+    throw ApiError.badRequest(
+      'imagen-invalida',
+      value.startsWith('http://')
+        ? `El enlace de "${field}" debe ser https. Con http el navegador bloquea la imagen.`
+        : `El enlace de "${field}" no es válido. Pega una URL https o sube el archivo.`,
+    );
+  }
+}
+
 /** Columnas que ve el público. `precio_costo` queda deliberadamente fuera. */
 const PUBLIC_COLUMNS = `
   id, slug, nombre, tagline, categoria_id AS categoriaId, grupo_admin AS grupoAdmin,
@@ -248,6 +271,8 @@ export async function updateFull(
   }
   checkImageSize(imagen, 'imagen');
   checkImageSize(imagenHover, 'imagen hover');
+  checkImageSource(imagen, 'imagen');
+  checkImageSource(imagenHover, 'imagen hover');
 
   const updateSlug = slug ? slug : nombre
     .toLowerCase()
@@ -354,6 +379,8 @@ export async function create(
   }
   checkImageSize(imagen, 'imagen');
   checkImageSize(imagenHover, 'imagen hover');
+  checkImageSource(imagen, 'imagen');
+  checkImageSource(imagenHover, 'imagen hover');
 
   if (!slug) {
     slug = nombre

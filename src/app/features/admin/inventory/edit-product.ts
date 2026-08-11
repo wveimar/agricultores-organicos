@@ -3,17 +3,11 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
-import {
-  MAX_FILE_BYTES,
-  PRODUCT_PRESET,
-  formatBytes,
-  processImage,
-  validateFile,
-} from '../../../shared/utils/image-file';
+import { ImageField } from './image-field/image-field';
 
 @Component({
   selector: 'app-edit-product',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, ImageField],
   templateUrl: './edit-product.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -79,32 +73,6 @@ export class EditProduct {
     } else {
       this.loadError.set('Producto no encontrado');
       this.loading.set(false);
-    }
-  }
-
-  /** Mismo tratamiento que al crear: ver el comentario en `create-product.ts`. */
-  protected async handleImageUpload(event: Event, fieldName: 'imagen' | 'imagenHover'): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-
-    const invalid = validateFile(file);
-    if (invalid) {
-      this.updateError =
-        invalid === 'tipo'
-          ? 'Ese formato no sirve. Usa JPG, PNG o WEBP.'
-          : `La imagen supera los ${formatBytes(MAX_FILE_BYTES)}.`;
-      input.value = '';
-      return;
-    }
-
-    try {
-      const { dataUrl } = await processImage(file, PRODUCT_PRESET);
-      this.form.patchValue({ [fieldName]: dataUrl });
-      this.updateError = null;
-    } catch {
-      this.updateError = 'No se pudo leer esa imagen. Prueba con otra.';
-      input.value = '';
     }
   }
 
