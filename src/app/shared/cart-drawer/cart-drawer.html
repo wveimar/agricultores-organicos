@@ -112,8 +112,14 @@
 
                   <button
                     type="button"
-                    class="flex size-9 items-center justify-center rounded-full text-ink-soft transition-colors duration-200 hover:bg-linen hover:text-ink"
+                    class="flex size-9 items-center justify-center rounded-full text-ink-soft transition-colors duration-200 hover:bg-linen hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
                     [attr.aria-label]="'Añadir una unidad de ' + line.product.name"
+                    [disabled]="cart.atStockLimit(line.product.id)"
+                    [attr.title]="
+                      cart.atStockLimit(line.product.id)
+                        ? 'Solo quedan ' + line.product.stock + ' en bodega'
+                        : null
+                    "
                     (click)="increase(line.product.id, line.quantity)"
                   >
                     <svg class="size-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">

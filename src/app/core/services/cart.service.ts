@@ -87,20 +87,46 @@ export class CartService {
     });
   }
 
+  /**
+   * Techo de una línea: las unidades que hay en bodega.
+   *
+   * `isInStock` solo dice si queda **algo** (`stock > 0`), no cuánto. Sin este
+   * tope se podían meter 50 unidades de un producto con 6 disponibles: el
+   * pedido se aceptaba en el carrito y solo reventaba al confirmarlo, contra
+   * el `CHECK (stock_actual >= 0)` de D1. Enterarse en el checkout es
+   * enterarse tarde — el cliente ya llenó el carrito. Se corta aquí.
+   */
+  private cap(product: Product, quantity: number): number {
+    return Math.min(Math.max(0, Math.round(quantity)), product.stock);
+  }
+
+  /** `true` cuando la línea ya tiene todas las unidades disponibles. */
+  atStockLimit(productId: string): boolean {
+    const line = this.lines().find((item) => item.product.id === productId);
+    return line ? line.quantity >= line.product.stock : false;
+  }
+
   add(product: Product, quantity = 1): void {
     if (!isInStock(product)) {
       return;
     }
 
-    this.lines.update((lines) => {
-      const existing = lines.find((line) => line.product.id === product.id);
-      if (!existing) {
-        return [...lines, { product, quantity }];
-      }
-      return lines.map((line) =>
-        line.product.id === product.id ? { ...line, quantity: line.quantity + quantity } : line,
-      );
-    });
+    const current = this.quantityOf(product.id);
+    const next = this.cap(product, current + quantity);
+
+    // Ya estaba en el tope: no se añade nada, y el icono no debe pulsar como
+    // si sí lo hubiera hecho.
+    if (next === current) {
+      return;
+    }
+
+    this.lines.update((lines) =>
+      lines.some((line) => line.product.id === product.id)
+        ? lines.map((line) =>
+            line.product.id === product.id ? { ...line, quantity: next } : line,
+          )
+        : [...lines, { product, quantity: next }],
+    );
 
     this.pulse();
   }
@@ -111,7 +137,11 @@ export class CartService {
       return;
     }
     this.lines.update((lines) =>
-      lines.map((line) => (line.product.id === productId ? { ...line, quantity } : line)),
+      lines.map((line) =>
+        line.product.id === productId
+          ? { ...line, quantity: this.cap(line.product, quantity) }
+          : line,
+      ),
     );
   }
 

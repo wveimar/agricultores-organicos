@@ -25,7 +25,9 @@
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST http://localhost:8788/api/auth/login -H \"content-type: application/json\" -d '{\"email\":\"admin@agricultores.co\",\"password\":\"malaClave1\"}' --max-time 10)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST http://localhost:8788/api/auth/login -H \"content-type: application/json\" -d '{\"email\":\"nadie@agricultores.co\",\"password\":\"demo1234\"}' --max-time 10)",
       "Bash(rm -f /tmp/prodsecret.txt)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(curl -s \"http://localhost:8788/api/products?categoria=verduras\" --max-time 10)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const p=JSON.parse\\(d\\).products;const nuevos=p.filter\\(x=>x.id.startsWith\\('p-202'\\)||x.id.startsWith\\('p-203'\\)\\);console.log\\('total en verduras:',p.length\\);console.log\\('nuevos visibles :',nuevos.length\\);console.log\\('ejemplo         :',nuevos[0].nombre,'·',nuevos[0].precio,'·',nuevos[0].unidad\\);}\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"
