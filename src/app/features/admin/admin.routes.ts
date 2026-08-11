@@ -35,6 +35,13 @@ export const ADMIN_ROUTES: Routes = [
           import('./inventory/create-product').then((m) => m.CreateProduct),
       },
       {
+        path: 'inventario/editar/:id',
+        canActivate: [roleGuard('ADMIN_INVENTARIO')],
+        title: 'Editar producto · Panel',
+        loadComponent: () =>
+          import('./inventory/edit-product').then((m) => m.EditProduct),
+      },
+      {
         path: 'pedidos',
         canActivate: [roleGuard('GESTOR_PEDIDOS')],
         title: 'Pedidos · Panel',

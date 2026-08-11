@@ -97,6 +97,27 @@ export class AdminApiService {
     );
   }
 
+  updateProductFull(id: string, input: {
+    nombre: string;
+    slug?: string;
+    tagline?: string;
+    categoriaId: string;
+    grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
+    precio: number;
+    precioCosto: number;
+    unidad: string;
+    origen: string;
+    imagen: string;
+    imagenHover?: string;
+    imagenAlt: string;
+  }): Observable<ApiProduct> {
+    return this.api.updateProductFull(id, input).pipe(
+      tap((updated) => {
+        this.products.update((list) => list.map((p) => (p.id === id ? updated : p)));
+      }),
+    );
+  }
+
   // ───────────────────────────────── Pedidos ─────────────────────────────────
 
   readonly orders = signal<readonly ApiOrder[]>([]);

@@ -255,6 +255,25 @@ export class ApiClient {
       .pipe(map((res) => res.product), catchError(handleError));
   }
 
+  updateProductFull(id: string, input: {
+    nombre: string;
+    slug?: string;
+    tagline?: string;
+    categoriaId: string;
+    grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
+    precio: number;
+    precioCosto: number;
+    unidad: string;
+    origen: string;
+    imagen: string;
+    imagenHover?: string;
+    imagenAlt: string;
+  }): Observable<ApiProduct> {
+    return this.http
+      .put<{ product: ApiProduct }>(`/api/admin/products/${id}`, input)
+      .pipe(map((res) => res.product), catchError(handleError));
+  }
+
   // ─────────────────────────────── Pedidos ───────────────────────────────
 
   createOrder(input: {

@@ -82,7 +82,7 @@ interface UpdateBody {
 }
 
 /**
- * PATCH /api/admin/products/:id — precio, costo y niveles de stock.
+ * PATCH /api/admin/products/:id — actualización parcial de precio, costo y stock.
  *
  * Solo actualiza los campos que vengan en el cuerpo, para que dos pestañas
  * editando cosas distintas no se pisen mutuamente.
@@ -131,6 +131,113 @@ export async function update(
   const updated = await env.DB.prepare(`SELECT ${ADMIN_COLUMNS} FROM products WHERE id = ?1`)
     .bind(productId)
     .first();
+
+  return json({ product: updated });
+}
+
+interface UpdateFullBody {
+  nombre?: unknown;
+  slug?: unknown;
+  tagline?: unknown;
+  categoriaId?: unknown;
+  grupoAdmin?: unknown;
+  precio?: unknown;
+  precioCosto?: unknown;
+  unidad?: unknown;
+  origen?: unknown;
+  imagen?: unknown;
+  imagenHover?: unknown;
+  imagenAlt?: unknown;
+}
+
+/**
+ * PUT /api/admin/products/:id — actualización completa del producto.
+ *
+ * Actualiza todos los datos del producto excepto id.
+ */
+export async function updateFull(
+  request: Request,
+  env: Env,
+  user: JwtPayload,
+  productId: string,
+): Promise<Response> {
+  requireRole(user, 'ADMIN_INVENTARIO');
+
+  const body = await readJson<UpdateFullBody>(request);
+
+  const nombre = body.nombre as string | undefined;
+  const slug = body.slug as string | undefined;
+  const tagline = (body.tagline as string) ?? '';
+  const categoriaId = body.categoriaId as string | undefined;
+  const grupoAdmin = body.grupoAdmin as string | undefined;
+  const precio = body.precio !== undefined ? requireInt(body.precio, 'precio', 0) : undefined;
+  const precioCosto = body.precioCosto !== undefined ? requireInt(body.precioCosto, 'precioCosto', 0) : undefined;
+  const unidad = body.unidad as string | undefined;
+  const origen = body.origen as string | undefined;
+  const imagen = body.imagen as string | undefined;
+  const imagenHover = body.imagenHover as string | undefined;
+  const imagenAlt = body.imagenAlt as string | undefined;
+
+  if (!nombre || nombre.trim().length === 0) {
+    throw ApiError.badRequest('nombre-requerido', 'El nombre es requerido.');
+  }
+  if (!categoriaId || categoriaId.trim().length === 0) {
+    throw ApiError.badRequest('categoria-requerida', 'La categoría es requerida.');
+  }
+  if (!grupoAdmin || !['frutas', 'verduras', 'agroindustriales'].includes(grupoAdmin)) {
+    throw ApiError.badRequest('grupo-invalido', 'El grupo debe ser frutas, verduras o agroindustriales.');
+  }
+  if (precio === undefined) {
+    throw ApiError.badRequest('precio-requerido', 'El precio es requerido.');
+  }
+  if (precioCosto === undefined) {
+    throw ApiError.badRequest('precio-costo-requerido', 'El precio de costo es requerido.');
+  }
+  if (!unidad || unidad.trim().length === 0) {
+    throw ApiError.badRequest('unidad-requerida', 'La unidad es requerida.');
+  }
+  if (!origen || origen.trim().length === 0) {
+    throw ApiError.badRequest('origen-requerido', 'El origen es requerido.');
+  }
+  if (!imagen || imagen.trim().length === 0) {
+    throw ApiError.badRequest('imagen-requerida', 'La imagen es requerida.');
+  }
+  if (!imagenAlt || imagenAlt.trim().length === 0) {
+    throw ApiError.badRequest('imagen-alt-requerida', 'El texto alternativo de la imagen es requerido.');
+  }
+
+  const updateSlug = slug ? slug : nombre
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+
+  try {
+    await env.DB.prepare(
+      `UPDATE products SET
+        slug = ?1, nombre = ?2, tagline = ?3, categoria_id = ?4, grupo_admin = ?5,
+        precio = ?6, precio_costo = ?7, unidad = ?8, origen = ?9,
+        imagen = ?10, imagen_hover = ?11, imagen_alt = ?12,
+        actualizado_en = datetime('now')
+       WHERE id = ?13 AND activo = 1`,
+    )
+      .bind(updateSlug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, origen, imagen, imagenHover ?? null, imagenAlt, productId)
+      .run();
+  } catch (error) {
+    if ((error as Error).message.includes('UNIQUE constraint failed: products.slug')) {
+      throw ApiError.badRequest('slug-duplicado', 'Ya existe un producto con ese slug.');
+    }
+    throw error;
+  }
+
+  const updated = await env.DB.prepare(`SELECT ${ADMIN_COLUMNS} FROM products WHERE id = ?1`)
+    .bind(productId)
+    .first();
+
+  if (!updated) {
+    throw ApiError.notFound('Ese producto no existe o está desactivado.');
+  }
 
   return json({ product: updated });
 }

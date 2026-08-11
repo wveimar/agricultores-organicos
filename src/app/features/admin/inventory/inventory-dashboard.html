@@ -217,13 +217,12 @@
                 @if (savedId() === product.id) {
                   <span class="text-sm font-medium text-moss">Guardado ✓</span>
                 } @else {
-                  <button
-                    type="button"
-                    class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
-                    (click)="startEdit(product)"
+                  <a
+                    [routerLink]="['/admin/inventario/editar', product.id]"
+                    class="inline-block rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
                   >
                     Editar
-                  </button>
+                  </a>
                 }
               </td>
             </tr>

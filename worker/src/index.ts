@@ -85,6 +85,9 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     if (productMatch && method === 'PATCH') {
       return products.update(request, env, user, productMatch[1]);
     }
+    if (productMatch && method === 'PUT') {
+      return products.updateFull(request, env, user, productMatch[1]);
+    }
 
     // Pedidos
     if (pathname === '/api/admin/orders' && method === 'GET') {
