@@ -29,7 +29,10 @@
       "Bash(curl -s \"http://localhost:8788/api/products?categoria=verduras\" --max-time 10)",
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const p=JSON.parse\\(d\\).products;const nuevos=p.filter\\(x=>x.id.startsWith\\('p-202'\\)||x.id.startsWith\\('p-203'\\)\\);console.log\\('total en verduras:',p.length\\);console.log\\('nuevos visibles :',nuevos.length\\);console.log\\('ejemplo         :',nuevos[0].nombre,'·',nuevos[0].precio,'·',nuevos[0].unidad\\);}\\)\")",
       "Bash(curl -s \"http://localhost:8788/api/products\" --max-time 10)",
-      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>console.log\\('  ',JSON.parse\\(d\\).products.length,'productos visibles'\\)\\)\")"
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>console.log\\('  ',JSON.parse\\(d\\).products.length,'productos visibles'\\)\\)\")",
+      "Bash(curl -s \"http://localhost:8788/api/products\" --max-time 15)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('productos:',j.products?.length\\)}catch\\(e\\){console.log\\('no es JSON:',d.slice\\(0,200\\)\\)}}\\)\")",
+      "WebFetch(domain:developers.cloudflare.com)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"

@@ -483,16 +483,24 @@ export async function receipt(env: Env, user: JwtPayload, orderId: string): Prom
   requireRole(user, 'GESTOR_PEDIDOS');
 
   const order = await env.DB.prepare(
-    `SELECT comprobante_url AS url, comprobante_nombre AS nombre FROM orders WHERE id = ?1`,
+    `SELECT comprobante_url AS url, comprobante_nombre AS nombre, closing_id AS closingId
+       FROM orders WHERE id = ?1`,
   )
     .bind(orderId)
-    .first<{ url: string | null; nombre: string | null }>();
+    .first<{ url: string | null; nombre: string | null; closingId: string | null }>();
 
   if (!order) {
     throw ApiError.notFound('Ese pedido no existe.');
   }
   if (!order.url) {
-    throw ApiError.notFound('Este pedido no tiene comprobante adjunto.');
+    // Se distingue el pedido que nunca trajo comprobante del que sí lo trajo y
+    // se purgó al cerrar la caja. Con un solo mensaje, quien abre un pedido
+    // archivado creería que se perdió algo.
+    throw ApiError.notFound(
+      order.nombre && order.closingId
+        ? 'El comprobante se eliminó al cerrar la caja, cuando ya estaba verificado.'
+        : 'Este pedido no tiene comprobante adjunto.',
+    );
   }
 
   // Se devuelven bytes, no la cadena base64: ahorra un tercio del tráfico y

@@ -211,8 +211,18 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
     ),
     // Marca exactamente el mismo conjunto que se acaba de sumar. Al ir en el
     // mismo batch, ningún pedido puede colarse entre el cálculo y el archivado.
+    //
+    // El mismo UPDATE purga la imagen del comprobante. Cerrar la caja **es**
+    // el momento en que esa imagen deja de servir: ya se verificó la
+    // consignación y la plata está cuadrada. Guardarla para siempre convierte
+    // D1 en un almacén de fotos — a 210 KB por comprobante y ~400 pedidos al
+    // mes, los 500 MB del plan gratis se agotan en medio año.
+    //
+    // Se conserva `comprobante_nombre`: la traza de que hubo comprobante y de
+    // cómo se llamaba no ocupa nada, y es lo que permite distinguir después
+    // "nunca lo mandó" de "lo mandó y se purgó al cerrar".
     env.DB.prepare(
-      `UPDATE orders SET closing_id = ?1
+      `UPDATE orders SET closing_id = ?1, comprobante_url = NULL
         WHERE estado IN ('aprobado','enviado') AND closing_id IS NULL`,
     ).bind(closingId),
   ]);
