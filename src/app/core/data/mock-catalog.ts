@@ -31,7 +31,7 @@ export const CATEGORIES: readonly Category[] = [
   {
     id: 'verduras',
     name: 'Verduras y raíces',
-    description: 'Recolectadas al amanecer, en tu casa antes de 24 horas.',
+    description: 'Recolectadas al amanecer del domingo, en tu casa esa misma tarde.',
   },
   {
     id: 'frutas',

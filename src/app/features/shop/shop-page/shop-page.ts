@@ -14,10 +14,23 @@ import { STORY_IMAGE } from '../../../core/data/mock-catalog';
 export class ShopPage {
   protected readonly storyImage = STORY_IMAGE;
 
+  /**
+   * Cuatro promesas cortas, y las cuatro tienen que ser ciertas.
+   *
+   * La primera decía "Cosechado hoy · sale hacia tu casa el mismo día", que
+   * dejó de ser verdad al pasar al acopio semanal: los pedidos se cierran el
+   * viernes al mediodía y los despachos salen el domingo. Prometer entrega el
+   * mismo día era comprometer a la operación con algo que no puede cumplir.
+   * La versión de ahora cuenta el ciclo real y usa la espera como argumento:
+   * no se cosecha hasta saber qué se pidió.
+   *
+   * Las fechas concretas del ciclo salen de `ordering-window.ts` y se muestran
+   * en el carrito y el checkout; aquí basta la regla, que no cambia.
+   */
   protected readonly guarantees = [
     {
-      title: 'Cosechado hoy',
-      body: 'Se recoge por la mañana y sale hacia tu casa el mismo día.',
+      title: 'Se cosecha para tu pedido',
+      body: 'Pides hasta el viernes al mediodía y el domingo sale de la finca a tu casa. Nada espera en bodega.',
     },
     {
       title: 'Precio justo en origen',
@@ -25,7 +38,7 @@ export class ShopPage {
     },
     {
       title: 'Sin plástico',
-      body: 'Empacamos en papel y canastas retornables que recogemos gratis.',
+      body: 'Empacamos en papel y canastas retornables que recogemos en el despacho siguiente.',
     },
     {
       title: 'Si no te gusta, no lo pagas',
