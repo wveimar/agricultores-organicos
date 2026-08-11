@@ -25,14 +25,13 @@
 			"/api/*"
 		]
 	},
-	"d1_databases": [
-		{
-			"binding": "DB",
-			"database_name": "agricultores-organicos",
-			"database_id": "00676a82-ccce-48aa-89d4-6691719719b4",
-			"remote": true
-		}
-	],
+"d1_databases": [
+  {
+    "binding": "DB", 
+    "database_name": "agricultores-organicos",
+    "database_id": "e7a92980-202a-4a69-b728-af7fcfdf6281" 
+  }
+],
 	"observability": {
 		"enabled": true
 	}
