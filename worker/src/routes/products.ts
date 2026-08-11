@@ -2,6 +2,25 @@ import { ApiError, json, readJson, requireInt } from '../http';
 import { Env, JwtPayload } from '../types';
 import { requireRole } from '../auth/middleware';
 
+/**
+ * Tope de una imagen de producto ya en base64.
+ *
+ * D1 rechaza cualquier fila de más de 2 MB, así que sin este corte una foto
+ * sin comprimir no daba un 400 explicando qué pasó, sino un 500 del motor.
+ * El panel ya redimensiona antes de subir (ver `shared/utils/image-file.ts`),
+ * pero eso ocurre en el navegador del cliente y no es una garantía.
+ */
+const MAX_IMAGE_CHARS = 1_500_000;
+
+function checkImageSize(value: string | undefined, field: string): void {
+  if (value && value.length > MAX_IMAGE_CHARS) {
+    throw ApiError.badRequest(
+      'imagen-grande',
+      `La imagen de "${field}" pesa demasiado. Súbela desde el panel, que la reduce sola.`,
+    );
+  }
+}
+
 /** Columnas que ve el público. `precio_costo` queda deliberadamente fuera. */
 const PUBLIC_COLUMNS = `
   id, slug, nombre, tagline, categoria_id AS categoriaId, grupo_admin AS grupoAdmin,
@@ -227,6 +246,8 @@ export async function updateFull(
   if (!imagenAlt || imagenAlt.trim().length === 0) {
     throw ApiError.badRequest('imagen-alt-requerida', 'El texto alternativo de la imagen es requerido.');
   }
+  checkImageSize(imagen, 'imagen');
+  checkImageSize(imagenHover, 'imagen hover');
 
   const updateSlug = slug ? slug : nombre
     .toLowerCase()
@@ -331,6 +352,8 @@ export async function create(
   if (!imagenAlt || imagenAlt.trim().length === 0) {
     throw ApiError.badRequest('imagen-alt-requerida', 'El texto alternativo de la imagen es requerido.');
   }
+  checkImageSize(imagen, 'imagen');
+  checkImageSize(imagenHover, 'imagen hover');
 
   if (!slug) {
     slug = nombre

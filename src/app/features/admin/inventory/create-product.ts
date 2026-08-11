@@ -3,6 +3,13 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiErrorBody } from '../../../core/api/api-client';
+import {
+  MAX_FILE_BYTES,
+  PRODUCT_PRESET,
+  formatBytes,
+  processImage,
+  validateFile,
+} from '../../../shared/utils/image-file';
 
 @Component({
   selector: 'app-create-product',
@@ -33,17 +40,36 @@ export class CreateProduct {
   protected creatingProduct = false;
   protected createError: string | null = null;
 
+  /**
+   * La foto se redimensiona y recomprime antes de guardarla.
+   *
+   * Sin este paso iba tal cual del móvil a la base: una foto de 4 MB se
+   * convierte en ~5,3 MB de base64, por encima del límite de 2 MB por fila de
+   * D1, y la creación fallaba con un error del servidor sin explicación.
+   */
   protected async handleImageUpload(event: Event, fieldName: 'imagen' | 'imagenHover'): Promise<void> {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
+    const invalid = validateFile(file);
+    if (invalid) {
+      this.createError =
+        invalid === 'tipo'
+          ? 'Ese formato no sirve. Usa JPG, PNG o WEBP.'
+          : `La imagen supera los ${formatBytes(MAX_FILE_BYTES)}.`;
+      input.value = '';
+      return;
+    }
+
+    try {
+      const { dataUrl } = await processImage(file, PRODUCT_PRESET);
       this.form.patchValue({ [fieldName]: dataUrl });
-    };
-    reader.readAsDataURL(file);
+      this.createError = null;
+    } catch {
+      this.createError = 'No se pudo leer esa imagen. Prueba con otra.';
+      input.value = '';
+    }
   }
 
   protected createProduct(): void {
