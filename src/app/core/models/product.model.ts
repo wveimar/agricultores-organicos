@@ -44,9 +44,18 @@ export interface Product {
   readonly imageAlt: string;
 }
 
+/**
+ * Unión **cerrada** a propósito: la vitrina filtra comparando
+ * `product.categoryId !== category` contra `CATEGORIES`, así que un producto
+ * sembrado con una categoría que no esté aquí solo aparece en "Todo el huerto"
+ * y desaparece bajo cualquier chip. Añadir una sección son tres pasos —esta
+ * unión, `CATEGORIES` y `ADMIN_GROUP_OF`— y saltarse alguno no da error de
+ * compilación, solo productos que nadie encuentra.
+ */
 export type CategoryId =
   | 'verduras'
   | 'frutas'
+  | 'lacteos'
   | 'listos'
   | 'granos'
   | 'despensa'
@@ -92,6 +101,10 @@ export type AdminGroup = 'frutas' | 'verduras' | 'agroindustriales';
 export const ADMIN_GROUP_OF: Readonly<Record<CategoryId, AdminGroup>> = {
   frutas: 'frutas',
   verduras: 'verduras',
+  // Los lácteos van a `agroindustriales` porque `grupo_admin` solo admite tres
+  // valores por CHECK en D1, y de los tres es el que les corresponde: no salen
+  // del huerto, salen de un proceso.
+  lacteos: 'agroindustriales',
   listos: 'agroindustriales',
   granos: 'agroindustriales',
   despensa: 'agroindustriales',

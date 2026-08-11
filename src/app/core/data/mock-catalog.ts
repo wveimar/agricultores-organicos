@@ -39,6 +39,11 @@ export const CATEGORIES: readonly Category[] = [
     description: 'Maduradas en el árbol, nunca en cámara.',
   },
   {
+    id: 'lacteos',
+    name: 'Leche de cabra',
+    description: 'De un hato pequeño en el altiplano, ordeñado a mano.',
+  },
+  {
     id: 'listos',
     name: 'Listos para comer',
     description: 'Preparados cada mañana con la cosecha del día.',

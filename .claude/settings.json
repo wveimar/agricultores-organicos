@@ -32,7 +32,10 @@
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>console.log\\('  ',JSON.parse\\(d\\).products.length,'productos visibles'\\)\\)\")",
       "Bash(curl -s \"http://localhost:8788/api/products\" --max-time 15)",
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('productos:',j.products?.length\\)}catch\\(e\\){console.log\\('no es JSON:',d.slice\\(0,200\\)\\)}}\\)\")",
-      "WebFetch(domain:developers.cloudflare.com)"
+      "WebFetch(domain:developers.cloudflare.com)",
+      "Bash(curl -s \"http://localhost:8788/api/products?categoria=lacteos\" --max-time 15)",
+      "Bash(node -e ' *)",
+      "Bash(curl -s \"https://agricultores-organicos.wveimar-mamian.workers.dev/api/products?categoria=lacteos\" --max-time 25)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"
