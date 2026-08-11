@@ -7,7 +7,12 @@
       "Bash(kill 1766)",
       "Bash(rm -f __v2.mjs __v3.mjs __v4.mjs)",
       "Bash(git commit -m ' *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(node -e \"console.log\\(require\\('crypto'\\).randomBytes\\(32\\).toString\\('hex'\\)\\)\")",
+      "Bash(cat > *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"
     ]
   }
 }
