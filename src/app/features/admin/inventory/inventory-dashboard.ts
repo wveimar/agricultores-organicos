@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
 import { ADMIN_GROUP_LABELS, AdminGroup, UNIT_LABELS } from '../../../core/models/product.model';
@@ -23,7 +24,7 @@ function levelOf(product: ApiProduct): StockLevel {
 
 @Component({
   selector: 'app-inventory-dashboard',
-  imports: [ReactiveFormsModule, CopPipe],
+  imports: [ReactiveFormsModule, RouterLink, CopPipe],
   templateUrl: './inventory-dashboard.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -50,25 +51,6 @@ export class InventoryDashboard {
     costPrice: [0, [Validators.required, Validators.min(0)]],
     stock: [0, [Validators.required, Validators.min(0)]],
     safetyStock: [0, [Validators.required, Validators.min(0)]],
-  });
-
-  protected readonly showCreateModal = signal(false);
-  protected readonly creatingProduct = signal(false);
-  protected readonly createError = signal<string | null>(null);
-
-  protected readonly createForm = this.fb.nonNullable.group({
-    nombre: ['', [Validators.required, Validators.minLength(2)]],
-    slug: [''],
-    tagline: [''],
-    categoriaId: ['', Validators.required],
-    grupoAdmin: ['frutas' as const, Validators.required],
-    precio: [0, [Validators.required, Validators.min(1)]],
-    precioCosto: [0, [Validators.required, Validators.min(0)]],
-    unidad: ['', Validators.required],
-    origen: ['', Validators.required],
-    imagenAlt: ['', Validators.required],
-    imagen: ['', Validators.required],
-    imagenHover: [''],
   });
 
   constructor() {
@@ -202,72 +184,5 @@ export class InventoryDashboard {
 
   protected onQuery(event: Event): void {
     this.query.set((event.target as HTMLInputElement).value);
-  }
-
-  protected openCreateModal(): void {
-    this.showCreateModal.set(true);
-    this.createError.set(null);
-    this.createForm.reset();
-  }
-
-  protected closeCreateModal(): void {
-    this.showCreateModal.set(false);
-  }
-
-  protected async handleImageUpload(event: Event, fieldName: 'imagen' | 'imagenHover'): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
-      this.createForm.patchValue({ [fieldName]: dataUrl });
-    };
-    reader.readAsDataURL(file);
-  }
-
-  protected createProduct(): void {
-    if (this.createForm.invalid) {
-      this.createForm.markAllAsTouched();
-      return;
-    }
-
-    this.createError.set(null);
-    this.creatingProduct.set(true);
-
-    const { nombre, slug, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, origen, imagen, imagenHover, imagenAlt } = this.createForm.getRawValue();
-
-    this.adminApi
-      .createProduct({
-        nombre,
-        slug: slug || undefined,
-        tagline,
-        categoriaId,
-        grupoAdmin,
-        precio,
-        precioCosto,
-        unidad,
-        origen,
-        imagen,
-        imagenHover: imagenHover || undefined,
-        imagenAlt,
-      })
-      .subscribe({
-        next: () => {
-          this.creatingProduct.set(false);
-          this.showCreateModal.set(false);
-          this.createForm.reset();
-        },
-        error: (error: ApiErrorBody) => {
-          this.creatingProduct.set(false);
-          this.createError.set(error.message);
-        },
-      });
-  }
-
-  protected showCreateError(field: 'nombre' | 'categoriaId' | 'grupoAdmin' | 'precio' | 'precioCosto' | 'unidad' | 'origen' | 'imagenAlt' | 'imagen' | 'imagenHover'): boolean {
-    const control = this.createForm.get(field);
-    return control ? control.invalid && (control.touched || control.dirty) : false;
   }
 }

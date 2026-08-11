@@ -1,0 +1,228 @@
+<div class="min-h-screen bg-linen py-12 px-5">
+  <div class="mx-auto max-w-2xl">
+    <!-- Encabezado -->
+    <div class="mb-8">
+      <a routerLink="/admin/inventario" class="inline-flex items-center gap-2 text-sm text-ink-soft hover:text-ink transition-colors">
+        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Volver al inventario
+      </a>
+      <h1 class="mt-4 text-h2 text-ink">Crear producto</h1>
+      <p class="mt-2 text-sm text-ink-soft">
+        Rellena los datos del nuevo producto. Las imágenes se guardan como datos.
+      </p>
+    </div>
+
+    <!-- Errores -->
+    @if (createError) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4">
+        <p class="text-sm font-semibold text-berry">Error</p>
+        <p class="mt-1 text-sm text-ink-soft">{{ createError }}</p>
+      </div>
+    }
+
+    <!-- Formulario -->
+    <form [formGroup]="form" (ngSubmit)="createProduct()" class="space-y-6 rounded-lg border border-sand bg-bone p-8">
+      <!-- Nombre -->
+      <div>
+        <label for="nombre" class="block text-sm font-semibold text-ink">Nombre</label>
+        <input
+          id="nombre"
+          type="text"
+          formControlName="nombre"
+          class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+          [class]="showError('nombre') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+          placeholder="Ej: Tomate Orgánico"
+        />
+        @if (showError('nombre')) {
+          <p class="mt-2 text-sm text-berry">El nombre es requerido (mín. 2 caracteres)</p>
+        }
+      </div>
+
+      <!-- Slug (opcional) -->
+      <div>
+        <label for="slug" class="block text-sm font-semibold text-ink">Slug (auto si dejas vacío)</label>
+        <input
+          id="slug"
+          type="text"
+          formControlName="slug"
+          class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+          placeholder="tomate-organico"
+        />
+      </div>
+
+      <!-- Tagline -->
+      <div>
+        <label for="tagline" class="block text-sm font-semibold text-ink">Tagline (opcional)</label>
+        <input
+          id="tagline"
+          type="text"
+          formControlName="tagline"
+          class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+          placeholder="Rojo, carnoso y sabroso"
+        />
+      </div>
+
+      <!-- Categoría -->
+      <div>
+        <label for="categoria" class="block text-sm font-semibold text-ink">Categoría</label>
+        <input
+          id="categoria"
+          type="text"
+          formControlName="categoriaId"
+          class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+          [class]="showError('categoriaId') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+          placeholder="Ej: hortalizas"
+        />
+        @if (showError('categoriaId')) {
+          <p class="mt-2 text-sm text-berry">La categoría es requerida</p>
+        }
+      </div>
+
+      <!-- Grupo Admin -->
+      <div>
+        <label for="grupo" class="block text-sm font-semibold text-ink">Grupo</label>
+        <select
+          id="grupo"
+          formControlName="grupoAdmin"
+          class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+        >
+          <option value="frutas">Frutas</option>
+          <option value="verduras">Verduras</option>
+          <option value="agroindustriales">Agroindustriales</option>
+        </select>
+      </div>
+
+      <!-- Precios -->
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label for="precio" class="block text-sm font-semibold text-ink">Precio venta</label>
+          <input
+            id="precio"
+            type="number"
+            formControlName="precio"
+            class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+            [class]="showError('precio') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+            min="1"
+          />
+          @if (showError('precio')) {
+            <p class="mt-2 text-sm text-berry">Requerido (mín. 1)</p>
+          }
+        </div>
+
+        <div>
+          <label for="costo" class="block text-sm font-semibold text-ink">Precio costo</label>
+          <input
+            id="costo"
+            type="number"
+            formControlName="precioCosto"
+            class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+            min="0"
+          />
+        </div>
+      </div>
+
+      <!-- Unidad y Origen -->
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label for="unidad" class="block text-sm font-semibold text-ink">Unidad</label>
+          <input
+            id="unidad"
+            type="text"
+            formControlName="unidad"
+            class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+            [class]="showError('unidad') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+            placeholder="kg, unidad, atado…"
+          />
+          @if (showError('unidad')) {
+            <p class="mt-2 text-sm text-berry">Requerida</p>
+          }
+        </div>
+
+        <div>
+          <label for="origen" class="block text-sm font-semibold text-ink">Origen</label>
+          <input
+            id="origen"
+            type="text"
+            formControlName="origen"
+            class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+            [class]="showError('origen') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+            placeholder="Finca, región…"
+          />
+          @if (showError('origen')) {
+            <p class="mt-2 text-sm text-berry">Requerido</p>
+          }
+        </div>
+      </div>
+
+      <!-- Imágenes -->
+      <div class="space-y-4 rounded-md border border-sand/50 bg-linen/30 p-5">
+        <p class="text-sm font-semibold text-ink">Imágenes</p>
+
+        <div>
+          <label for="imagen" class="block text-sm font-semibold text-ink">Imagen principal</label>
+          <input
+            id="imagen"
+            type="file"
+            accept="image/*"
+            class="mt-2 block w-full text-sm text-ink-soft file:mr-4 file:rounded-full file:border file:border-sand file:bg-bone file:px-4 file:py-2 file:text-sm file:font-semibold file:text-ink-soft hover:file:bg-linen"
+            (change)="handleImageUpload($event, 'imagen')"
+          />
+          @if (form.get('imagen')?.value) {
+            <p class="mt-2 text-xs text-moss">✓ Imagen cargada</p>
+          }
+          @if (showError('imagen')) {
+            <p class="mt-2 text-sm text-berry">Requerida</p>
+          }
+        </div>
+
+        <div>
+          <label for="imagen-hover" class="block text-sm font-semibold text-ink">Imagen hover (opcional)</label>
+          <input
+            id="imagen-hover"
+            type="file"
+            accept="image/*"
+            class="mt-2 block w-full text-sm text-ink-soft file:mr-4 file:rounded-full file:border file:border-sand file:bg-bone file:px-4 file:py-2 file:text-sm file:font-semibold file:text-ink-soft hover:file:bg-linen"
+            (change)="handleImageUpload($event, 'imagenHover')"
+          />
+          @if (form.get('imagenHover')?.value) {
+            <p class="mt-2 text-xs text-moss">✓ Imagen cargada</p>
+          }
+        </div>
+
+        <div>
+          <label for="imagen-alt" class="block text-sm font-semibold text-ink">Texto alternativo de imagen</label>
+          <input
+            id="imagen-alt"
+            type="text"
+            formControlName="imagenAlt"
+            class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+            [class]="showError('imagenAlt') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+            placeholder="Descripción para accesibilidad"
+          />
+          @if (showError('imagenAlt')) {
+            <p class="mt-2 text-sm text-berry">Requerido</p>
+          }
+        </div>
+      </div>
+
+      <!-- Botones -->
+      <div class="flex gap-3 justify-end pt-4">
+        <a
+          routerLink="/admin/inventario"
+          class="rounded-full border border-sand px-6 py-3 text-sm font-semibold text-ink transition-all duration-200 hover:border-stone hover:bg-linen"
+        >
+          Cancelar
+        </a>
+        <button
+          type="submit"
+          class="rounded-full bg-moss px-6 py-3 text-sm font-semibold text-bone transition-all duration-200 hover:bg-moss-deep disabled:opacity-50"
+          [disabled]="creatingProduct"
+        >
+          {{ creatingProduct ? 'Creando…' : 'Crear producto' }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
