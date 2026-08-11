@@ -151,6 +151,17 @@ export async function verifyJwt(token: string, secret: string): Promise<JwtPaylo
 const PBKDF2_ITERATIONS = 100_000;
 const KEY_LENGTH_BITS = 256;
 
+/**
+ * Hash de pega para gastar el mismo tiempo cuando el correo no existe.
+ *
+ * Se construye con `PBKDF2_ITERATIONS`, no con un número escrito a mano: la
+ * versión anterior llevaba 210.000 incrustadas y en el runtime real de
+ * Cloudflare eso lanza `NotSupportedError`, así que el login devolvía 500 con
+ * un correo desconocido y 401 con uno registrado. Esa diferencia permitía
+ * enumerar qué cuentas existen, que es justo lo que el señuelo quiere evitar.
+ */
+export const DECOY_HASH = `pbkdf2$${PBKDF2_ITERATIONS}$${'A'.repeat(22)}$${'A'.repeat(43)}`;
+
 async function derive(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
   const baseKey = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, [
     'deriveBits',

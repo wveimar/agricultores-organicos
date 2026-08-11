@@ -235,7 +235,7 @@ export async function create(
     .bind(id)
     .first();
 
-  return json({ product }, { status: 201 });
+  return json({ product }, 201);
 }
 
 /**

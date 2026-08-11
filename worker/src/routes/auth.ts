@@ -1,6 +1,6 @@
 import { ApiError, json, readJson, requireString } from '../http';
 import { Env, JwtPayload, UserRole } from '../types';
-import { signJwt, verifyPassword } from '../auth/crypto';
+import { DECOY_HASH, signJwt, verifyPassword } from '../auth/crypto';
 
 interface LoginBody {
   email?: unknown;
@@ -40,7 +40,7 @@ export async function login(request: Request, env: Env): Promise<Response> {
   // responder distinto permitiría enumerar qué correos están registrados.
   if (!user) {
     // Se gasta el tiempo de un PBKDF2 igualmente para no delatar por latencia.
-    await verifyPassword(password, 'pbkdf2$210000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+    await verifyPassword(password, DECOY_HASH);
     throw ApiError.unauthorized('Correo o contraseña incorrectos.');
   }
 
