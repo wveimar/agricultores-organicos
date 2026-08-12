@@ -33,37 +33,53 @@
 
             <div class="mt-5 flex flex-col gap-5">
               <div>
-                <label for="nombre" class="block text-sm font-medium text-ink">Nombre completo</label>
+                <label for="nombre" class="block text-sm font-medium text-ink">
+                  Nombre completo
+                  <span class="text-berry" aria-hidden="true">*</span>
+                </label>
                 <input
+                  #nombreInput
                   id="nombre"
                   type="text"
                   formControlName="name"
                   autocomplete="name"
+                  required
+                  aria-required="true"
                   class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
                   [class]="showError('name') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
                   [attr.aria-invalid]="showError('name')"
+                  [attr.aria-describedby]="showError('name') ? 'error-nombre' : null"
                   placeholder="Marcela Ospina"
                 />
                 @if (showError('name')) {
-                  <p class="mt-2 text-sm text-berry">Escribe tu nombre (mínimo 3 letras).</p>
+                  <p id="error-nombre" class="mt-2 text-sm text-berry">
+                    Escribe tu nombre (mínimo 3 letras).
+                  </p>
                 }
               </div>
 
               <div class="grid gap-5 sm:grid-cols-2">
                 <div>
-                  <label for="telefono" class="block text-sm font-medium text-ink">Teléfono</label>
+                  <label for="telefono" class="block text-sm font-medium text-ink">
+                    Teléfono
+                    <span class="text-berry" aria-hidden="true">*</span>
+                  </label>
                   <input
+                    #telefonoInput
                     id="telefono"
                     type="tel"
                     formControlName="phone"
                     autocomplete="tel"
+                    required
+                    aria-required="true"
                     class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
                     [class]="showError('phone') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
                     [attr.aria-invalid]="showError('phone')"
+                    [attr.aria-describedby]="showError('phone') ? 'error-telefono' : null"
                     placeholder="300 214 5588"
                   />
                   @if (showError('phone')) {
-                    <p class="mt-2 text-sm text-berry">
+                    <p id="error-telefono" class="mt-2 text-sm text-berry">
                       {{ form.controls.phone.hasError('required')
                         ? 'El teléfono es obligatorio.'
                         : 'Escribe un número de teléfono válido.' }}
@@ -72,19 +88,28 @@
                 </div>
 
                 <div>
-                  <label for="direccion" class="block text-sm font-medium text-ink">Dirección de entrega</label>
+                  <label for="direccion" class="block text-sm font-medium text-ink">
+                    Dirección de entrega
+                    <span class="text-berry" aria-hidden="true">*</span>
+                  </label>
                   <input
+                    #direccionInput
                     id="direccion"
                     type="text"
                     formControlName="address"
                     autocomplete="street-address"
+                    required
+                    aria-required="true"
                     class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
                     [class]="showError('address') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
                     [attr.aria-invalid]="showError('address')"
+                    [attr.aria-describedby]="showError('address') ? 'error-direccion' : null"
                     placeholder="Calle 127 # 15-40, Bogotá"
                   />
                   @if (showError('address')) {
-                    <p class="mt-2 text-sm text-berry">Indica tu dirección de entrega.</p>
+                    <p id="error-direccion" class="mt-2 text-sm text-berry">
+                      Indica tu dirección de entrega.
+                    </p>
                   }
                 </div>
               </div>
@@ -149,9 +174,31 @@
           </section>
 
           <!-- Faltan datos obligatorios -->
+          <!--
+            `role="alert"` lo anuncia solo al aparecer, sin robar el foco. La
+            lista lleva enlaces a cada campo para quien navega con teclado y
+            prefiere saltar directo al que quiere corregir; el foco automático
+            va al primero, pero el resto siguen a un clic.
+          -->
           @if (formError(); as message) {
             <div class="mt-8 rounded-md border border-berry/30 bg-berry/5 px-5 py-4" role="alert">
               <p class="text-sm font-semibold text-berry">{{ message }}</p>
+
+              @if (camposConError().length > 0) {
+                <ul class="mt-2 flex flex-col gap-1">
+                  @for (campo of camposConError(); track campo.id) {
+                    <li>
+                      <button
+                        type="button"
+                        class="text-sm text-berry underline underline-offset-2 transition-opacity hover:opacity-70"
+                        (click)="focusCampo(campo.id)"
+                      >
+                        {{ campo.etiqueta }}
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
             </div>
           }
 

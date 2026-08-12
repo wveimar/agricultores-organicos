@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  effect,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { CartService } from '../../../core/services/cart.service';
 import {
@@ -19,6 +27,21 @@ import { OrderSuccess } from '../order-success/order-success';
 
 /** Acepta dígitos, espacios, guiones y un `+` inicial: "300 214 5588", "+57 300 214 5588". */
 const PHONE_PATTERN = /^\+?[0-9][0-9\s-]{6,17}$/;
+
+type CampoDatos = 'name' | 'phone' | 'address';
+
+/**
+ * Los tres campos en el mismo orden en que aparecen en pantalla.
+ *
+ * El orden importa: "el primer campo con error" tiene que ser el primero que
+ * el usuario ve, no el primero que devuelva `Object.keys` sobre el formulario.
+ * `id` enlaza cada campo con su mensaje de error y con el resumen de arriba.
+ */
+const CAMPOS: readonly { control: CampoDatos; etiqueta: string; id: string }[] = [
+  { control: 'name', etiqueta: 'Nombre completo', id: 'nombre' },
+  { control: 'phone', etiqueta: 'Teléfono', id: 'telefono' },
+  { control: 'address', etiqueta: 'Dirección de entrega', id: 'direccion' },
+];
 
 @Component({
   selector: 'app-checkout-page',
@@ -52,13 +75,86 @@ export class CheckoutPage {
     address: ['', [Validators.required, Validators.minLength(5)]],
   });
 
+  protected readonly campos = CAMPOS;
+
+  /**
+   * Campos que fallaron en el último intento de envío.
+   *
+   * Se calcula **al enviar**, no de forma continua: el resumen solo debe
+   * aparecer cuando el usuario ya intentó continuar. Si se recalculara con
+   * cada tecla, un formulario recién abierto anunciaría tres errores que
+   * nadie ha cometido todavía.
+   */
+  protected readonly camposConError = signal<readonly { etiqueta: string; id: string }[]>([]);
+
+  private readonly nombreInput = viewChild<ElementRef<HTMLInputElement>>('nombreInput');
+  private readonly telefonoInput = viewChild<ElementRef<HTMLInputElement>>('telefonoInput');
+  private readonly direccionInput = viewChild<ElementRef<HTMLInputElement>>('direccionInput');
+
+  private focoInicialHecho = false;
+
+  constructor() {
+    /**
+     * Al llegar a /checkout el foco se queda donde estuviera el enlace que
+     * trajo al usuario —normalmente el carrito o el pie—, así que navegar con
+     * teclado obligaba a tabular media página para empezar a escribir.
+     *
+     * Va en un `effect` y no en `ngAfterViewInit` porque el formulario no
+     * existe en el primer render: mientras el catálogo carga, el carrito está
+     * vacío y la plantilla pinta el aviso de "no hay nada". `viewChild`
+     * devuelve una señal, así que el efecto se vuelve a ejecutar solo cuando
+     * el campo aparece de verdad.
+     */
+    effect(() => {
+      const primero = this.nombreInput();
+      if (!primero || this.focoInicialHecho) {
+        return;
+      }
+      this.focoInicialHecho = true;
+      primero.nativeElement.focus();
+    });
+  }
+
   protected onProofChange(proof: PaymentProof | null): void {
     this.checkout.setProof(proof);
   }
 
-  protected showError(field: 'name' | 'phone' | 'address'): boolean {
+  protected showError(field: CampoDatos): boolean {
     const control = this.form.controls[field];
     return control.invalid && (control.touched || control.dirty);
+  }
+
+  private refDe(control: CampoDatos): ElementRef<HTMLInputElement> | undefined {
+    switch (control) {
+      case 'name':
+        return this.nombreInput();
+      case 'phone':
+        return this.telefonoInput();
+      case 'address':
+        return this.direccionInput();
+    }
+  }
+
+  /**
+   * Lleva el foco al primer campo con error, en orden de pantalla.
+   *
+   * Sin esto, tras un envío fallido el foco se queda en el botón —al final del
+   * formulario— y con lector de pantalla no hay forma de saber qué falló ni
+   * dónde: solo que "algo" pasó. Con el foco en el campo, el lector anuncia su
+   * etiqueta, su estado inválido y el mensaje enlazado por `aria-describedby`,
+   * las tres cosas de una vez.
+   */
+  protected focusFirstInvalid(): void {
+    const primero = CAMPOS.find(({ control }) => this.form.controls[control].invalid);
+    this.refDe(primero?.control ?? 'name')?.nativeElement.focus();
+  }
+
+  /** Enfoca un campo concreto desde el resumen de errores de la cabecera. */
+  protected focusCampo(id: string): void {
+    const campo = CAMPOS.find((c) => c.id === id);
+    if (campo) {
+      this.refDe(campo.control)?.nativeElement.focus();
+    }
   }
 
   /** Copia el número de cuenta: escribirlo a mano es donde se cuelan errores. */
@@ -78,10 +174,24 @@ export class CheckoutPage {
 
     if (this.form.invalid) {
       this.form.markAllAsTouched();
-      this.formError.set('Completa los datos obligatorios (nombre, teléfono y dirección) para continuar.');
+
+      const fallidos = CAMPOS.filter(({ control }) => this.form.controls[control].invalid);
+      this.camposConError.set(fallidos.map(({ etiqueta, id }) => ({ etiqueta, id })));
+      this.formError.set(
+        fallidos.length === 1
+          ? `Falta un dato: ${fallidos[0].etiqueta.toLowerCase()}.`
+          : `Faltan ${fallidos.length} datos para continuar.`,
+      );
+
+      // El foco se mueve en el siguiente ciclo, no ahora mismo: `markAllAsTouched`
+      // acaba de cambiar el estado y el `aria-describedby` que enlaza el campo
+      // con su mensaje se pinta al renderizar. Enfocando antes, el lector de
+      // pantalla anunciaría el campo sin el error que explica qué corregir.
+      setTimeout(() => this.focusFirstInvalid());
       return;
     }
 
+    this.camposConError.set([]);
     this.placing.set(true);
     const { name, phone, address } = this.form.getRawValue();
 
