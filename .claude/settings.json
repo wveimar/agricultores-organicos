@@ -35,7 +35,9 @@
       "WebFetch(domain:developers.cloudflare.com)",
       "Bash(curl -s \"http://localhost:8788/api/products?categoria=lacteos\" --max-time 15)",
       "Bash(node -e ' *)",
-      "Bash(curl -s \"https://agricultores-organicos.wveimar-mamian.workers.dev/api/products?categoria=lacteos\" --max-time 25)"
+      "Bash(curl -s \"https://agricultores-organicos.wveimar-mamian.workers.dev/api/products?categoria=lacteos\" --max-time 25)",
+      "Bash(npx ng *)",
+      "Bash(node worker/tests/qa-seguridad.mjs)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"

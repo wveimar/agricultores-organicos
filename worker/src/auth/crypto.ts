@@ -101,12 +101,25 @@ export async function verifyJwt(token: string, secret: string): Promise<JwtPaylo
   }
 
   const key = await hmacKey(secret);
-  const valid = await crypto.subtle.verify(
-    'HMAC',
-    key,
-    fromBase64Url(signaturePart),
-    encoder.encode(`${headerPart}.${payloadPart}`),
-  );
+
+  /**
+   * El decodificado de la firma va dentro del `try` igual que el de la
+   * cabecera y el del payload. `atob` lanza ante un base64 mal formado, y esa
+   * excepción salía sin capturar: una firma con relleno inválido respondía
+   * 500 en vez de 401. Además de ser una respuesta equivocada, un 500 le dice
+   * a quien sondea que ha encontrado un camino distinto al resto.
+   */
+  let valid: boolean;
+  try {
+    valid = await crypto.subtle.verify(
+      'HMAC',
+      key,
+      fromBase64Url(signaturePart),
+      encoder.encode(`${headerPart}.${payloadPart}`),
+    );
+  } catch {
+    throw ApiError.unauthorized('Firma del token ilegible.');
+  }
 
   if (!valid) {
     throw ApiError.unauthorized('Firma del token inválida.');

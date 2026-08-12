@@ -99,13 +99,19 @@ CREATE TABLE cash_closings (
   cerrado_por        TEXT    REFERENCES users(id) ON DELETE SET NULL,
   cerrado_por_nombre TEXT    NOT NULL,
   cerrado_en         TEXT    NOT NULL DEFAULT (datetime('now')),
-  pedidos_count      INTEGER NOT NULL DEFAULT 0,
-  unidades_count     INTEGER NOT NULL DEFAULT 0,
-  venta_producto     INTEGER NOT NULL DEFAULT 0,
-  costo_producto     INTEGER NOT NULL DEFAULT 0,
+  -- Estas cifras quedan congeladas y son la contabilidad de la jornada: si una
+  -- se guarda en negativo por un error de cálculo, el descuadre queda grabado
+  -- para siempre y no hay forma de recomputarlo (los pedidos ya se archivaron).
+  -- El resto de tablas de dinero ya llevaban su CHECK; esta se quedó sin ellos.
+  pedidos_count      INTEGER NOT NULL DEFAULT 0 CHECK (pedidos_count      >= 0),
+  unidades_count     INTEGER NOT NULL DEFAULT 0 CHECK (unidades_count     >= 0),
+  venta_producto     INTEGER NOT NULL DEFAULT 0 CHECK (venta_producto     >= 0),
+  costo_producto     INTEGER NOT NULL DEFAULT 0 CHECK (costo_producto     >= 0),
+  -- `ganancia` es la única que puede ser negativa a propósito: vender por
+  -- debajo del costo es una decisión comercial posible, no un error de datos.
   ganancia           INTEGER NOT NULL DEFAULT 0,
-  envios_cobrados    INTEGER NOT NULL DEFAULT 0,
-  total_recaudado    INTEGER NOT NULL DEFAULT 0
+  envios_cobrados    INTEGER NOT NULL DEFAULT 0 CHECK (envios_cobrados    >= 0),
+  total_recaudado    INTEGER NOT NULL DEFAULT 0 CHECK (total_recaudado    >= 0)
 );
 
 CREATE INDEX idx_closings_fecha ON cash_closings (cerrado_en DESC);
