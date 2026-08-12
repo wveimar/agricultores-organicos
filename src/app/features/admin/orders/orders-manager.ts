@@ -13,7 +13,7 @@ import {
   ApiOrderStatusLogEntry,
   Shortfall,
 } from '../../../core/api/api-client';
-import { ORDER_STATUS_LABELS, OrderStatus } from '../../../core/models/order.model';
+import { ORDER_STATUS_LABELS, OrderStatus, isCancelable } from '../../../core/models/order.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
 const STATUS_STYLES: Readonly<Record<OrderStatus, string>> = {
@@ -21,6 +21,7 @@ const STATUS_STYLES: Readonly<Record<OrderStatus, string>> = {
   pendiente: 'bg-honey/20 text-clay-deep',
   aprobado: 'bg-sage-light text-moss-deep',
   enviado: 'bg-linen text-ink-soft',
+  cancelado: 'bg-berry/12 text-berry',
 };
 
 const FILTERS: ReadonlyArray<{ value: OrderStatus | 'todos'; label: string }> = [
@@ -29,6 +30,7 @@ const FILTERS: ReadonlyArray<{ value: OrderStatus | 'todos'; label: string }> = 
   { value: 'pendiente', label: 'Pendientes' },
   { value: 'aprobado', label: 'Aprobados' },
   { value: 'enviado', label: 'Enviados' },
+  { value: 'cancelado', label: 'Cancelados' },
 ];
 
 @Component({
@@ -88,11 +90,13 @@ export class OrdersManager {
     const filtered = filter === 'todos' ? orders : orders.filter((order) => order.estado === filter);
 
     // Lo que espera decisión primero, y dentro de cada grupo lo más reciente arriba.
+    // Lo cancelado va al final: ya no espera ninguna decisión.
     const weight: Record<OrderStatus, number> = {
       verificacion: 0,
       pendiente: 1,
       aprobado: 2,
       enviado: 3,
+      cancelado: 4,
     };
     return filtered
       .slice()
@@ -241,5 +245,65 @@ export class OrdersManager {
   protected shortfallsFor(orderId: string): readonly Shortfall[] | null {
     const current = this.blocked();
     return current?.orderId === orderId ? current.shortfalls : null;
+  }
+
+  // ─────────────────────────── Cancelar un pedido ───────────────────────────
+
+  /** Pedido cuya cancelación está pendiente de confirmar. */
+  protected readonly cancelingId = signal<string | null>(null);
+  protected readonly cancelReason = signal('');
+
+  protected canCancel(order: ApiOrder): boolean {
+    return isCancelable(order.estado as OrderStatus);
+  }
+
+  /**
+   * Se pide confirmación en vez de cancelar al primer clic.
+   *
+   * Cancelar devuelve stock y escribe en la traza: no hay botón de deshacer, y
+   * el de cancelar queda junto al de aprobar, que es justo donde un clic
+   * despistado hace daño.
+   */
+  protected askCancel(order: ApiOrder): void {
+    this.cancelingId.set(order.id);
+    this.cancelReason.set('');
+    this.blocked.set(null);
+    this.feedback.set(null);
+  }
+
+  protected dismissCancel(): void {
+    this.cancelingId.set(null);
+    this.cancelReason.set('');
+  }
+
+  protected onReason(event: Event): void {
+    this.cancelReason.set((event.target as HTMLInputElement).value);
+  }
+
+  protected confirmCancel(order: ApiOrder): void {
+    this.workingId.set(order.id);
+
+    this.adminApi.cancelOrder(order.id, this.cancelReason().trim() || undefined).subscribe({
+      next: ({ unidadesDevueltas }) => {
+        this.workingId.set(null);
+        this.cancelingId.set(null);
+        this.cancelReason.set('');
+        this.feedback.set(
+          unidadesDevueltas > 0
+            ? `${order.referencia} cancelado. ${unidadesDevueltas} ${
+                unidadesDevueltas === 1 ? 'unidad vuelve' : 'unidades vuelven'
+              } al inventario.`
+            : `${order.referencia} cancelado. No tenía inventario apartado.`,
+        );
+        if (this.expandedId() === order.id) {
+          this.loadHistory(order.id);
+        }
+      },
+      error: (error: ApiErrorBody) => {
+        this.workingId.set(null);
+        this.cancelingId.set(null);
+        this.feedback.set(error.message);
+      },
+    });
   }
 }

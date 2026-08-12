@@ -366,6 +366,120 @@ export async function ship(env: Env, user: JwtPayload, orderId: string): Promise
 }
 
 /**
+ * POST /api/admin/orders/:id/cancelar — anula un pedido y devuelve el stock.
+ *
+ * Es el espejo de `approve()`, y comparte su mecánica por el mismo motivo. Se
+ * cancela desde el panel, no desde la tienda: los pedidos se crean sin sesión
+ * (compra de invitado), así que no hay forma de comprobar que quien pide la
+ * cancelación es el dueño del pedido. Un endpoint público solo estaría
+ * protegido por lo difícil que es adivinar un UUID, que no es una defensa.
+ *
+ * Solo se cancela lo que todavía no salió: 'verificacion' o 'pendiente'. Un
+ * pedido aprobado ya entró en la caja de la jornada, y uno enviado ya va en
+ * camino — deshacer cualquiera de los dos descuadraría cuentas o inventario
+ * frente a lo que de verdad pasó.
+ */
+export async function cancel(
+  request: Request,
+  env: Env,
+  user: JwtPayload,
+  orderId: string,
+): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const body = await readJson<{ motivo?: unknown }>(request).catch(() => ({ motivo: undefined }));
+  const motivo =
+    typeof body.motivo === 'string' && body.motivo.trim() !== ''
+      ? body.motivo.trim().slice(0, 300)
+      : null;
+
+  const order = await env.DB.prepare(
+    `SELECT id, estado, stock_reservado FROM orders WHERE id = ?1`,
+  )
+    .bind(orderId)
+    .first<{ id: string; estado: string; stock_reservado: number }>();
+
+  if (!order) {
+    throw ApiError.notFound('Ese pedido no existe.');
+  }
+  if (order.estado !== 'pendiente' && order.estado !== 'verificacion') {
+    throw ApiError.conflict(
+      'estado-invalido',
+      order.estado === 'cancelado'
+        ? 'Ese pedido ya está cancelado.'
+        : `Un pedido "${order.estado}" ya no se puede cancelar.`,
+    );
+  }
+
+  const { results: items } = await env.DB.prepare(
+    `SELECT product_id, cantidad FROM order_items WHERE order_id = ?1`,
+  )
+    .bind(orderId)
+    .all<{ product_id: string; cantidad: number }>();
+
+  // Solo se devuelve stock si de verdad se descontó. Con stock_reservado = 0
+  // el pedido nunca tocó el inventario —lo habría descontado la aprobación,
+  // que no llegó a ocurrir— y sumarlo ahora inventaría unidades.
+  const devuelveStock = order.stock_reservado === 1 && items.length > 0;
+
+  const token = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(
+      `UPDATE orders
+          SET estado = 'cancelado', cancelado_por = ?2, cancelado_en = ?3,
+              cancelacion_token = ?4, motivo_cancelacion = ?5, stock_reservado = 0
+        WHERE id = ?1
+          AND cancelacion_token IS NULL
+          AND estado IN ('pendiente', 'verificacion')`,
+    ).bind(orderId, user.sub, now, token, motivo),
+    // Condicionado al token, igual que en approve(): `batch()` es atómico ante
+    // errores, pero el UPDATE de arriba no lanza si pierde la carrera —
+    // simplemente afecta 0 filas—, y un INSERT incondicional dejaría en el log
+    // una cancelación que no ocurrió.
+    env.DB.prepare(
+      `INSERT INTO order_status_log (order_id, estado, actor_id, actor_nombre)
+       SELECT ?1, 'cancelado', ?2, ?3
+        WHERE (SELECT cancelacion_token FROM orders WHERE id = ?1) = ?4`,
+    ).bind(orderId, user.sub, user.nombre, token),
+  ];
+
+  if (devuelveStock) {
+    for (const item of items) {
+      statements.push(
+        env.DB.prepare(
+          `UPDATE products
+              SET stock_actual = stock_actual + ?2, actualizado_en = ?4
+            WHERE id = ?1
+              AND (SELECT cancelacion_token FROM orders WHERE id = ?3) = ?5`,
+        ).bind(item.product_id, item.cantidad, orderId, now, token),
+      );
+    }
+  }
+
+  let batchResults: D1Result[];
+  try {
+    batchResults = await env.DB.batch(statements);
+  } catch (error) {
+    throw translateConstraint(error);
+  }
+
+  // Si el UPDATE no tocó ninguna fila, otra petición canceló primero. Gracias
+  // al token, sus devoluciones de stock tampoco se aplicaron.
+  if (batchResults[0].meta.changes === 0) {
+    throw ApiError.conflict('estado-invalido', 'Otro usuario canceló este pedido primero.');
+  }
+
+  return json({
+    order: await loadOrder(env, orderId),
+    unidadesDevueltas: devuelveStock
+      ? items.reduce((suma, item) => suma + item.cantidad, 0)
+      : 0,
+  });
+}
+
+/**
  * GET /api/admin/orders — lista con sus líneas.
  *
  * Dos consultas en un `batch()` (una de pedidos y otra de líneas) y el cruce en

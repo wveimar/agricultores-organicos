@@ -7,14 +7,34 @@
  * - `pendiente`: entró por otro canal (teléfono, WhatsApp directo). Todavía no
  *   ha tocado el inventario; se descuenta al aprobarlo.
  */
-export type OrderStatus = 'verificacion' | 'pendiente' | 'aprobado' | 'enviado';
+export type OrderStatus =
+  | 'verificacion'
+  | 'pendiente'
+  | 'aprobado'
+  | 'enviado'
+  | 'cancelado';
 
 export const ORDER_STATUS_LABELS: Readonly<Record<OrderStatus, string>> = {
   verificacion: 'Pendiente de verificación',
   pendiente: 'Pendiente',
   aprobado: 'Aprobado',
   enviado: 'Enviado',
+  cancelado: 'Cancelado',
 };
+
+/**
+ * Estados desde los que todavía se puede anular.
+ *
+ * Un pedido aprobado ya entró en la caja de la jornada y uno enviado ya va en
+ * camino: deshacer cualquiera de los dos descuadraría las cuentas o el
+ * inventario frente a lo que de verdad pasó. El servidor aplica esta misma
+ * regla, que es la que cuenta.
+ */
+export const CANCELABLE: readonly OrderStatus[] = ['verificacion', 'pendiente'];
+
+export function isCancelable(status: OrderStatus): boolean {
+  return CANCELABLE.includes(status);
+}
 
 /** Comprobante de consignación subido por el cliente. */
 export interface PaymentProof {

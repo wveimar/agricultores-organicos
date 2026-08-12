@@ -140,7 +140,7 @@ CREATE TABLE orders (
   cliente_direccion  TEXT    NOT NULL,
 
   estado             TEXT    NOT NULL DEFAULT 'pendiente'
-                             CHECK (estado IN ('verificacion', 'pendiente', 'aprobado', 'enviado')),
+                             CHECK (estado IN ('verificacion', 'pendiente', 'aprobado', 'enviado', 'cancelado')),
 
   -- 1 cuando el stock ya se descontó al crear el pedido (compras web).
   -- Es lo que impide el doble descuento al aprobarlo después.
@@ -167,6 +167,14 @@ CREATE TABLE orders (
   -- routes/orders.ts: es lo que hace que dos aprobaciones simultáneas del
   -- mismo pedido no descuenten el inventario dos veces.
   aprobacion_token   TEXT,
+
+  -- Mismo papel que `aprobacion_token`, para la cancelación: sin él, dos
+  -- cancelaciones simultáneas del mismo pedido devolverían el stock dos veces
+  -- y el inventario acabaría inflado.
+  cancelacion_token  TEXT,
+  cancelado_por      TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  cancelado_en       TEXT,
+  motivo_cancelacion TEXT,
 
   closing_id         TEXT    REFERENCES cash_closings(id) ON DELETE SET NULL,
   creado_en          TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -211,7 +219,7 @@ CREATE INDEX idx_items_product ON order_items (product_id);
 CREATE TABLE order_status_log (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   order_id      TEXT    NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  estado        TEXT    NOT NULL CHECK (estado IN ('verificacion', 'pendiente', 'aprobado', 'enviado')),
+  estado        TEXT    NOT NULL CHECK (estado IN ('verificacion', 'pendiente', 'aprobado', 'enviado', 'cancelado')),
   -- NULL en la creación del pedido: ese paso lo dispara el propio cliente,
   -- sin sesión de administrador detrás.
   actor_id      TEXT    REFERENCES users(id) ON DELETE SET NULL,

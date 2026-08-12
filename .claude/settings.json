@@ -67,7 +67,11 @@
       "Bash(curl -s -w \"\\\\n→ HTTP %{http_code}\\\\n\" -X POST http://localhost:8790/api/auth/login -H \"content-type: application/json\" -H \"cf-connecting-ip: 198.51.100.80\" -d '{\"email\":\"admin@agricultores.co\",\"password\":\"demo1234\"}' --max-time 25)",
       "Bash(curl -s -o /dev/null -w \"→ HTTP %{http_code}\\\\n\" -X POST http://localhost:8790/api/auth/login -H \"content-type: application/json\" -H \"cf-connecting-ip: 198.51.100.81\" -d '{\"email\":\"admin@agricultores.co\",\"password\":\"demo1234\",\"turnstileToken\":\"XXXX.DUMMY.TOKEN.XXXX\"}' --max-time 25)",
       "Bash(curl -s -o /dev/null -w \"→ HTTP %{http_code}\\\\n\" -X POST http://localhost:8790/api/auth/login -H \"content-type: application/json\" -H \"cf-connecting-ip: 198.51.100.82\" -d '{\"email\":\"admin@agricultores.co\",\"password\":\"demo1234\",\"turnstileToken\":\"\"}' --max-time 25)",
-      "Bash(xargs -I{} echo \"errores de build: {}\")"
+      "Bash(xargs -I{} echo \"errores de build: {}\")",
+      "Bash(sed -n '/CREATE TABLE orders/,/^\\);/p' worker/schema.sql)",
+      "Bash(sed -n '/CREATE TABLE order_status_log/,/^\\);/p' worker/schema.sql)",
+      "Bash(node worker/tests/qa-usuarios.mjs http://localhost:8791)",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\);console.log\\('package.json válido'\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"

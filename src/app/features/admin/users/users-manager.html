@@ -274,7 +274,18 @@
           <div class="flex shrink-0 flex-wrap items-center gap-2">
             @if (resetDoneId() === user.id) {
               <span class="text-sm font-medium text-moss">Contraseña actualizada ✓</span>
+            } @else if (editDoneId() === user.id) {
+              <span class="text-sm font-medium text-moss">Datos actualizados ✓</span>
             } @else {
+              <button
+                type="button"
+                class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss disabled:opacity-50"
+                [disabled]="savingId() === user.id"
+                (click)="startEdit(user)"
+              >
+                Editar datos
+              </button>
+
               <button
                 type="button"
                 class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss disabled:opacity-50"
@@ -303,6 +314,93 @@
             }
           </div>
         </div>
+
+        <!-- Editar nombre, correo y permisos -->
+        @if (editingId() === user.id) {
+          <form
+            [formGroup]="editForm"
+            (ngSubmit)="saveEdit(user)"
+            class="mt-4 border-t border-sand pt-4"
+            novalidate
+          >
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label [for]="'nombre-' + user.id" class="block text-sm font-medium text-ink">
+                  Nombre
+                </label>
+                <input
+                  [id]="'nombre-' + user.id"
+                  type="text"
+                  formControlName="nombre"
+                  required
+                  aria-required="true"
+                  class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+                />
+              </div>
+
+              <div>
+                <label [for]="'email-' + user.id" class="block text-sm font-medium text-ink">
+                  Correo
+                </label>
+                <input
+                  [id]="'email-' + user.id"
+                  type="email"
+                  formControlName="email"
+                  autocomplete="off"
+                  required
+                  aria-required="true"
+                  class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+                />
+              </div>
+            </div>
+
+            <fieldset class="mt-4">
+              <legend class="text-sm font-medium text-ink">Permisos</legend>
+              <div class="mt-2 flex flex-wrap gap-2">
+                @for (role of roles; track role) {
+                  <label
+                    class="flex cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm transition-colors duration-200"
+                    [class]="hasEditRole(role) ? 'border-moss bg-sage-light/50 text-moss-deep' : 'border-sand text-ink-soft hover:border-stone'"
+                  >
+                    <input
+                      type="checkbox"
+                      class="size-3.5 accent-moss"
+                      [checked]="hasEditRole(role)"
+                      (change)="toggleEditRole(role)"
+                    />
+                    {{ roleLabel(role) }}
+                  </label>
+                }
+              </div>
+            </fieldset>
+
+            @if (emailCambia(user)) {
+              <p class="mt-4 rounded-md border border-honey/40 bg-honey/10 px-4 py-3 text-sm text-clay-deep" role="status">
+                El correo es con lo que se inicia sesión.
+                {{ user.id === currentUserId()
+                  ? 'Al guardar tendrás que entrar con el nuevo.'
+                  : 'Avísale a ' + user.nombre + ' de que su acceso cambia.' }}
+              </p>
+            }
+
+            <div class="mt-4 flex flex-wrap gap-3">
+              <button
+                type="submit"
+                class="rounded-full bg-clay px-5 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep disabled:opacity-60"
+                [disabled]="savingId() === user.id"
+              >
+                {{ savingId() === user.id ? 'Guardando…' : 'Guardar cambios' }}
+              </button>
+              <button
+                type="button"
+                class="rounded-full border border-sand px-5 py-2.5 text-sm text-ink-soft transition-colors duration-200 hover:border-stone"
+                (click)="cancelEdit()"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        }
 
         <!-- Asignar contraseña nueva -->
         @if (resettingId() === user.id) {

@@ -116,9 +116,93 @@ export class UsersManager {
 
   protected startReset(user: ApiUser): void {
     this.resettingId.set(user.id);
+    this.editingId.set(null);
     this.resetError.set(null);
     this.resetDoneId.set(null);
     this.resetForm.reset({ password: '' });
+  }
+
+  // ────────────────────── Editar nombre, correo y roles ──────────────────────
+
+  protected readonly editingId = signal<string | null>(null);
+  protected readonly editDoneId = signal<string | null>(null);
+
+  protected readonly editForm = this.fb.nonNullable.group({
+    nombre: ['', [Validators.required, Validators.minLength(3)]],
+    email: ['', [Validators.required, Validators.email]],
+    roles: this.fb.nonNullable.control<UserRole[]>([], [Validators.required]),
+  });
+
+  protected startEdit(user: ApiUser): void {
+    this.editingId.set(user.id);
+    this.resettingId.set(null);
+    this.resetError.set(null);
+    this.editDoneId.set(null);
+    this.editForm.setValue({
+      nombre: user.nombre,
+      email: user.email,
+      roles: [...user.roles],
+    });
+  }
+
+  protected cancelEdit(): void {
+    this.editingId.set(null);
+  }
+
+  protected toggleEditRole(role: UserRole): void {
+    const control = this.editForm.controls.roles;
+    const actuales = control.value;
+    control.setValue(
+      actuales.includes(role) ? actuales.filter((r) => r !== role) : [...actuales, role],
+    );
+    control.markAsDirty();
+  }
+
+  protected hasEditRole(role: UserRole): boolean {
+    return this.editForm.controls.roles.value.includes(role);
+  }
+
+  /** Cambiar el correo cambia con qué se inicia sesión: conviene avisarlo. */
+  protected emailCambia(user: ApiUser): boolean {
+    return this.editForm.controls.email.value.trim().toLowerCase() !== user.email;
+  }
+
+  protected saveEdit(user: ApiUser): void {
+    if (this.editForm.invalid || this.editForm.controls.roles.value.length === 0) {
+      this.editForm.markAllAsTouched();
+      this.resetError.set('Revisa los datos y deja al menos un rol asignado.');
+      return;
+    }
+
+    this.resetError.set(null);
+    this.savingId.set(user.id);
+    const { nombre, email, roles } = this.editForm.getRawValue();
+
+    // Solo se envía lo que cambió: así el servidor no rehace trabajo, y un
+    // guardado sin cambios devuelve "sin-cambios" en vez de tocar la fila.
+    const patch: { nombre?: string; email?: string; roles?: UserRole[] } = {};
+    if (nombre.trim() !== user.nombre) patch.nombre = nombre.trim();
+    if (email.trim().toLowerCase() !== user.email) patch.email = email.trim().toLowerCase();
+    if (roles.join() !== [...user.roles].join()) patch.roles = roles;
+
+    if (Object.keys(patch).length === 0) {
+      this.savingId.set(null);
+      this.editingId.set(null);
+      return;
+    }
+
+    this.adminApi.updateUser(user.id, patch).subscribe({
+      next: () => {
+        this.savingId.set(null);
+        this.editingId.set(null);
+        this.editDoneId.set(user.id);
+        setTimeout(() => this.editDoneId.set(null), 5000);
+      },
+      error: (error: ApiErrorBody) => {
+        this.savingId.set(null);
+        this.resetError.set(error.message);
+      },
+    });
   }
 
   protected cancelReset(): void {

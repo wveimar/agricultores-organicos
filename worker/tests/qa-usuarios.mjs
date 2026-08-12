@@ -65,6 +65,13 @@ seccion('2. Crear una cuenta');
 const correo = `qa-${Date.now()}@agricultores.co`;
 const CLAVE = 'claveDePrueba123';
 
+/**
+ * El correo de la cuenta de prueba cambia a mitad del guion (sección 3b), y
+ * las secciones siguientes inician sesión con ella. Se lleva aparte para que
+ * no se queden apuntando al correo viejo.
+ */
+let correoActual = correo;
+
 const creada = await call('/api/admin/users', TOKEN, {
   method: 'POST',
   body: JSON.stringify({
@@ -114,6 +121,60 @@ const emailMalo = await call('/api/admin/users', TOKEN, {
 });
 t(emailMalo.status === 400, `Correo sin formato → ${emailMalo.status}`);
 
+// ────────────────────── Editar nombre y correo ──────────────────────
+
+seccion('3b. Cambiar nombre y correo');
+
+const nombreNuevo = 'Cuenta QA Renombrada';
+const renombrada = await call(`/api/admin/users/${NUEVO_ID}`, TOKEN, {
+  method: 'PATCH',
+  body: JSON.stringify({ nombre: nombreNuevo }),
+});
+t(renombrada.status === 200 && renombrada.body?.user?.nombre === nombreNuevo,
+  `Cambiar el nombre → ${renombrada.status}`);
+
+const correoNuevo = `qa-nuevo-${Date.now()}@agricultores.co`;
+const recorreo = await call(`/api/admin/users/${NUEVO_ID}`, TOKEN, {
+  method: 'PATCH',
+  body: JSON.stringify({ email: correoNuevo }),
+});
+t(recorreo.status === 200 && recorreo.body?.user?.email === correoNuevo,
+  `Cambiar el correo → ${recorreo.status}`);
+
+t((await login(correoNuevo, CLAVE)).status === 200, 'Entra con el correo nuevo');
+t((await login(correo, CLAVE)).status === 401, 'El correo viejo ya no sirve');
+correoActual = correoNuevo;
+
+const mayusculas = await call(`/api/admin/users/${NUEVO_ID}`, TOKEN, {
+  method: 'PATCH',
+  body: JSON.stringify({ email: correoNuevo.toUpperCase() }),
+});
+t(mayusculas.body?.user?.email === correoNuevo, 'El correo se normaliza a minúsculas');
+
+const chocaConOtro = await call(`/api/admin/users/${NUEVO_ID}`, TOKEN, {
+  method: 'PATCH',
+  body: JSON.stringify({ email: 'admin@agricultores.co' }),
+});
+t(chocaConOtro.status === 400 && chocaConOtro.body?.error?.code === 'email-duplicado',
+  `Un correo ya usado por otra cuenta → ${chocaConOtro.status} ${chocaConOtro.body?.error?.code ?? ''}`);
+
+const correoRoto = await call(`/api/admin/users/${NUEVO_ID}`, TOKEN, {
+  method: 'PATCH',
+  body: JSON.stringify({ email: 'sin-arroba' }),
+});
+t(correoRoto.status === 400, `Un correo sin formato → ${correoRoto.status}`);
+
+const cambiaRoles = await call(`/api/admin/users/${NUEVO_ID}`, TOKEN, {
+  method: 'PATCH',
+  body: JSON.stringify({ roles: ['ADMIN_INVENTARIO'] }),
+});
+t(
+  cambiaRoles.status === 200 &&
+    cambiaRoles.body?.user?.roles?.length === 1 &&
+    cambiaRoles.body.user.roles[0] === 'ADMIN_INVENTARIO',
+  `Reemplazar los roles deja solo el nuevo → ${cambiaRoles.body?.user?.roles?.join() ?? '—'}`,
+);
+
 // ─────────────────── No poder dejarse fuera del sistema ───────────────────
 
 seccion('4. Protección contra quedarse sin acceso');
@@ -143,10 +204,10 @@ const reset = await call(`/api/admin/users/${NUEVO_ID}`, TOKEN, {
 });
 t(reset.status === 200, `SUPER_ADMIN asigna contraseña nueva → ${reset.status}`);
 
-const conVieja = await login(correo, CLAVE);
+const conVieja = await login(correoActual, CLAVE);
 t(conVieja.status === 401, `La contraseña vieja deja de servir → ${conVieja.status}`);
 
-const conNueva = await login(correo, NUEVA);
+const conNueva = await login(correoActual, NUEVA);
 t(conNueva.status === 200, `La nueva funciona → ${conNueva.status}`);
 const TOKEN_NUEVO = conNueva.body.token;
 
@@ -162,7 +223,7 @@ const propia = await call('/api/auth/password', TOKEN_NUEVO, {
   body: JSON.stringify({ actual: NUEVA, nueva: 'terceraClave789' }),
 });
 t(propia.status === 200, `Con la actual correcta → ${propia.status}`);
-t((await login(correo, 'terceraClave789')).status === 200, 'Entra con la que acaba de poner');
+t((await login(correoActual, 'terceraClave789')).status === 200, 'Entra con la que acaba de poner');
 
 const propiaAjena = await call(`/api/admin/users/${SUPER_ID}`, TOKEN_NUEVO, {
   method: 'PATCH',
@@ -180,7 +241,7 @@ const baja = await call(`/api/admin/users/${NUEVO_ID}`, TOKEN, {
 });
 t(baja.status === 200, `Cuenta desactivada → ${baja.status}`);
 
-const intentaEntrar = await login(correo, 'terceraClave789');
+const intentaEntrar = await login(correoActual, 'terceraClave789');
 t(intentaEntrar.status === 401, `Ya no puede entrar → ${intentaEntrar.status}`);
 
 const sigueEnLista = await call('/api/admin/users', TOKEN);
@@ -193,7 +254,7 @@ const alta = await call(`/api/admin/users/${NUEVO_ID}`, TOKEN, {
   method: 'PATCH',
   body: JSON.stringify({ activo: 1 }),
 });
-t(alta.status === 200 && (await login(correo, 'terceraClave789')).status === 200,
+t(alta.status === 200 && (await login(correoActual, 'terceraClave789')).status === 200,
   'Se le puede devolver el acceso');
 
 console.log(fallos === 0 ? '\n✔ Todo en orden.' : `\n✘ ${fallos} comprobación(es) sin pasar.`);

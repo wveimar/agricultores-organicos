@@ -182,7 +182,13 @@ export class AdminApiService {
 
   updateUser(
     id: string,
-    patch: Partial<{ nombre: string; password: string; roles: readonly UserRole[]; activo: 0 | 1 }>,
+    patch: Partial<{
+      nombre: string;
+      email: string;
+      password: string;
+      roles: readonly UserRole[];
+      activo: 0 | 1;
+    }>,
   ): Observable<ApiUser> {
     return this.api.updateUser(id, patch).pipe(
       tap((updated) => {
@@ -234,6 +240,24 @@ export class AdminApiService {
     return this.api.shipOrder(id).pipe(
       tap((updated) => {
         this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+      }),
+    );
+  }
+
+  /**
+   * Anula un pedido y devuelve al inventario lo que tuviera reservado.
+   *
+   * Se refresca también el inventario: si el pedido llevaba stock apartado,
+   * las cifras del panel de productos acaban de cambiar y dejarlas viejas
+   * llevaría a decidir sobre unidades que ya volvieron.
+   */
+  cancelOrder(id: string, motivo?: string): Observable<{ order: ApiOrder; unidadesDevueltas: number }> {
+    return this.api.cancelOrder(id, motivo).pipe(
+      tap(({ order, unidadesDevueltas }) => {
+        this.orders.update((list) => list.map((o) => (o.id === id ? order : o)));
+        if (unidadesDevueltas > 0 && this.products().length > 0) {
+          this.loadProducts();
+        }
       }),
     );
   }

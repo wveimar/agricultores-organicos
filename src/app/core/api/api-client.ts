@@ -265,7 +265,13 @@ export class ApiClient {
 
   updateUser(
     id: string,
-    patch: Partial<{ nombre: string; password: string; roles: readonly UserRole[]; activo: 0 | 1 }>,
+    patch: Partial<{
+      nombre: string;
+      email: string;
+      password: string;
+      roles: readonly UserRole[];
+      activo: 0 | 1;
+    }>,
   ): Observable<ApiUser> {
     return this.http
       .patch<{ user: ApiUser }>(`/api/admin/users/${id}`, patch)
@@ -371,6 +377,18 @@ export class ApiClient {
     return this.http
       .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/aprobar`, {})
       .pipe(map((res) => res.order), catchError(handleError));
+  }
+
+  cancelOrder(
+    id: string,
+    motivo?: string,
+  ): Observable<{ order: ApiOrder; unidadesDevueltas: number }> {
+    return this.http
+      .post<{ order: ApiOrder; unidadesDevueltas: number }>(
+        `/api/admin/orders/${id}/cancelar`,
+        { motivo },
+      )
+      .pipe(catchError(handleError));
   }
 
   shipOrder(id: string): Observable<ApiOrder> {

@@ -103,14 +103,10 @@ export async function create(
   requireRole(user, 'SUPER_ADMIN');
 
   const body = await readJson<CreateBody>(request);
-  const email = requireString(body.email, 'email', 200).toLowerCase().trim();
+  const email = validarEmail(body.email);
   const nombre = requireString(body.nombre, 'nombre', 120).trim();
   const password = validarPassword(body.password, 'password');
   const roles = validarRoles(body.roles);
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw ApiError.badRequest('email-invalido', 'Escribe un correo con formato válido.');
-  }
 
   const id = crypto.randomUUID();
   const hash = await hashPassword(password);
@@ -140,8 +136,19 @@ export async function create(
   return json({ user: toUser(creado!) }, 201);
 }
 
+const FORMATO_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validarEmail(value: unknown): string {
+  const email = requireString(value, 'email', 200).toLowerCase().trim();
+  if (!FORMATO_EMAIL.test(email)) {
+    throw ApiError.badRequest('email-invalido', 'Escribe un correo con formato válido.');
+  }
+  return email;
+}
+
 interface UpdateBody {
   nombre?: unknown;
+  email?: unknown;
   password?: unknown;
   roles?: unknown;
   activo?: unknown;
@@ -174,6 +181,14 @@ export async function update(
 
   if (body.nombre !== undefined) {
     push('nombre', requireString(body.nombre, 'nombre', 120).trim());
+  }
+
+  if (body.email !== undefined) {
+    // Cambiar el correo cambia con qué se inicia sesión. Se avisa en la
+    // interfaz, pero conviene tenerlo presente aquí: si alguien se equivoca al
+    // corregir el suyo, se queda fuera y hace falta otro SUPER_ADMIN para
+    // arreglarlo.
+    push('email', validarEmail(body.email));
   }
 
   if (body.password !== undefined) {
@@ -243,7 +258,14 @@ export async function update(
     );
   }
 
-  await env.DB.batch(sentencias);
+  try {
+    await env.DB.batch(sentencias);
+  } catch (error) {
+    if ((error as Error).message.includes('UNIQUE constraint failed: users.email')) {
+      throw ApiError.badRequest('email-duplicado', 'Ya existe otra cuenta con ese correo.');
+    }
+    throw error;
+  }
 
   const actualizado = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users u WHERE u.id = ?1`)
     .bind(userId)

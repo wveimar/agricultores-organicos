@@ -123,6 +123,11 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return orders.ship(env, user, shipMatch[1]);
     }
 
+    const cancelMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/cancelar$/);
+    if (cancelMatch && method === 'POST') {
+      return orders.cancel(request, env, user, cancelMatch[1]);
+    }
+
     const historyMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/historial$/);
     if (historyMatch && method === 'GET') {
       return orders.history(env, user, historyMatch[1]);
