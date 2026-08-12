@@ -25,11 +25,15 @@ export class AdminLogin {
   private readonly api = inject(ApiClient);
 
   /**
-   * Sitekey pública de Turnstile. Vacía → el widget entra en modo demo.
-   * En un despliegue real llega de la configuración de entorno; la clave
-   * **secreta** nunca aparece aquí: solo la usa el servidor en `siteverify`.
+   * Sitekey pública de Turnstile, servida por `GET /api/config`.
+   *
+   * Vacía → el widget entra en modo demo, que es lo que ocurre mientras no se
+   * configure `TURNSTILE_SITE_KEY` en el Worker. Viene del servidor y no
+   * compilada aquí para que activarla no obligue a reconstruir el frontend.
+   * La clave **secreta** nunca llega al navegador: solo la usa el Worker
+   * contra `siteverify`.
    */
-  protected readonly turnstileSiteKey = '';
+  protected readonly turnstileSiteKey = signal('');
 
   protected readonly form = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
@@ -39,6 +43,15 @@ export class AdminLogin {
   protected readonly turnstileToken = signal<string | null>(null);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly submitting = signal(false);
+
+  constructor() {
+    // Si la petición falla se queda en modo demo: un problema de red no debe
+    // dejar la pantalla de entrada inservible.
+    this.api.config().subscribe({
+      next: ({ turnstileSiteKey }) => this.turnstileSiteKey.set(turnstileSiteKey),
+      error: () => this.turnstileSiteKey.set(''),
+    });
+  }
 
   protected onVerified(token: string): void {
     // Un token vacío llega cuando Turnstile expira: hay que volver a verificar.
@@ -63,8 +76,10 @@ export class AdminLogin {
     const { email, password } = this.form.getRawValue();
 
     // El login es una petición HTTP real: el JWT lo firma el Worker con
-    // JWT_SECRET, no algo que el navegador pueda fabricarse a sí mismo.
-    this.api.login(email, password).subscribe({
+    // JWT_SECRET, no algo que el navegador pueda fabricarse a sí mismo. El
+    // token de Turnstile viaja con él porque quien decide si vale es el
+    // servidor — comprobarlo aquí no serviría de nada contra un `curl`.
+    this.api.login(email, password, this.turnstileToken()).subscribe({
       next: () => {
         this.submitting.set(false);
         const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') ?? '/admin';

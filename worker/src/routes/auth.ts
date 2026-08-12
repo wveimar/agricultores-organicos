@@ -1,10 +1,18 @@
 import { ApiError, json, readJson, requireString } from '../http';
 import { Env, JwtPayload, UserRole } from '../types';
 import { DECOY_HASH, signJwt, verifyPassword } from '../auth/crypto';
+import {
+  assertLoginAllowed,
+  clearLoginAttempts,
+  clientIp,
+  registerFailedLogin,
+} from '../auth/rate-limit';
+import { verifyTurnstile } from '../auth/turnstile';
 
 interface LoginBody {
   email?: unknown;
   password?: unknown;
+  turnstileToken?: unknown;
 }
 
 interface UserRow {
@@ -25,6 +33,15 @@ export async function login(request: Request, env: Env): Promise<Response> {
   const body = await readJson<LoginBody>(request);
   const email = requireString(body.email, 'email', 200).toLowerCase();
   const password = requireString(body.password, 'password', 200);
+  const ip = clientIp(request);
+
+  // El orden de estas tres líneas es la mitad de su valor. El bloqueo por
+  // intentos va primero porque es una consulta barata; verificar la contraseña
+  // cuesta ~1 s de CPU en PBKDF2, y pagarlo en cada intento de un atacante era
+  // justo el problema. Turnstile va después del bloqueo y antes del hash, para
+  // no gastar una llamada externa en alguien que ya está frenado.
+  await assertLoginAllowed(env, email, ip);
+  await verifyTurnstile(env, body.turnstileToken, ip);
 
   // group_concat evita una segunda consulta para los roles.
   const user = await env.DB.prepare(
@@ -41,13 +58,19 @@ export async function login(request: Request, env: Env): Promise<Response> {
   if (!user) {
     // Se gasta el tiempo de un PBKDF2 igualmente para no delatar por latencia.
     await verifyPassword(password, DECOY_HASH);
+    await registerFailedLogin(env, email, ip);
     throw ApiError.unauthorized('Correo o contraseña incorrectos.');
   }
 
   const valid = await verifyPassword(password, user.password_hash);
   if (!valid) {
+    await registerFailedLogin(env, email, ip);
     throw ApiError.unauthorized('Correo o contraseña incorrectos.');
   }
+
+  // Entrar bien borra el contador: quien recuerda su contraseña al quinto
+  // intento no debe arrastrar el historial hasta el bloqueo.
+  await clearLoginAttempts(env, email, ip);
 
   const roles = (user.roles?.split(',') ?? []) as UserRole[];
   const { token, expiresAt } = await signJwt(

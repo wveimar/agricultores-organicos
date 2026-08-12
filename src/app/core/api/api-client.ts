@@ -217,9 +217,16 @@ export class ApiClient {
 
   // ──────────────────────────────── Auth ────────────────────────────────
 
-  login(email: string, password: string): Observable<ApiSession> {
+  /** Sitekey pública de Turnstile. Vacía = no está configurada en el servidor. */
+  config(): Observable<{ turnstileSiteKey: string }> {
     return this.http
-      .post<ApiSession>('/api/auth/login', { email, password })
+      .get<{ turnstileSiteKey: string }>('/api/config')
+      .pipe(catchError(handleError));
+  }
+
+  login(email: string, password: string, turnstileToken?: string | null): Observable<ApiSession> {
+    return this.http
+      .post<ApiSession>('/api/auth/login', { email, password, turnstileToken })
       .pipe(
         tap((session) => this.tokens.set(session)),
         catchError(handleError),

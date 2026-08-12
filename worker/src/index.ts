@@ -45,6 +45,18 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ ok: true, ts: new Date().toISOString() });
   }
 
+  /**
+   * Configuración pública del cliente.
+   *
+   * La sitekey de Turnstile es pública por diseño (va en el HTML del widget),
+   * pero servirla desde aquí evita tener que recompilar el frontend para
+   * activarla: se pone como `var` en wrangler.jsonc y el navegador la recoge.
+   * La clave **secreta** nunca pasa por esta ruta.
+   */
+  if (pathname === '/api/config' && method === 'GET') {
+    return json({ turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? '' });
+  }
+
   if (pathname === '/api/auth/login' && method === 'POST') {
     return auth.login(request, env);
   }

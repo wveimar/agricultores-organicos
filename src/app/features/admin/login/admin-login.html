@@ -62,7 +62,7 @@
 
       <!-- Turnstile -->
       <div class="mt-6">
-        <app-turnstile [siteKey]="turnstileSiteKey" (verified)="onVerified($event)" />
+        <app-turnstile [siteKey]="turnstileSiteKey()" (verified)="onVerified($event)" />
       </div>
 
       @if (errorMessage(); as message) {

@@ -10,6 +10,18 @@ export interface Env {
    * versiona.
    */
   readonly JWT_SECRET: string;
+  /**
+   * Clave **secreta** de Turnstile, para `siteverify`. Opcional: si no está,
+   * el login no exige verificación anti-bots (ver `auth/turnstile.ts`).
+   *   npx wrangler secret put TURNSTILE_SECRET
+   */
+  readonly TURNSTILE_SECRET?: string;
+  /**
+   * Sitekey **pública** de Turnstile. La expone `GET /api/config` para que el
+   * navegador pinte el widget sin necesidad de recompilar el frontend.
+   * Al ser pública puede ir como `vars` en wrangler.jsonc.
+   */
+  readonly TURNSTILE_SITE_KEY?: string;
 }
 
 export type UserRole = 'ADMIN_INVENTARIO' | 'GESTOR_PEDIDOS' | 'SUPER_ADMIN';

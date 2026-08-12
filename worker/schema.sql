@@ -43,6 +43,18 @@ CREATE TABLE user_roles (
   PRIMARY KEY (user_id, role)
 );
 
+-- Intentos de entrada fallidos, para frenar la fuerza bruta.
+--
+-- La clave es 'email:<correo>' o 'ip:<dirección>': se cuentan por separado
+-- para que atacar una cuenta desde muchas IP y atacar muchas cuentas desde una
+-- IP tropiecen las dos. Se borra la fila al entrar bien, así que la tabla solo
+-- crece mientras alguien está fallando.
+CREATE TABLE login_attempts (
+  clave     TEXT    PRIMARY KEY,
+  intentos  INTEGER NOT NULL DEFAULT 0 CHECK (intentos >= 0),
+  ultimo_en TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
 -- ──────────────────────────────── Productos ────────────────────────────────
 
 CREATE TABLE products (
