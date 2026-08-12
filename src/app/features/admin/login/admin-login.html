@@ -83,30 +83,8 @@
       </button>
     </form>
 
-    <!-- Cuentas de prueba -->
-    <div class="mt-6 rounded-lg border border-dashed border-stone/60 p-5">
-      <p class="text-overline font-semibold uppercase text-ink-muted">Cuentas de demostración</p>
-      <ul class="mt-3 flex flex-col gap-2">
-        @for (account of demoAccounts; track account.email) {
-          <li>
-            <button
-              type="button"
-              class="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left transition-colors duration-200 hover:bg-linen"
-              (click)="fillDemo(account.email)"
-            >
-              <span class="min-w-0">
-                <span class="block truncate text-sm text-ink">{{ account.nombre }}</span>
-                <span class="block truncate text-xs text-ink-muted">{{ account.email }} · {{ account.rol }}</span>
-              </span>
-              <span class="text-overline shrink-0 font-semibold uppercase text-clay">Usar</span>
-            </button>
-          </li>
-        }
-      </ul>
-      <p class="mt-3 text-xs text-ink-muted">
-        Contraseña para todas: <span class="tabular">demo1234</span>. Sesión real: el
-        correo y la contraseña se verifican contra la base de datos.
-      </p>
-    </div>
+    <p class="mt-6 text-center text-xs text-ink-muted">
+      ¿Olvidaste tu contraseña? Pídele a quien administra el panel que te asigne una nueva.
+    </p>
   </div>
 </div>

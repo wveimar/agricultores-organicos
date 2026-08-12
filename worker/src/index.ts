@@ -5,6 +5,7 @@ import * as auth from './routes/auth';
 import * as products from './routes/products';
 import * as orders from './routes/orders';
 import * as reports from './routes/reports';
+import * as users from './routes/users';
 
 /**
  * Punto de entrada del Worker.
@@ -64,6 +65,12 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return auth.me(await requireAuth(request, env));
   }
 
+  // Cambiar la contraseña propia no pide rol: cualquiera con sesión puede
+  // hacerlo sobre su cuenta, y solo sobre la suya.
+  if (pathname === '/api/auth/password' && method === 'POST') {
+    return users.changeOwnPassword(request, env, await requireAuth(request, env));
+  }
+
   if (pathname.startsWith('/api/admin/')) {
     const user = await requireAuth(request, env);
 
@@ -114,6 +121,19 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     const receiptMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/comprobante$/);
     if (receiptMatch && method === 'GET') {
       return orders.receipt(env, user, receiptMatch[1]);
+    }
+
+    // Usuarios del panel
+    if (pathname === '/api/admin/users' && method === 'GET') {
+      return users.list(env, user);
+    }
+    if (pathname === '/api/admin/users' && method === 'POST') {
+      return users.create(request, env, user);
+    }
+
+    const userMatch = pathname.match(/^\/api\/admin\/users\/([\w-]+)$/);
+    if (userMatch && method === 'PATCH') {
+      return users.update(request, env, user, userMatch[1]);
     }
 
     // Reportes

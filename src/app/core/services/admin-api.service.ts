@@ -10,7 +10,9 @@ import {
   ApiOrderStatusLogEntry,
   ApiProduct,
   ApiSalesRow,
+  ApiUser,
 } from '../api/api-client';
+import { UserRole } from '../models/user.model';
 
 type SalesTotals = { unidades: number; ingresos: number; costo: number; ganancia: number };
 
@@ -143,6 +145,54 @@ export class AdminApiService {
         this.products.update((list) => list.map((p) => (p.id === id ? updated : p)));
       }),
     );
+  }
+
+  // ──────────────────────────────── Usuarios ────────────────────────────────
+
+  readonly users = signal<readonly ApiUser[]>([]);
+  readonly usersLoading = signal(false);
+  readonly usersError = signal<string | null>(null);
+
+  loadUsers(): void {
+    this.usersLoading.set(true);
+    this.usersError.set(null);
+
+    this.api.users().subscribe({
+      next: (users) => {
+        this.users.set(users);
+        this.usersLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.usersError.set(error.message);
+        this.usersLoading.set(false);
+      },
+    });
+  }
+
+  createUser(input: {
+    email: string;
+    nombre: string;
+    password: string;
+    roles: readonly UserRole[];
+  }): Observable<ApiUser> {
+    return this.api.createUser(input).pipe(
+      tap((created) => this.users.update((list) => [...list, created])),
+    );
+  }
+
+  updateUser(
+    id: string,
+    patch: Partial<{ nombre: string; password: string; roles: readonly UserRole[]; activo: 0 | 1 }>,
+  ): Observable<ApiUser> {
+    return this.api.updateUser(id, patch).pipe(
+      tap((updated) => {
+        this.users.update((list) => list.map((u) => (u.id === id ? updated : u)));
+      }),
+    );
+  }
+
+  changeOwnPassword(actual: string, nueva: string): Observable<{ ok: boolean }> {
+    return this.api.changeOwnPassword(actual, nueva);
   }
 
   // ───────────────────────────────── Pedidos ─────────────────────────────────

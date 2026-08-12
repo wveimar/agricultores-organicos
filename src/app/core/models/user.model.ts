@@ -6,6 +6,16 @@ export const ROLE_LABELS: Readonly<Record<UserRole, string>> = {
   SUPER_ADMIN: 'Administración general',
 };
 
+/**
+ * Todos los roles, para pintar el selector del alta de usuarios.
+ *
+ * Se deriva de `ROLE_LABELS` en vez de escribirse aparte: así añadir un rol
+ * es tocar un solo sitio y no puede quedar uno sin etiqueta o una etiqueta sin
+ * rol. El servidor tiene su propia lista en `worker/src/types.ts`, que es la
+ * que decide de verdad — esta solo dibuja.
+ */
+export const ALL_ROLES = Object.keys(ROLE_LABELS) as readonly UserRole[];
+
 export interface AuthUser {
   readonly id: string;
   readonly name: string;

@@ -10,6 +10,16 @@ import {
   ProductUnit,
 } from '../models/product.model';
 
+/** Cuenta del panel. `password_hash` nunca sale del servidor. */
+export interface ApiUser {
+  readonly id: string;
+  readonly email: string;
+  readonly nombre: string;
+  readonly activo: number;
+  readonly creadoEn: string;
+  readonly roles: readonly UserRole[];
+}
+
 /** Forma estable de los errores del Worker: `{ error: { code, message, details } }`. */
 export interface ApiErrorBody {
   readonly code: string;
@@ -218,6 +228,41 @@ export class ApiClient {
 
   logout(): void {
     this.tokens.clear();
+  }
+
+  /** Cambia la contraseña de la sesión actual. Exige la vigente. */
+  changeOwnPassword(actual: string, nueva: string): Observable<{ ok: boolean }> {
+    return this.http
+      .post<{ ok: boolean }>('/api/auth/password', { actual, nueva })
+      .pipe(catchError(handleError));
+  }
+
+  // ──────────────────────────── Usuarios ────────────────────────────
+
+  users(): Observable<readonly ApiUser[]> {
+    return this.http
+      .get<{ users: ApiUser[] }>('/api/admin/users')
+      .pipe(map((res) => res.users), catchError(handleError));
+  }
+
+  createUser(input: {
+    email: string;
+    nombre: string;
+    password: string;
+    roles: readonly UserRole[];
+  }): Observable<ApiUser> {
+    return this.http
+      .post<{ user: ApiUser }>('/api/admin/users', input)
+      .pipe(map((res) => res.user), catchError(handleError));
+  }
+
+  updateUser(
+    id: string,
+    patch: Partial<{ nombre: string; password: string; roles: readonly UserRole[]; activo: 0 | 1 }>,
+  ): Observable<ApiUser> {
+    return this.http
+      .patch<{ user: ApiUser }>(`/api/admin/users/${id}`, patch)
+      .pipe(map((res) => res.user), catchError(handleError));
   }
 
   // ────────────────────────────── Catálogo ──────────────────────────────

@@ -55,6 +55,14 @@ export const ADMIN_ROUTES: Routes = [
         loadComponent: () => import('./reports/sales-reports').then((m) => m.SalesReports),
       },
       {
+        path: 'usuarios',
+        // Gestionar cuentas es dar y quitar acceso al panel entero: solo
+        // SUPER_ADMIN. El servidor aplica la misma regla, que es la que cuenta.
+        canActivate: [roleGuard('SUPER_ADMIN')],
+        title: 'Usuarios · Panel',
+        loadComponent: () => import('./users/users-manager').then((m) => m.UsersManager),
+      },
+      {
         path: 'sin-acceso',
         title: 'Sin acceso · Panel',
         loadComponent: () => import('./forbidden/forbidden').then((m) => m.Forbidden),

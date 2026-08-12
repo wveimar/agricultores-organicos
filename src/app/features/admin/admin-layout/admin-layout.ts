@@ -40,6 +40,7 @@ export class AdminLayout {
       badge: this.adminApi.pendingCount,
     },
     { path: '/admin/reportes', label: 'Reportes', roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'] },
+    { path: '/admin/usuarios', label: 'Usuarios', roles: ['SUPER_ADMIN'] },
   ];
 
   /** El menú solo muestra lo que el rol puede abrir de verdad. */

@@ -44,7 +44,8 @@
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const t=d.trim\\(\\).split\\('\\\\n'\\).map\\(Number\\).sort\\(\\(a,b\\)=>a-b\\);const ms=x=>Math.round\\(x*1000\\);console.log\\('   mediana',ms\\(t[5]\\)+'ms · p90',ms\\(t[8]\\)+'ms · max',ms\\(t[9]\\)+'ms'\\);}\\)\")",
       "Bash(curl -s -o /dev/null -w \"%{time_total}\\\\n\" https://agricultores-organicos.wveimar-mamian.workers.dev/api/products --max-time 25)",
       "Bash(node worker/tests/qa-carga.mjs http://localhost:8788 10 8)",
-      "Bash(node worker/tests/qa-carga.mjs http://localhost:8788 8 6)"
+      "Bash(node worker/tests/qa-carga.mjs http://localhost:8788 8 6)",
+      "Bash(node worker/tests/qa-usuarios.mjs)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"
