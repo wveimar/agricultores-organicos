@@ -136,38 +136,61 @@
             }
           </div>
         </div>
+          <!-- Presentación: cuánto se lleva el cliente por el precio marcado -->
+          <div class="grid gap-4 sm:grid-cols-[7rem_1fr]">
+            <div>
+              <label for="cantidad" class="block text-sm font-semibold text-ink">Cantidad</label>
+              <input
+                id="cantidad"
+                type="number"
+                formControlName="cantidadUnidad"
+                min="1"
+                step="1"
+                required
+                aria-required="true"
+                class="tabular mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200"
+                [class]="showError('cantidadUnidad') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+                [attr.aria-invalid]="showError('cantidadUnidad')"
+              />
+              @if (showError('cantidadUnidad')) {
+                <p class="mt-2 text-sm text-berry">Mínimo 1.</p>
+              }
+            </div>
 
-        <!-- Unidad y Origen -->
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label for="unidad" class="block text-sm font-semibold text-ink">Unidad</label>
-            <input
-              id="unidad"
-              type="text"
-              formControlName="unidad"
-              class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-              [class]="showError('unidad') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-              placeholder="kg, unidad, atado…"
-            />
-            @if (showError('unidad')) {
-              <p class="mt-2 text-sm text-berry">Requerida</p>
-            }
+            <div>
+              <label for="unidad" class="block text-sm font-semibold text-ink">Unidad</label>
+              <select
+                id="unidad"
+                formControlName="unidad"
+                required
+                aria-required="true"
+                class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+              >
+                @for (u of unidades; track u.value) {
+                  <option [value]="u.value">{{ u.label }}</option>
+                }
+              </select>
+            </div>
           </div>
 
-          <div>
-            <label for="origen" class="block text-sm font-semibold text-ink">Origen</label>
-            <input
-              id="origen"
-              type="text"
-              formControlName="origen"
-              class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-              [class]="showError('origen') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-              placeholder="Finca, región…"
-            />
-            @if (showError('origen')) {
-              <p class="mt-2 text-sm text-berry">Requerido</p>
-            }
-          </div>
+        <p class="-mt-2 text-sm text-ink-soft">
+          El cliente verá <strong class="text-ink">{{ vistaPrevia() }}</strong> junto al precio.
+        </p>
+
+        <!-- Origen -->
+        <div>
+          <label for="origen" class="block text-sm font-semibold text-ink">Origen</label>
+          <input
+            id="origen"
+            type="text"
+            formControlName="origen"
+            class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+            [class]="showError('origen') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+            placeholder="Finca, región…"
+          />
+          @if (showError('origen')) {
+            <p class="mt-2 text-sm text-berry">Requerido</p>
+          }
         </div>
 
         <!-- Imágenes -->

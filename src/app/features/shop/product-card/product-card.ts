@@ -1,6 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { CartService } from '../../../core/services/cart.service';
-import { BADGE_LABELS, Product, UNIT_LABELS, isInStock } from '../../../core/models/product.model';
+import {
+  BADGE_LABELS,
+  Product,
+  isInStock,
+  unitPresentation,
+} from '../../../core/models/product.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
 /** Color de fondo de cada etiqueta. Ver doc/plan.md §2. */
@@ -30,7 +35,10 @@ export class ProductCard {
 
   private readonly cart = inject(CartService);
 
-  protected readonly unitLabel = computed(() => UNIT_LABELS[this.product().unit]);
+  /** "500 gr", "5 unidades", o solo "kg" cuando la cantidad es 1. */
+  protected readonly unitLabel = computed(() =>
+    unitPresentation(this.product().quantity, this.product().unit),
+  );
   protected readonly badgeLabel = computed(() => {
     const badge = this.product().badge;
     return badge ? BADGE_LABELS[badge] : null;

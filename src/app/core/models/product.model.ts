@@ -1,8 +1,16 @@
 /** Etiqueta destacada de una tarjeta. Un producto muestra como máximo una. */
 export type ProductBadge = 'nuevo' | 'bestseller' | 'temporada' | 'ultimas-unidades';
 
-/** Unidad de venta — se muestra junto al precio. */
-export type ProductUnit = 'kg' | 'libra' | 'unidad' | 'manojo' | 'canasta' | 'bolsa' | 'frasco';
+/** Unidad de venta — se muestra junto al precio, precedida de la cantidad. */
+export type ProductUnit =
+  | 'gr'
+  | 'kg'
+  | 'libra'
+  | 'unidad'
+  | 'manojo'
+  | 'canasta'
+  | 'bolsa'
+  | 'frasco';
 
 export interface Product {
   readonly id: string;
@@ -20,6 +28,12 @@ export interface Product {
    */
   readonly costPrice: number;
   readonly unit: ProductUnit;
+  /**
+   * Cuánto lleva la presentación que se vende: 500 con `unit: 'gr'`, 5 con
+   * `unit: 'unidad'`. `price` es lo que se cobra por esa presentación entera,
+   * no por unidad de medida.
+   */
+  readonly quantity: number;
   /** Finca o región de origen — el sello de confianza de la tienda. */
   readonly origin: string;
   readonly rating: number;
@@ -134,12 +148,42 @@ export const BADGE_LABELS: Readonly<Record<ProductBadge, string>> = {
   'ultimas-unidades': 'Últimas unidades',
 };
 
-export const UNIT_LABELS: Readonly<Record<ProductUnit, string>> = {
-  kg: 'kg',
-  libra: 'libra',
-  unidad: 'unidad',
-  manojo: 'manojo',
-  canasta: 'canasta',
-  bolsa: 'bolsa 500 g',
-  frasco: 'frasco 350 g',
+/**
+ * Singular y plural de cada unidad.
+ *
+ * Antes esto era una sola cadena, y dos entradas llevaban el tamaño escrito
+ * dentro: "bolsa 500 g", "frasco 350 g". Ese peso ahora vive en
+ * `quantity`, que sí se puede filtrar, comparar y cambiar desde el panel.
+ *
+ * Las abreviaturas no pluralizan —«500 gr», no «500 grs»—; los sustantivos sí.
+ */
+export const UNIT_LABELS: Readonly<Record<ProductUnit, { singular: string; plural: string }>> = {
+  gr: { singular: 'gr', plural: 'gr' },
+  kg: { singular: 'kg', plural: 'kg' },
+  libra: { singular: 'libra', plural: 'libras' },
+  unidad: { singular: 'unidad', plural: 'unidades' },
+  manojo: { singular: 'manojo', plural: 'manojos' },
+  canasta: { singular: 'canasta', plural: 'canastas' },
+  bolsa: { singular: 'bolsa', plural: 'bolsas' },
+  frasco: { singular: 'frasco', plural: 'frascos' },
 };
+
+/**
+ * Cómo se nombra lo que se lleva el cliente por el precio marcado.
+ *
+ * Con cantidad 1 se calla el número —«/ kg», no «/ 1 kg»—, que es como estaba
+ * escrito el catálogo entero antes de existir este campo y como se sigue
+ * hablando: nadie dice "un kilo de tomate" señalando el precio.
+ */
+/**
+ * Todas las unidades, para el selector del panel.
+ *
+ * Derivadas de `UNIT_LABELS` en vez de escritas aparte: añadir una unidad es
+ * tocar un solo sitio y no puede quedar una sin etiqueta.
+ */
+export const ALL_UNITS = Object.keys(UNIT_LABELS) as readonly ProductUnit[];
+
+export function unitPresentation(quantity: number, unit: ProductUnit): string {
+  const etiqueta = UNIT_LABELS[unit] ?? { singular: unit, plural: unit };
+  return quantity === 1 ? etiqueta.singular : `${quantity} ${etiqueta.plural}`;
+}

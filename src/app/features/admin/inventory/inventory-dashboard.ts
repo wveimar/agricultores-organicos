@@ -3,7 +3,12 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
-import { ADMIN_GROUP_LABELS, AdminGroup, UNIT_LABELS } from '../../../core/models/product.model';
+import {
+  ADMIN_GROUP_LABELS,
+  AdminGroup,
+  ProductUnit,
+  unitPresentation,
+} from '../../../core/models/product.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
 type StockLevel = 'agotado' | 'critico' | 'ok';
@@ -157,9 +162,14 @@ export class InventoryDashboard {
     return product.precio > 0 ? Math.round((this.marginOf(product) / product.precio) * 100) : 0;
   }
 
-  /** `unidad` llega como texto libre desde la API; se resuelve con fallback. */
+  /**
+   * "500 gr", "5 unidades", o solo "kg" cuando la cantidad es 1.
+   *
+   * `unidad` llega como texto libre desde la API, así que `unitPresentation`
+   * cae al valor tal cual si no reconoce la unidad.
+   */
   protected unitLabel(product: ApiProduct): string {
-    return (UNIT_LABELS as Record<string, string>)[product.unidad] ?? product.unidad;
+    return unitPresentation(product.cantidadUnidad ?? 1, product.unidad as ProductUnit);
   }
 
   /** Porcentaje de la barra de stock respecto al doble del umbral. */

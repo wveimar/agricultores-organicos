@@ -47,7 +47,7 @@ function checkImageSource(value: string | undefined, field: string): void {
 /** Columnas que ve el público. `precio_costo` queda deliberadamente fuera. */
 const PUBLIC_COLUMNS = `
   id, slug, nombre, tagline, categoria_id AS categoriaId, grupo_admin AS grupoAdmin,
-  precio, precio_anterior AS precioAnterior, unidad, origen, rating,
+  precio, precio_anterior AS precioAnterior, unidad, cantidad_unidad AS cantidadUnidad, origen, rating,
   review_count AS reviewCount, badge, stock_actual AS stock,
   imagen, imagen_hover AS imagenHover, imagen_alt AS imagenAlt
 `;
@@ -208,6 +208,7 @@ interface UpdateFullBody {
   precio?: unknown;
   precioCosto?: unknown;
   unidad?: unknown;
+  cantidadUnidad?: unknown;
   origen?: unknown;
   imagen?: unknown;
   imagenHover?: unknown;
@@ -237,6 +238,8 @@ export async function updateFull(
   const precio = body.precio !== undefined ? requireInt(body.precio, 'precio', 0) : undefined;
   const precioCosto = body.precioCosto !== undefined ? requireInt(body.precioCosto, 'precioCosto', 0) : undefined;
   const unidad = body.unidad as string | undefined;
+  const cantidadUnidad =
+    body.cantidadUnidad !== undefined ? requireInt(body.cantidadUnidad, 'cantidadUnidad', 1) : 1;
   const origen = body.origen as string | undefined;
   const imagen = body.imagen as string | undefined;
   const imagenHover = body.imagenHover as string | undefined;
@@ -285,12 +288,12 @@ export async function updateFull(
     await env.DB.prepare(
       `UPDATE products SET
         slug = ?1, nombre = ?2, tagline = ?3, categoria_id = ?4, grupo_admin = ?5,
-        precio = ?6, precio_costo = ?7, unidad = ?8, origen = ?9,
-        imagen = ?10, imagen_hover = ?11, imagen_alt = ?12,
+        precio = ?6, precio_costo = ?7, unidad = ?8, cantidad_unidad = ?9, origen = ?10,
+        imagen = ?11, imagen_hover = ?12, imagen_alt = ?13,
         actualizado_en = datetime('now')
-       WHERE id = ?13`,
+       WHERE id = ?14`,
     )
-      .bind(updateSlug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, origen, imagen, imagenHover ?? null, imagenAlt, productId)
+      .bind(updateSlug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt, productId)
       .run();
   } catch (error) {
     if ((error as Error).message.includes('UNIQUE constraint failed: products.slug')) {
@@ -319,6 +322,7 @@ interface CreateBody {
   precio?: unknown;
   precioCosto?: unknown;
   unidad?: unknown;
+  cantidadUnidad?: unknown;
   origen?: unknown;
   imagen?: unknown;
   imagenHover?: unknown;
@@ -348,6 +352,8 @@ export async function create(
   const precio = body.precio !== undefined ? requireInt(body.precio, 'precio', 0) : undefined;
   const precioCosto = body.precioCosto !== undefined ? requireInt(body.precioCosto, 'precioCosto', 0) : 0;
   const unidad = body.unidad as string | undefined;
+  const cantidadUnidad =
+    body.cantidadUnidad !== undefined ? requireInt(body.cantidadUnidad, 'cantidadUnidad', 1) : 1;
   const origen = body.origen as string | undefined;
   const imagen = body.imagen as string | undefined;
   const imagenHover = body.imagenHover as string | undefined;
@@ -397,11 +403,11 @@ export async function create(
     await env.DB.prepare(
       `INSERT INTO products (
         id, slug, nombre, tagline, categoria_id, grupo_admin,
-        precio, precio_costo, unidad, origen,
+        precio, precio_costo, unidad, cantidad_unidad, origen,
         imagen, imagen_hover, imagen_alt
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`,
     )
-      .bind(id, slug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, origen, imagen, imagenHover ?? null, imagenAlt)
+      .bind(id, slug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt)
       .run();
   } catch (error) {
     if ((error as Error).message.includes('UNIQUE constraint failed: products.slug')) {

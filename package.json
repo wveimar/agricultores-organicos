@@ -29,6 +29,8 @@
     "qa:fuerza-bruta": "node worker/tests/qa-fuerza-bruta.mjs",
     "qa:cancelacion": "node worker/tests/qa-cancelacion.mjs",
     "qa:recuperacion": "node worker/tests/qa-recuperacion.mjs",
+    "db:migrate:cantidad": "wrangler d1 execute DB --local --file=worker/migrations/0007_cantidad_unidad.sql",
+    "db:migrate:cantidad:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0007_cantidad_unidad.sql",
     "db:migrate:recuperacion": "wrangler d1 execute DB --local --file=worker/migrations/0006_password_resets.sql",
     "db:migrate:recuperacion:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0006_password_resets.sql",
     "db:migrate:cancelado": "wrangler d1 execute DB --local --file=worker/migrations/0005_estado_cancelado.sql",

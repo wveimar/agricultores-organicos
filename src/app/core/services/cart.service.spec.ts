@@ -20,6 +20,7 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
     price: 10_000,
     costPrice: 6_000,
     unit: 'kg',
+    quantity: 1,
     origin: 'Finca QA',
     rating: 4.5,
     reviewCount: 10,

@@ -16,6 +16,7 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
     price: 4_900,
     costPrice: 3_800,
     unit: 'unidad',
+    quantity: 1,
     origin: 'Finca Los Nogales · Antioquia',
     rating: 4.8,
     reviewCount: 312,

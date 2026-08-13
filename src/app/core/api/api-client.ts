@@ -44,6 +44,8 @@ export interface ApiProduct {
   readonly precio: number;
   readonly precioAnterior: number | null;
   readonly unidad: string;
+  /** Cuánto lleva la presentación: 500 con unidad 'gr', 5 con 'unidad'. */
+  readonly cantidadUnidad: number;
   readonly origen: string;
   readonly rating: number;
   readonly reviewCount: number;
@@ -88,6 +90,7 @@ export function toProduct(p: ApiProduct): Product {
     compareAtPrice: p.precioAnterior ?? undefined,
     costPrice: p.precioCosto ?? 0,
     unit: p.unidad as ProductUnit,
+    quantity: p.cantidadUnidad ?? 1,
     origin: p.origen,
     rating: p.rating,
     reviewCount: p.reviewCount,
@@ -321,6 +324,7 @@ export class ApiClient {
     precio: number;
     precioCosto?: number;
     unidad: string;
+    cantidadUnidad?: number;
     origen: string;
     imagen: string;
     imagenHover?: string;
@@ -356,6 +360,7 @@ export class ApiClient {
     precio: number;
     precioCosto: number;
     unidad: string;
+    cantidadUnidad?: number;
     origen: string;
     imagen: string;
     imagenHover?: string;

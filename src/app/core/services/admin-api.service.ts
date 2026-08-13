@@ -86,6 +86,7 @@ export class AdminApiService {
     precio: number;
     precioCosto?: number;
     unidad: string;
+    cantidadUnidad?: number;
     origen: string;
     imagen: string;
     imagenHover?: string;
@@ -135,6 +136,7 @@ export class AdminApiService {
     precio: number;
     precioCosto: number;
     unidad: string;
+    cantidadUnidad?: number;
     origen: string;
     imagen: string;
     imagenHover?: string;

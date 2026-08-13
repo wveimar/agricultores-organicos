@@ -72,6 +72,9 @@ CREATE TABLE products (
   precio_anterior INTEGER CHECK (precio_anterior IS NULL OR precio_anterior >= 0),
 
   unidad          TEXT    NOT NULL,
+  -- Cuánto lleva la presentación que se vende: 500 con unidad 'gr', 5 con
+  -- 'unidad'. `precio` es lo que se cobra por esa presentación entera.
+  cantidad_unidad INTEGER NOT NULL DEFAULT 1 CHECK (cantidad_unidad > 0),
   origen          TEXT    NOT NULL,
   rating          REAL    NOT NULL DEFAULT 0 CHECK (rating >= 0 AND rating <= 5),
   review_count    INTEGER NOT NULL DEFAULT 0 CHECK (review_count >= 0),
