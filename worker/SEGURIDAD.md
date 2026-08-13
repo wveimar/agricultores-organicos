@@ -65,7 +65,54 @@ TURNSTILE_SITE_KEY=1x00000000000000000000AA
 TURNSTILE_SECRET=1x0000000000000000000000000000000AA
 ```
 
-## 3. Límite de intentos — ya activo, sin configuración
+## 3. Correo de recuperación — opcional, pero sin él no llega nada
+
+Un Worker no habla SMTP: solo hace peticiones HTTP. Enviar correo pasa
+obligatoriamente por la API de un proveedor, y eso significa una cuenta externa.
+
+Con [Resend](https://resend.com) (3.000 correos al mes, 100 al día en el plan
+gratuito):
+
+```bash
+npx wrangler secret put RESEND_API_KEY
+npx wrangler secret put EMAIL_FROM        # "Agricultores Orgánicos <hola@tudominio.co>"
+```
+
+**Hace falta un dominio verificado.** El remitente no puede ser un Gmail ni el
+subdominio de `workers.dev`: sin SPF y DKIM sobre un dominio propio, el correo
+llega a spam o lo rechazan directamente. Es el trámite que hay que hacer en el
+panel del proveedor, no algo que se resuelva en el código.
+
+### Mientras no esté configurado
+
+La recuperación **sigue funcionando**, pero el enlace no se envía: se escribe
+en los logs del Worker.
+
+```bash
+npx wrangler tail        # buscar la línea "[recuperacion] ... Enlace para ..."
+```
+
+Solo lo ve quien tiene la cuenta de Cloudflare, así que sirve de salida de
+emergencia — que es justamente el caso que importa: si el único SUPER_ADMIN
+olvida su contraseña, sin esto se queda fuera para siempre.
+
+No se falla la petición a propósito: responder distinto según haya proveedor o
+no le diría a quien la hace si el correo existe, que es lo que el endpoint
+evita con cuidado.
+
+### Cómo está construido
+
+- El token son 32 bytes aleatorios; en la base **solo se guarda su SHA-256**.
+  Quien lea la tabla no obtiene una llave utilizable.
+- Caduca en 60 minutos y es de **un solo uso**: un correo se reenvía, se queda
+  en la papelera y se sincroniza en varios dispositivos.
+- Pedir un enlace nuevo invalida el anterior.
+- `POST /api/auth/recuperar` responde 200 exista o no la cuenta, para que no
+  sirva de censo de correos registrados.
+- Máximo 5 peticiones por hora y por IP: sin eso, cualquiera puede llenar de
+  correos la bandeja de un administrador y quemar la cuota del proveedor.
+
+## 4. Límite de intentos — ya activo, sin configuración
 
 Vive en la tabla `login_attempts` y no necesita nada externo. Ocho fallos en 15
 minutos bloquean la combinación de correo e IP, y también la IP suelta.

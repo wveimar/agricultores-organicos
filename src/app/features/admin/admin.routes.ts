@@ -16,6 +16,23 @@ export const ADMIN_ROUTES: Routes = [
     loadComponent: () => import('./login/admin-login').then((m) => m.AdminLogin),
   },
   {
+    // Las dos mitades de la recuperación comparten componente: sin `token` en
+    // la URL pide el enlace, con él deja elegir contraseña. Ambas son públicas
+    // por necesidad —quien las usa no puede iniciar sesión—, pero llevan
+    // `guestGuard` para que a quien ya tiene sesión abierta no se le ofrezca
+    // un camino que no necesita.
+    path: 'recuperar',
+    canActivate: [guestGuard],
+    title: 'Recuperar contraseña · Panel',
+    loadComponent: () => import('./recover/recover-password').then((m) => m.RecoverPassword),
+  },
+  {
+    path: 'restablecer',
+    canActivate: [guestGuard],
+    title: 'Nueva contraseña · Panel',
+    loadComponent: () => import('./recover/recover-password').then((m) => m.RecoverPassword),
+  },
+  {
     path: '',
     canActivate: [authGuard],
     loadComponent: () => import('./admin-layout/admin-layout').then((m) => m.AdminLayout),

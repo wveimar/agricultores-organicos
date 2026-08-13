@@ -237,6 +237,26 @@ export class ApiClient {
     this.tokens.clear();
   }
 
+  /**
+   * Pide un enlace de recuperación.
+   *
+   * Responde 200 exista o no la cuenta, a propósito: la interfaz muestra el
+   * mismo mensaje en ambos casos para no convertir esta pantalla en un censo
+   * de correos registrados.
+   */
+  requestPasswordReset(email: string): Observable<{ ok: boolean }> {
+    return this.http
+      .post<{ ok: boolean }>('/api/auth/recuperar', { email })
+      .pipe(catchError(handleError));
+  }
+
+  /** Cambia la contraseña con el token que llegó por correo. */
+  resetPassword(token: string, nueva: string): Observable<{ ok: boolean }> {
+    return this.http
+      .post<{ ok: boolean }>('/api/auth/restablecer', { token, nueva })
+      .pipe(catchError(handleError));
+  }
+
   /** Cambia la contraseña de la sesión actual. Exige la vigente. */
   changeOwnPassword(actual: string, nueva: string): Observable<{ ok: boolean }> {
     return this.http

@@ -99,3 +99,52 @@ export async function clearLoginAttempts(env: Env, email: string, ip: string): P
     .bind(...lista)
     .run();
 }
+
+// ─────────────────── Recuperación de contraseña ───────────────────
+
+/**
+ * Pedir un enlace de recuperación manda un correo a otra persona, así que el
+ * tope es más estrecho que el del login: sin él, cualquiera puede llenar de
+ * correos la bandeja de un administrador escribiendo su dirección en bucle, y
+ * de paso quemar la cuota del proveedor de envío.
+ *
+ * Se cuenta solo por IP. Contar por correo dejaría a la víctima sin poder
+ * recuperar su propia cuenta, que es la misma trampa que ya se corrigió en el
+ * contador del login.
+ */
+const MAX_RECUPERACIONES = 5;
+const VENTANA_RECUPERACION_MINUTOS = 60;
+
+export async function assertRecoveryAllowed(env: Env, ip: string): Promise<void> {
+  const fila = await env.DB.prepare(
+    `SELECT intentos FROM login_attempts
+      WHERE clave = ?1
+        AND ultimo_en > datetime('now', '-${VENTANA_RECUPERACION_MINUTOS} minutes')`,
+  )
+    .bind(`recuperar:${ip}`)
+    .first<{ intentos: number }>();
+
+  if ((fila?.intentos ?? 0) >= MAX_RECUPERACIONES) {
+    throw new ApiError(
+      429,
+      'demasiadas-recuperaciones',
+      'Ya se pidieron varios enlaces de recuperación desde aquí. Espera un rato antes de volver a intentarlo.',
+    );
+  }
+}
+
+export async function registerRecoveryRequest(env: Env, ip: string): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO login_attempts (clave, intentos, ultimo_en)
+     VALUES (?1, 1, datetime('now'))
+     ON CONFLICT(clave) DO UPDATE SET
+       intentos = CASE
+                    WHEN login_attempts.ultimo_en > datetime('now', '-${VENTANA_RECUPERACION_MINUTOS} minutes')
+                    THEN login_attempts.intentos + 1
+                    ELSE 1
+                  END,
+       ultimo_en = datetime('now')`,
+  )
+    .bind(`recuperar:${ip}`)
+    .run();
+}

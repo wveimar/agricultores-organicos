@@ -22,6 +22,18 @@ export interface Env {
    * Al ser pública puede ir como `vars` en wrangler.jsonc.
    */
   readonly TURNSTILE_SITE_KEY?: string;
+  /**
+   * Clave de la API de Resend, para los correos de recuperación. Opcional: sin
+   * ella la recuperación sigue respondiendo igual, pero no llega ningún correo
+   * y queda el aviso en los logs (ver `auth/email.ts`).
+   *   npx wrangler secret put RESEND_API_KEY
+   */
+  readonly RESEND_API_KEY?: string;
+  /**
+   * Remitente de los correos, con dominio verificado en el proveedor.
+   * Ejemplo: "Agricultores Orgánicos <hola@tudominio.co>".
+   */
+  readonly EMAIL_FROM?: string;
 }
 
 export type UserRole = 'ADMIN_INVENTARIO' | 'GESTOR_PEDIDOS' | 'SUPER_ADMIN';

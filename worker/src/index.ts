@@ -6,6 +6,7 @@ import * as products from './routes/products';
 import * as orders from './routes/orders';
 import * as reports from './routes/reports';
 import * as users from './routes/users';
+import * as passwordReset from './routes/password-reset';
 
 /**
  * Punto de entrada del Worker.
@@ -59,6 +60,16 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 
   if (pathname === '/api/auth/login' && method === 'POST') {
     return auth.login(request, env);
+  }
+
+  // Recuperación de contraseña. Es pública por necesidad: quien la usa es
+  // justamente alguien que no puede iniciar sesión. La protegen el límite por
+  // IP, el token de un solo uso y su caducidad — no una sesión.
+  if (pathname === '/api/auth/recuperar' && method === 'POST') {
+    return passwordReset.requestReset(request, env);
+  }
+  if (pathname === '/api/auth/restablecer' && method === 'POST') {
+    return passwordReset.performReset(request, env);
   }
 
   if (pathname === '/api/products' && method === 'GET') {

@@ -71,7 +71,20 @@
       "Bash(sed -n '/CREATE TABLE orders/,/^\\);/p' worker/schema.sql)",
       "Bash(sed -n '/CREATE TABLE order_status_log/,/^\\);/p' worker/schema.sql)",
       "Bash(node worker/tests/qa-usuarios.mjs http://localhost:8791)",
-      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\);console.log\\('package.json válido'\\)\")"
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\);console.log\\('package.json válido'\\)\")",
+      "Bash(curl -s -w \"\\\\n→ HTTP %{http_code}\\\\n\" -X POST https://agricultores-organicos.wveimar-mamian.workers.dev/api/auth/login -H \"content-type: application/json\" -d '{\"email\":\"admin@agricultores.co\",\"password\":\"demo1234\"}' --max-time 25)",
+      "Bash(curl -s -o /dev/null -w 'GET /api/config → %{http_code}  \\(200 = código nuevo · 404 = código viejo\\)\\\\n' https://agricultores-organicos.wveimar-mamian.workers.dev/api/config --max-time 20)",
+      "Bash(curl -s https://agricultores-organicos.wveimar-mamian.workers.dev/api/config --max-time 20)",
+      "Bash(curl -s -o /dev/null -w 'GET /api/products → %{http_code}\\\\n' https://agricultores-organicos.wveimar-mamian.workers.dev/api/products --max-time 20)",
+      "Bash(curl -s -w '\\\\n→ HTTP %{http_code}\\\\n' -X POST https://agricultores-organicos.wveimar-mamian.workers.dev/api/auth/login -H 'content-type: application/json' -d '{\"email\":\"admin@agricultores.co\",\"password\":\"demo1234\"}' --max-time 25)",
+      "Bash(curl -s -o /dev/null -w '→ HTTP %{http_code}\\\\n' -X POST https://agricultores-organicos.wveimar-mamian.workers.dev/api/auth/login -H 'content-type: application/json' -d '{\"email\":\"admin@agricultores.co\",\"password\":\"demo1234\"}' --max-time 25)",
+      "Bash(curl -s -o /dev/null -w '→ HTTP %{http_code}\\\\n' -X POST https://agricultores-organicos.wveimar-mamian.workers.dev/api/auth/login -H 'content-type: application/json' -d '{\"email\":\"admin@agricultores.co\",\"password\":\"noEsLaClave\"}' --max-time 25)",
+      "Bash(curl -s -w '\\\\n→ HTTP %{http_code}\\\\n' -X POST https://agricultores-organicos.wveimar-mamian.workers.dev/api/auth/login -H 'content-type: application/json' -d '{\"email\":\"wveimar.mamian@gmail.com\",\"password\":\"demo1234\"}' --max-time 25)",
+      "WebFetch(domain:resend.com)",
+      "Bash(node worker/tests/qa-recuperacion.mjs http://localhost:8792)",
+      "Bash(curl -s -o /dev/null -w \"worker en 8792: %{http_code}\\\\n\" --max-time 5 http://localhost:8792/api/config)",
+      "Bash(python -)",
+      "Bash(sed -i 's#\"qa:cancelacion\": \"node worker/tests/qa-cancelacion.mjs\",#\"qa:cancelacion\": \"node worker/tests/qa-cancelacion.mjs\",\\\\n    \"qa:recuperacion\": \"node worker/tests/qa-recuperacion.mjs\",\\\\n    \"db:migrate:recuperacion\": \"wrangler d1 execute DB --local --file=worker/migrations/0006_password_resets.sql\",\\\\n    \"db:migrate:recuperacion:remote\": \"wrangler d1 execute DB --remote --file=worker/migrations/0006_password_resets.sql\",#' package.json)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"
