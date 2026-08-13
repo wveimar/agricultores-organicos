@@ -88,7 +88,9 @@
       "Bash(grep -n \"INSERT INTO products\\\\|UPDATE products SET$\\\\|unidad = ?8\\\\|unidad, origen\" -A 8 worker/src/routes/products.ts)",
       "Bash(sed -i 's#\"db:migrate:recuperacion\": #\"db:migrate:cantidad\": \"wrangler d1 execute DB --local --file=worker/migrations/0007_cantidad_unidad.sql\",\\\\n    \"db:migrate:cantidad:remote\": \"wrangler d1 execute DB --remote --file=worker/migrations/0007_cantidad_unidad.sql\",\\\\n    \"db:migrate:recuperacion\": #' package.json)",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\);console.log\\('ok'\\)\")",
-      "Bash(sed -i 's#\"qa:cancelacion\": #\"qa:duplicar\": \"node worker/tests/qa-duplicar.mjs\",\\\\n    \"qa:cancelacion\": #' package.json)"
+      "Bash(sed -i 's#\"qa:cancelacion\": #\"qa:duplicar\": \"node worker/tests/qa-duplicar.mjs\",\\\\n    \"qa:cancelacion\": #' package.json)",
+      "Bash(curl -s \"https://agricultores-organicos.wveimar-mamian.workers.dev/api/products\" --max-time 20)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const p=JSON.parse\\(d\\).products;const con=p.filter\\(x=>x.cantidadUnidad!==undefined\\);console.log\\('  productos:',p.length,'· con cantidadUnidad en la respuesta:',con.length\\);if\\(con.length\\){const v=con.find\\(x=>x.cantidadUnidad>1\\)||con[0];console.log\\('  ejemplo:',v.nombre,'→',v.cantidadUnidad,v.unidad\\)}}\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"
