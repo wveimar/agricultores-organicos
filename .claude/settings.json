@@ -90,7 +90,10 @@
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\);console.log\\('ok'\\)\")",
       "Bash(sed -i 's#\"qa:cancelacion\": #\"qa:duplicar\": \"node worker/tests/qa-duplicar.mjs\",\\\\n    \"qa:cancelacion\": #' package.json)",
       "Bash(curl -s \"https://agricultores-organicos.wveimar-mamian.workers.dev/api/products\" --max-time 20)",
-      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const p=JSON.parse\\(d\\).products;const con=p.filter\\(x=>x.cantidadUnidad!==undefined\\);console.log\\('  productos:',p.length,'· con cantidadUnidad en la respuesta:',con.length\\);if\\(con.length\\){const v=con.find\\(x=>x.cantidadUnidad>1\\)||con[0];console.log\\('  ejemplo:',v.nombre,'→',v.cantidadUnidad,v.unidad\\)}}\\)\")"
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const p=JSON.parse\\(d\\).products;const con=p.filter\\(x=>x.cantidadUnidad!==undefined\\);console.log\\('  productos:',p.length,'· con cantidadUnidad en la respuesta:',con.length\\);if\\(con.length\\){const v=con.find\\(x=>x.cantidadUnidad>1\\)||con[0];console.log\\('  ejemplo:',v.nombre,'→',v.cantidadUnidad,v.unidad\\)}}\\)\")",
+      "Bash(sed -i 's/colspan=\"7\"/colspan=\"8\"/g' src/app/features/admin/inventory/inventory-dashboard.html)",
+      "Bash(sed -i 's|<p class=\"text-overline font-semibold uppercase text-ink-muted\">Se ofrecen</p>\\\\n    <p class=\"tabular mt-2 font-display text-h3 text-ink\">{{ offeredCount\\(\\) }}</p>|&|' src/app/features/admin/inventory/inventory-dashboard.html)",
+      "Bash(sed -i 's#\"qa:duplicar\": #\"qa:destacados\": \"node worker/tests/qa-destacados-borrado.mjs\",\\\\n \"db:migrate:destacado\": \"wrangler d1 execute DB --local --file=worker/migrations/0008_destacado.sql\",\\\\n \"db:migrate:destacado:remote\": \"wrangler d1 execute DB --remote --file=worker/migrations/0008_destacado.sql\",\\\\n \"qa:duplicar\": #' package.json)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"

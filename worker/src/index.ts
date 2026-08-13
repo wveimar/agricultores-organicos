@@ -144,6 +144,11 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return orders.cancel(request, env, user, cancelMatch[1]);
     }
 
+    const orderMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)$/);
+    if (orderMatch && method === 'DELETE') {
+      return orders.remove(env, user, orderMatch[1]);
+    }
+
     const historyMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/historial$/);
     if (historyMatch && method === 'GET') {
       return orders.history(env, user, historyMatch[1]);

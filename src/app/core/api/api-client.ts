@@ -50,6 +50,8 @@ export interface ApiProduct {
   readonly rating: number;
   readonly reviewCount: number;
   readonly badge: string | null;
+  /** 1 = sale en "Más vendidos" de la portada. Decisión comercial, no del stock. */
+  readonly destacado: number;
   readonly stock: number;
   readonly imagen: string;
   readonly imagenHover: string | null;
@@ -95,6 +97,7 @@ export function toProduct(p: ApiProduct): Product {
     rating: p.rating,
     reviewCount: p.reviewCount,
     badge: (p.badge as ProductBadge | null) ?? undefined,
+    featured: p.destacado === 1,
     stock: p.stock,
     safetyStock: p.stockSeguridad ?? 0,
     image: p.imagen,
@@ -419,6 +422,15 @@ export class ApiClient {
       .post<{ order: ApiOrder; unidadesDevueltas: number }>(
         `/api/admin/orders/${id}/cancelar`,
         { motivo },
+      )
+      .pipe(catchError(handleError));
+  }
+
+  /** Borra un pedido del todo. Ver en el Worker qué casos no permite. */
+  deleteOrder(id: string): Observable<{ ok: boolean; referencia: string; unidadesDevueltas: number }> {
+    return this.http
+      .delete<{ ok: boolean; referencia: string; unidadesDevueltas: number }>(
+        `/api/admin/orders/${id}`,
       )
       .pipe(catchError(handleError));
   }

@@ -95,6 +95,17 @@ export class CatalogService {
 
   readonly hasResults = computed(() => this.visible().length > 0);
 
+  /**
+   * Los que se destacan en la portada.
+   *
+   * No mira el stock a propósito: destacar es una decisión comercial que se
+   * toma en el panel, y un producto agotado sigue siendo el que se quiere
+   * enseñar primero — la tarjeta ya avisa de que está agotado. Derivar esta
+   * lista de las ventas convertiría la sección en un reflejo del pasado en vez
+   * de en una decisión.
+   */
+  readonly featured = computed(() => this.products().filter((product) => product.featured));
+
   /** Usado por `CartService` para rehidratar el carrito guardado por id. */
   productById(id: string): Product | undefined {
     return this.products().find((product) => product.id === id);

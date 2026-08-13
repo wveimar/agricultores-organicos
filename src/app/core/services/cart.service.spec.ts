@@ -21,6 +21,7 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
     costPrice: 6_000,
     unit: 'kg',
     quantity: 1,
+    featured: false,
     origin: 'Finca QA',
     rating: 4.5,
     reviewCount: 10,

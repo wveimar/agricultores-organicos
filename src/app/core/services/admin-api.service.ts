@@ -107,6 +107,7 @@ export class AdminApiService {
       stock: number;
       stockSeguridad: number;
       activo: 0 | 1;
+      destacado: 0 | 1;
     }>,
   ): Observable<ApiProduct> {
     return this.api.updateProduct(id, patch).pipe(
@@ -127,6 +128,35 @@ export class AdminApiService {
   duplicateProduct(id: string): Observable<ApiProduct> {
     return this.api.duplicateProduct(id).pipe(
       tap((copia) => this.products.update((list) => [...list, copia])),
+    );
+  }
+
+  /**
+   * Destaca o retira un producto de "Más vendidos" de la portada.
+   *
+   * Es deliberadamente independiente del stock y de las ventas: destacar es
+   * una decisión comercial, no un reflejo de la bodega. Un producto agotado
+   * puede seguir destacado —aparece con su aviso de agotado— y uno con mucha
+   * rotación puede no estarlo.
+   */
+  setFeatured(id: string, destacado: boolean): Observable<ApiProduct> {
+    return this.updateProduct(id, { destacado: destacado ? 1 : 0 });
+  }
+
+  /**
+   * Borra un pedido y quita su fila de la lista.
+   *
+   * El Worker devuelve el inventario que tuviera reservado, así que se refresca
+   * también el catálogo si había unidades en juego.
+   */
+  deleteOrder(id: string): Observable<{ ok: boolean; referencia: string; unidadesDevueltas: number }> {
+    return this.api.deleteOrder(id).pipe(
+      tap(({ unidadesDevueltas }) => {
+        this.orders.update((list) => list.filter((o) => o.id !== id));
+        if (unidadesDevueltas > 0 && this.products().length > 0) {
+          this.loadProducts();
+        }
+      }),
     );
   }
 

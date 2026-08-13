@@ -29,6 +29,9 @@
         {{ adminApi.inactiveCount() }} sin oferta esta semana
       </p>
     }
+    <p class="mt-1 text-xs text-clay-deep">
+      {{ featuredCount() }} en "Más vendidos"
+    </p>
   </div>
 
   <div class="rounded-lg border border-sand bg-bone p-5">
@@ -177,6 +180,9 @@
             <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Existencias</th>
             <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Estado</th>
             <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">Se ofrece</th>
+            <th scope="col" class="text-overline px-5 py-3 font-semibold uppercase text-ink-muted">
+              Más vendido
+            </th>
             <th scope="col" class="text-overline px-5 py-3 text-right font-semibold uppercase text-ink-muted">Acción</th>
           </tr>
         </thead>
@@ -276,6 +282,35 @@
                 </p>
               </td>
 
+              <!--
+                Destacar en la portada. No depende del stock a propósito: es
+                una decisión comercial, y un agotado destacado sale con su
+                propio aviso de agotado.
+              -->
+              <td class="px-5 py-4">
+                @let destacado = isFeatured(product);
+                <button
+                  type="button"
+                  role="switch"
+                  [attr.aria-checked]="destacado"
+                  [attr.aria-label]="
+                    (destacado ? 'Quitar de más vendidos ' : 'Destacar como más vendido ') + product.nombre
+                  "
+                  [disabled]="featuringId() === product.id"
+                  class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 disabled:opacity-50"
+                  [class]="destacado ? 'bg-clay' : 'bg-stone/40'"
+                  (click)="toggleFeatured(product)"
+                >
+                  <span
+                    class="inline-block size-4 rounded-full bg-bone shadow transition-transform duration-200"
+                    [class]="destacado ? 'translate-x-6' : 'translate-x-1'"
+                  ></span>
+                </button>
+                <p class="mt-1.5 text-xs" [class]="destacado ? 'text-clay-deep' : 'text-ink-muted'">
+                  {{ destacado ? 'En la portada' : 'No' }}
+                </p>
+              </td>
+
               <td class="px-5 py-4 text-right">
                 @if (savedId() === product.id) {
                   <span class="text-sm font-medium text-moss">Guardado ✓</span>
@@ -335,7 +370,7 @@
             <!-- Formulario reactivo, desplegado bajo la fila que se edita -->
             @if (editingId() === product.id) {
               <tr>
-                <td colspan="7" class="bg-linen/70 px-5 py-5">
+                <td colspan="8" class="bg-linen/70 px-5 py-5">
                   <form [formGroup]="form" (ngSubmit)="save(product.id)" novalidate>
                     <div class="flex flex-wrap items-start gap-5">
                       <div>
@@ -439,7 +474,7 @@
             }
           } @empty {
             <tr>
-              <td colspan="7" class="px-5 py-16 text-center">
+              <td colspan="8" class="px-5 py-16 text-center">
                 <p class="text-h3 text-ink">Sin resultados</p>
                 <p class="mt-2 text-sm text-ink-soft">
                   Ajusta el filtro o la búsqueda para ver productos.

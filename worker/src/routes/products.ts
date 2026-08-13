@@ -48,7 +48,7 @@ function checkImageSource(value: string | undefined, field: string): void {
 const PUBLIC_COLUMNS = `
   id, slug, nombre, tagline, categoria_id AS categoriaId, grupo_admin AS grupoAdmin,
   precio, precio_anterior AS precioAnterior, unidad, cantidad_unidad AS cantidadUnidad, origen, rating,
-  review_count AS reviewCount, badge, stock_actual AS stock,
+  review_count AS reviewCount, badge, destacado, stock_actual AS stock,
   imagen, imagen_hover AS imagenHover, imagen_alt AS imagenAlt
 `;
 
@@ -131,6 +131,8 @@ interface UpdateBody {
   stockSeguridad?: unknown;
   /** 1 = se ofrece esta semana · 0 = el agricultor no tiene cosecha. */
   activo?: unknown;
+  /** 1 = aparece en "Más vendidos" de la portada. */
+  destacado?: unknown;
 }
 
 /**
@@ -170,6 +172,12 @@ export async function update(
       throw ApiError.badRequest('activo-invalido', 'El campo "activo" debe ser 0 o 1.');
     }
     push('activo', body.activo);
+  }
+  if (body.destacado !== undefined) {
+    if (body.destacado !== 0 && body.destacado !== 1) {
+      throw ApiError.badRequest('destacado-invalido', 'El campo \"destacado\" debe ser 0 o 1.');
+    }
+    push('destacado', body.destacado);
   }
 
   if (sets.length === 0) {

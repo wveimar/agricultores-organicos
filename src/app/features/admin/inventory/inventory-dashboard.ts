@@ -241,6 +241,39 @@ export class InventoryDashboard {
     this.query.set((event.target as HTMLInputElement).value);
   }
 
+  // ─────────────────────────── Más vendidos ───────────────────────────
+
+  protected readonly featuringId = signal<string | null>(null);
+
+  protected isFeatured(product: ApiProduct): boolean {
+    return product.destacado === 1;
+  }
+
+  /** Cuántos salen ahora mismo en la portada. */
+  protected readonly featuredCount = computed(
+    () => this.adminApi.products().filter((p) => p.destacado === 1 && p.activo !== 0).length,
+  );
+
+  /**
+   * Destaca o retira de la portada.
+   *
+   * No mira el stock: un producto agotado puede seguir destacado, y la tarjeta
+   * ya avisa de que lo está. Destacar es decidir qué se quiere empujar esta
+   * semana, no describir la bodega.
+   */
+  protected toggleFeatured(product: ApiProduct): void {
+    this.toggleError.set(null);
+    this.featuringId.set(product.id);
+
+    this.adminApi.setFeatured(product.id, !this.isFeatured(product)).subscribe({
+      next: () => this.featuringId.set(null),
+      error: (error: ApiErrorBody) => {
+        this.featuringId.set(null);
+        this.toggleError.set(error.message);
+      },
+    });
+  }
+
   // ────────────────────────── Duplicar un producto ──────────────────────────
 
   protected readonly duplicatingId = signal<string | null>(null);

@@ -280,6 +280,57 @@ export class OrdersManager {
     this.cancelReason.set((event.target as HTMLInputElement).value);
   }
 
+  // ─────────────────────────── Eliminar un pedido ───────────────────────────
+
+  /**
+   * Pedido cuya eliminación está pendiente de confirmar.
+   *
+   * Eliminar no es cancelar: cancelar deja constancia de que el pedido existió
+   * y de por qué se anuló; eliminar borra la fila y, con ella, sus líneas y su
+   * trazabilidad. Es para lo que nunca debió estar ahí —pruebas, spam, un
+   * doble clic— y por eso pide confirmación aparte.
+   */
+  protected readonly deletingId = signal<string | null>(null);
+
+  /** Un pedido archivado en un cierre de caja no se puede borrar. */
+  protected canDelete(order: ApiOrder): boolean {
+    return order.closingId === null;
+  }
+
+  protected askDelete(order: ApiOrder): void {
+    this.deletingId.set(order.id);
+    this.cancelingId.set(null);
+    this.blocked.set(null);
+    this.feedback.set(null);
+  }
+
+  protected dismissDelete(): void {
+    this.deletingId.set(null);
+  }
+
+  protected confirmDelete(order: ApiOrder): void {
+    this.workingId.set(order.id);
+
+    this.adminApi.deleteOrder(order.id).subscribe({
+      next: ({ unidadesDevueltas }) => {
+        this.workingId.set(null);
+        this.deletingId.set(null);
+        this.feedback.set(
+          unidadesDevueltas > 0
+            ? `${order.referencia} eliminado. ${unidadesDevueltas} ${
+                unidadesDevueltas === 1 ? 'unidad vuelve' : 'unidades vuelven'
+              } al inventario.`
+            : `${order.referencia} eliminado.`,
+        );
+      },
+      error: (error: ApiErrorBody) => {
+        this.workingId.set(null);
+        this.deletingId.set(null);
+        this.feedback.set(error.message);
+      },
+    });
+  }
+
   protected confirmCancel(order: ApiOrder): void {
     this.workingId.set(order.id);
 

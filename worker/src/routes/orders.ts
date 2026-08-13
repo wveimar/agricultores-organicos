@@ -480,6 +480,99 @@ export async function cancel(
 }
 
 /**
+ * DELETE /api/admin/orders/:id — borra un pedido del todo.
+ *
+ * Es para lo que no debería estar ahí: pruebas, spam, un pedido duplicado por
+ * un doble clic. Para anular una compra real está `cancelar`, que deja
+ * constancia de que existió y de por qué se anuló.
+ *
+ * ── Las dos protecciones que no son opcionales ──
+ *
+ * 1. **Un pedido dentro de un cierre de caja no se puede borrar.** Las cifras
+ *    de `cash_closings` quedan congeladas y el detalle del cierre se calcula
+ *    leyendo los pedidos que apuntan a él. Borrar uno dejaría un cierre que
+ *    dice haber recaudado más de lo que suman sus pedidos, y no hay forma de
+ *    recomputarlo: el descuadre sería permanente y silencioso.
+ *
+ * 2. **Si tenía stock reservado, se devuelve al inventario.** El CASCADE de
+ *    `order_items` borra las líneas sin enterarse de que esas unidades salieron
+ *    de `products`. Sin devolverlas, borrar un pedido evapora inventario real.
+ *
+ * Las tablas hijas sí se van solas: `order_items` y `order_status_log` tienen
+ * ON DELETE CASCADE, así que basta con borrar la fila de `orders`.
+ */
+export async function remove(
+  env: Env,
+  user: JwtPayload,
+  orderId: string,
+): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const order = await env.DB.prepare(
+    `SELECT id, referencia, estado, stock_reservado, closing_id FROM orders WHERE id = ?1`,
+  )
+    .bind(orderId)
+    .first<{
+      id: string;
+      referencia: string;
+      estado: string;
+      stock_reservado: number;
+      closing_id: string | null;
+    }>();
+
+  if (!order) {
+    throw ApiError.notFound('Ese pedido no existe.');
+  }
+
+  if (order.closing_id !== null) {
+    throw ApiError.conflict(
+      'pedido-archivado',
+      'Este pedido ya entró en un cierre de caja y no se puede borrar: descuadraría la contabilidad de esa jornada.',
+    );
+  }
+
+  const { results: items } = await env.DB.prepare(
+    `SELECT product_id, cantidad FROM order_items WHERE order_id = ?1`,
+  )
+    .bind(orderId)
+    .all<{ product_id: string; cantidad: number }>();
+
+  const devuelveStock = order.stock_reservado === 1 && items.length > 0;
+
+  const statements: D1PreparedStatement[] = [];
+
+  if (devuelveStock) {
+    // Antes del DELETE: después, `order_items` ya no existe y no habría de
+    // dónde sacar las cantidades.
+    for (const item of items) {
+      statements.push(
+        env.DB.prepare(
+          `UPDATE products SET stock_actual = stock_actual + ?2, actualizado_en = datetime('now')
+            WHERE id = ?1`,
+        ).bind(item.product_id, item.cantidad),
+      );
+    }
+  }
+
+  statements.push(env.DB.prepare(`DELETE FROM orders WHERE id = ?1`).bind(orderId));
+
+  const resultados = await env.DB.batch(statements);
+  const borrado = resultados[resultados.length - 1];
+
+  if (borrado.meta.changes === 0) {
+    throw ApiError.notFound('Ese pedido ya no existe.');
+  }
+
+  return json({
+    ok: true,
+    referencia: order.referencia,
+    unidadesDevueltas: devuelveStock
+      ? items.reduce((suma, item) => suma + item.cantidad, 0)
+      : 0,
+  });
+}
+
+/**
  * GET /api/admin/orders — lista con sus líneas.
  *
  * Dos consultas en un `batch()` (una de pedidos y otra de líneas) y el cruce en

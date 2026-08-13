@@ -40,6 +40,13 @@ export interface Product {
   readonly reviewCount: number;
   readonly badge?: ProductBadge;
   /**
+   * Marcado como "más vendido" desde el panel. Es una decisión comercial
+   * deliberada y **no** se deriva del stock ni de las ventas reales: un
+   * producto agotado puede seguir destacado, y uno con mucha rotación puede
+   * no estarlo.
+   */
+  readonly featured: boolean;
+  /**
    * Unidades disponibles. Es la **única** fuente de verdad sobre disponibilidad:
    * la tienda pública deriva de aquí si algo está agotado (`stock === 0`) en vez
    * de guardar un booleano aparte que pudiera desincronizarse del inventario.

@@ -2,12 +2,13 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { Hero } from '../hero/hero';
 import { CategoryFilter } from '../category-filter/category-filter';
 import { ProductGrid } from '../product-grid/product-grid';
+import { FeaturedProducts } from '../featured-products/featured-products';
 import { RevealDirective } from '../../../shared/directives/reveal.directive';
 import { STORY_IMAGE } from '../../../core/data/mock-catalog';
 
 @Component({
   selector: 'app-shop-page',
-  imports: [Hero, CategoryFilter, ProductGrid, RevealDirective],
+  imports: [Hero, CategoryFilter, ProductGrid, FeaturedProducts, RevealDirective],
   templateUrl: './shop-page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

@@ -19,6 +19,7 @@ function makeProduct(): Product {
     costPrice: 3_800,
     unit: 'unidad',
     quantity: 1,
+    featured: false,
     origin: 'Finca QA',
     rating: 4.8,
     reviewCount: 10,
