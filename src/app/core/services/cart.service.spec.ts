@@ -150,8 +150,8 @@ describe('CartService', () => {
      * La única que fija el valor es la de abajo, y está puesta a propósito para
      * que un cambio de precio de envío sea una decisión y no un descuido.
      */
-    it('el umbral vigente es de 120.000 COP', () => {
-      expect(FREE_SHIPPING_THRESHOLD).toBe(120_000);
+    it('el umbral vigente es de 70.000 COP', () => {
+      expect(FREE_SHIPPING_THRESHOLD).toBe(70_000);
     });
 
     it('cobra el envío justo por debajo del umbral', () => {
@@ -195,11 +195,11 @@ describe('CartService', () => {
     });
 
     it('informa cuánto falta para el envío gratis', () => {
-      const producto = makeProduct({ price: 100_000, stock: 10 });
+      const producto = makeProduct({ price: 40_000, stock: 10 });
 
       cart.add(producto);
 
-      expect(cart.amountToFreeShipping()).toBe(FREE_SHIPPING_THRESHOLD - 100_000);
+      expect(cart.amountToFreeShipping()).toBe(FREE_SHIPPING_THRESHOLD - 40_000);
     });
 
     it('deja de faltar nada al superar el umbral', () => {

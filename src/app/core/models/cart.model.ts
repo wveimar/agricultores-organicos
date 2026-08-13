@@ -6,7 +6,7 @@ export interface CartItem {
 }
 
 /** Umbral (COP) a partir del cual el envío deja de cobrarse. */
-export const FREE_SHIPPING_THRESHOLD = 120_000;
+export const FREE_SHIPPING_THRESHOLD = 70_000;
 
-/** Costo de envío cuando el subtotal no alcanza el umbral. */
-export const SHIPPING_COST = 9_900;
+/** Costo de envío en Marinilla cuando el subtotal no alcanza el umbral. */
+export const SHIPPING_COST = 5_000;

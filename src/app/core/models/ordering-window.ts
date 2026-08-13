@@ -2,9 +2,9 @@
  * Ventana semanal de pedidos.
  *
  * El ciclo no es "compra y te llega": es un acopio. Se recogen pedidos toda la
- * semana, el viernes al mediodía se cierra la lista, se le pasa al agricultor
+ * semana, el jueves al mediodía se cierra la lista, se le pasa al agricultor
  * lo que hay que cosechar, y el domingo por la tarde salen los despachos. Un
- * pedido que entra el viernes a las 12:01 no llega a ese domingo — entra en el
+ * pedido que entra el jueves a las 12:01 no llega a ese domingo — entra en el
  * siguiente.
  *
  * Las fechas se calculan en hora de Colombia (UTC-5, sin horario de verano)
@@ -13,8 +13,8 @@
  * preferencia local.
  */
 
-/** Viernes. `Date#getDay()`: domingo = 0. */
-const CUTOFF_DAY = 5;
+/** Jueves. `Date#getDay()`: domingo = 0. */
+const CUTOFF_DAY = 4;
 /** Mediodía. */
 const CUTOFF_HOUR = 12;
 /** Domingo. */
@@ -24,10 +24,10 @@ const DISPATCH_DAY = 0;
 const COLOMBIA_UTC_OFFSET_HOURS = -5;
 
 export const ORDERING_WINDOW = {
-  cutoffLabel: 'viernes a las 12:00 m.',
+  cutoffLabel: 'jueves a las 12:00 m.',
   dispatchLabel: 'domingo después del mediodía',
   /** Una línea, para cabeceras y avisos cortos. */
-  summary: 'Pedidos hasta el viernes 12:00 m. · Despachos el domingo en la tarde',
+  summary: 'Pedidos hasta el jueves 12:00 m. · Despachos el domingo en la tarde',
 } as const;
 
 /** El mismo instante, leído con el reloj de Colombia. */
@@ -61,8 +61,8 @@ export function nextCutoff(now: Date = new Date()): Date {
 export function nextDispatch(now: Date = new Date()): Date {
   const cutoff = nextCutoff(now);
   const dispatch = atHour(cutoff, DISPATCH_DAY, 13);
-  // `atHour` con domingo desde un viernes salta al domingo siguiente, que es
-  // justo el que toca: dos días después del cierre.
+  // `atHour` con domingo desde un jueves salta al domingo siguiente, que es
+  // justo el que toca: tres días después del cierre.
   return dispatch;
 }
 

@@ -20,7 +20,7 @@ export class ShopPage {
    *
    * La primera decía "Cosechado hoy · sale hacia tu casa el mismo día", que
    * dejó de ser verdad al pasar al acopio semanal: los pedidos se cierran el
-   * viernes al mediodía y los despachos salen el domingo. Prometer entrega el
+   * jueves al mediodía y los despachos salen el domingo. Prometer entrega el
    * mismo día era comprometer a la operación con algo que no puede cumplir.
    * La versión de ahora cuenta el ciclo real y usa la espera como argumento:
    * no se cosecha hasta saber qué se pidió.
@@ -31,7 +31,7 @@ export class ShopPage {
   protected readonly guarantees = [
  {
     title: 'Se cosecha para tu pedido',
-    body: 'Pides hasta el viernes al mediodía y el domingo sale de la finca a tu casa. Nada espera en bodega.',
+    body: 'Pides hasta el jueves al mediodía y el domingo sale de la finca a tu casa. Nada espera en bodega.',
   },
   {
     title: 'Precio justo en origen',
