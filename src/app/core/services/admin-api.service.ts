@@ -117,6 +117,20 @@ export class AdminApiService {
   }
 
   /**
+   * Duplica un producto y mete la copia en la lista al instante.
+   *
+   * El `tap` sobre la señal es lo que hace que la pantalla de edición
+   * encuentre la copia sin volver a pedir el inventario: `edit-product` la
+   * busca en `products()`, así que si la señal no se actualizara antes de
+   * navegar, mostraría "producto no encontrado".
+   */
+  duplicateProduct(id: string): Observable<ApiProduct> {
+    return this.api.duplicateProduct(id).pipe(
+      tap((copia) => this.products.update((list) => [...list, copia])),
+    );
+  }
+
+  /**
    * Marca si el producto se ofrece esta semana.
    *
    * Es la llamada semanal al agricultor traducida a un campo: en cuanto pasa a

@@ -111,6 +111,11 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return products.recalcAbc(env, user);
     }
 
+    const duplicateMatch = pathname.match(/^\/api\/admin\/products\/([\w-]+)\/duplicar$/);
+    if (duplicateMatch && method === 'POST') {
+      return products.duplicate(env, user, duplicateMatch[1]);
+    }
+
     const productMatch = pathname.match(/^\/api\/admin\/products\/([\w-]+)$/);
     if (productMatch && method === 'PATCH') {
       return products.update(request, env, user, productMatch[1]);

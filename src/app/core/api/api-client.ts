@@ -335,6 +335,13 @@ export class ApiClient {
       .pipe(map((res) => res.product), catchError(handleError));
   }
 
+  /** Crea una variante a medio hacer a partir de otro producto. */
+  duplicateProduct(id: string): Observable<ApiProduct> {
+    return this.http
+      .post<{ product: ApiProduct }>(`/api/admin/products/${id}/duplicar`, {})
+      .pipe(map((res) => res.product), catchError(handleError));
+  }
+
   updateProduct(
     id: string,
     patch: Partial<{

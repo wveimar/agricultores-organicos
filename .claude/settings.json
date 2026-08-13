@@ -87,7 +87,8 @@
       "Bash(sed -i 's#\"qa:cancelacion\": \"node worker/tests/qa-cancelacion.mjs\",#\"qa:cancelacion\": \"node worker/tests/qa-cancelacion.mjs\",\\\\n    \"qa:recuperacion\": \"node worker/tests/qa-recuperacion.mjs\",\\\\n    \"db:migrate:recuperacion\": \"wrangler d1 execute DB --local --file=worker/migrations/0006_password_resets.sql\",\\\\n    \"db:migrate:recuperacion:remote\": \"wrangler d1 execute DB --remote --file=worker/migrations/0006_password_resets.sql\",#' package.json)",
       "Bash(grep -n \"INSERT INTO products\\\\|UPDATE products SET$\\\\|unidad = ?8\\\\|unidad, origen\" -A 8 worker/src/routes/products.ts)",
       "Bash(sed -i 's#\"db:migrate:recuperacion\": #\"db:migrate:cantidad\": \"wrangler d1 execute DB --local --file=worker/migrations/0007_cantidad_unidad.sql\",\\\\n    \"db:migrate:cantidad:remote\": \"wrangler d1 execute DB --remote --file=worker/migrations/0007_cantidad_unidad.sql\",\\\\n    \"db:migrate:recuperacion\": #' package.json)",
-      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\);console.log\\('ok'\\)\")"
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\);console.log\\('ok'\\)\")",
+      "Bash(sed -i 's#\"qa:cancelacion\": #\"qa:duplicar\": \"node worker/tests/qa-duplicar.mjs\",\\\\n    \"qa:cancelacion\": #' package.json)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"

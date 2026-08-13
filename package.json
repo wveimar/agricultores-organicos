@@ -27,6 +27,7 @@
     "qa:seguridad": "node worker/tests/qa-seguridad.mjs",
     "qa:usuarios": "node worker/tests/qa-usuarios.mjs",
     "qa:fuerza-bruta": "node worker/tests/qa-fuerza-bruta.mjs",
+    "qa:duplicar": "node worker/tests/qa-duplicar.mjs",
     "qa:cancelacion": "node worker/tests/qa-cancelacion.mjs",
     "qa:recuperacion": "node worker/tests/qa-recuperacion.mjs",
     "db:migrate:cantidad": "wrangler d1 execute DB --local --file=worker/migrations/0007_cantidad_unidad.sql",

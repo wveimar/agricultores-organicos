@@ -199,6 +199,105 @@ export async function update(
   return json({ product: updated });
 }
 
+/**
+ * Busca un slug libre a partir del original: `tomate` → `tomate-copia`, y si
+ * ya existe, `tomate-copia-2`. Duplicar dos veces el mismo producto es lo
+ * normal cuando se hacen tres variantes seguidas, y sin esto la segunda
+ * chocaría contra el UNIQUE.
+ */
+async function slugLibre(env: Env, base: string): Promise<string> {
+  const { results } = await env.DB.prepare(
+    `SELECT slug FROM products WHERE slug = ?1 OR slug LIKE ?2`,
+  )
+    .bind(`${base}-copia`, `${base}-copia-%`)
+    .all<{ slug: string }>();
+
+  const ocupados = new Set(results.map((r) => r.slug));
+  if (!ocupados.has(`${base}-copia`)) {
+    return `${base}-copia`;
+  }
+  for (let n = 2; n < 1000; n++) {
+    if (!ocupados.has(`${base}-copia-${n}`)) {
+      return `${base}-copia-${n}`;
+    }
+  }
+  return `${base}-copia-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+/**
+ * POST /api/admin/products/:id/duplicar — crea una variante a medio hacer.
+ *
+ * Sirve para lo que en la práctica son dos productos con la misma ficha:
+ * "Banano Verde" y "Banano Maduro" comparten foto, origen, precio y unidad, y
+ * solo se diferencian en el nombre y en su inventario.
+ *
+ * ── Por qué las columnas se leen y no se listan ──
+ *
+ * El INSERT se arma a partir de las claves que devuelve `SELECT *`, no de una
+ * lista escrita a mano. La tabla ya va por 23 columnas y ha crecido tres veces
+ * en este proyecto; una lista fija se queda corta en silencio, y el síntoma
+ * sería una copia a la que le falta un dato sin que nadie vea un error. Los
+ * nombres vienen del esquema, no de la petición, así que no hay nada que
+ * inyectar.
+ */
+export async function duplicate(
+  env: Env,
+  user: JwtPayload,
+  productId: string,
+): Promise<Response> {
+  requireRole(user, 'ADMIN_INVENTARIO');
+
+  const original = await env.DB.prepare(`SELECT * FROM products WHERE id = ?1`)
+    .bind(productId)
+    .first<Record<string, unknown>>();
+
+  if (!original) {
+    throw ApiError.notFound('Ese producto no existe.');
+  }
+
+  /**
+   * Lo único que **no** se copia, y el motivo de cada uno:
+   *
+   * · `stock_actual` a 0 — copiarlo inventaría inventario que nadie compró, y
+   *   ese número acaba en los cierres de caja como valor de bodega.
+   * · `activo` a 0 — la copia sale del horno con el nombre del original y un
+   *   slug provisional. Si naciera activa, aparecería tal cual en la tienda
+   *   mientras se termina de editar.
+   * · `rating` y `review_count` a 0 — son lo que dijeron clientes reales sobre
+   *   *otro* producto. Heredarlos le pondría a una ficha recién creada 312
+   *   valoraciones que nadie escribió.
+   * · `categoria_abc` a 'C' — es una caché de ventas, y este producto no ha
+   *   vendido nada todavía.
+   */
+  const distinto: Record<string, unknown> = {
+    id: crypto.randomUUID(),
+    slug: await slugLibre(env, String(original['slug'])),
+    nombre: `${original['nombre']} (copia)`,
+    stock_actual: 0,
+    activo: 0,
+    rating: 0,
+    review_count: 0,
+    categoria_abc: 'C',
+    actualizado_en: new Date().toISOString().slice(0, 19).replace('T', ' '),
+  };
+
+  const columnas = Object.keys(original);
+  const valores = columnas.map((c) => (c in distinto ? distinto[c] : original[c]));
+  const marcadores = columnas.map((_, i) => `?${i + 1}`).join(', ');
+
+  await env.DB.prepare(
+    `INSERT INTO products (${columnas.join(', ')}) VALUES (${marcadores})`,
+  )
+    .bind(...valores)
+    .run();
+
+  const copia = await env.DB.prepare(`SELECT ${ADMIN_COLUMNS} FROM products WHERE id = ?1`)
+    .bind(distinto['id'])
+    .first();
+
+  return json({ product: copia }, 201);
+}
+
 interface UpdateFullBody {
   nombre?: unknown;
   slug?: unknown;

@@ -24,6 +24,13 @@ export class EditProduct {
   private readonly adminApi = inject(AdminApiService);
 
   protected readonly productId = this.route.snapshot.paramMap.get('id') || '';
+
+  /**
+   * Se llega aquí recién duplicado. El aviso vive en esta pantalla y no en el
+   * inventario porque la navegación es inmediata: un mensaje allí se vería
+   * medio segundo y nadie llegaría a leerlo.
+   */
+  protected readonly esCopia = this.route.snapshot.queryParamMap.get('copia') === '1';
   protected readonly product = signal<ApiProduct | null>(null);
   protected readonly loading = signal(true);
   protected readonly loadError = signal<string | null>(null);

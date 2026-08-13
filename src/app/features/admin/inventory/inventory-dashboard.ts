@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
 import {
@@ -36,6 +36,7 @@ function levelOf(product: ApiProduct): StockLevel {
 export class InventoryDashboard {
   protected readonly adminApi = inject(AdminApiService);
   private readonly fb = inject(FormBuilder);
+  private readonly router = inject(Router);
 
   protected readonly groups = ADMIN_GROUP_LABELS;
   protected readonly stockStyles = STOCK_STYLES;
@@ -238,6 +239,36 @@ export class InventoryDashboard {
 
   protected onQuery(event: Event): void {
     this.query.set((event.target as HTMLInputElement).value);
+  }
+
+  // ────────────────────────── Duplicar un producto ──────────────────────────
+
+  protected readonly duplicatingId = signal<string | null>(null);
+
+  /**
+   * Crea una variante y lleva directo a terminarla.
+   *
+   * La copia nace inactiva y sin stock, así que no sirve de nada hasta que se
+   * edite: por eso se navega en vez de dejar al usuario buscarla en la lista.
+   * El aviso de que se creó lo da la propia pantalla de edición, que es donde
+   * aterriza — un mensaje aquí no llegaría a leerse.
+   */
+  protected duplicate(product: ApiProduct): void {
+    this.toggleError.set(null);
+    this.duplicatingId.set(product.id);
+
+    this.adminApi.duplicateProduct(product.id).subscribe({
+      next: (copia) => {
+        this.duplicatingId.set(null);
+        void this.router.navigate(['/admin/inventario/editar', copia.id], {
+          queryParams: { copia: 1 },
+        });
+      },
+      error: (error: ApiErrorBody) => {
+        this.duplicatingId.set(null);
+        this.toggleError.set(error.message);
+      },
+    });
   }
 
   protected setAvailabilityFilter(value: 'todos' | 'ofertados' | 'sin-oferta'): void {

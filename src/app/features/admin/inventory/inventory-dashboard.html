@@ -295,6 +295,38 @@
                     >
                       ⋯
                     </a>
+
+                    <!--
+                      Duplicar: para variantes que comparten ficha y solo se
+                      diferencian en el nombre y el inventario, como "Banano
+                      Verde" y "Banano Maduro".
+                    -->
+                    <button
+                      type="button"
+                      class="flex size-9 items-center justify-center rounded-full border border-sand text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:opacity-50"
+                      [disabled]="duplicatingId() === product.id"
+                      [attr.aria-label]="'Duplicar ' + product.nombre"
+                      title="Crear una variante con esta misma ficha"
+                      (click)="duplicate(product)"
+                    >
+                      @if (duplicatingId() === product.id) {
+                        <span class="text-xs">…</span>
+                      } @else {
+                        <svg
+                          class="size-4"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.7"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <rect x="9" y="9" width="12" height="12" rx="2" />
+                          <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+                        </svg>
+                      }
+                    </button>
                   </div>
                 }
               </td>

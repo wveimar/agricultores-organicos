@@ -8,11 +8,36 @@
         </svg>
         Volver al inventario
       </a>
-      <h1 class="mt-4 text-h2 text-ink">Editar producto</h1>
+      <h1 class="mt-4 text-h2 text-ink">
+        {{ esCopia ? 'Termina la copia' : 'Editar producto' }}
+      </h1>
       <p class="mt-2 text-sm text-ink-soft">
-        Actualiza los datos del producto.
+        {{ esCopia
+          ? 'Se copió la ficha del original. Cambia lo que distingue a esta variante.'
+          : 'Actualiza los datos del producto.' }}
       </p>
     </div>
+
+    @if (esCopia) {
+      <div class="mb-6 rounded-lg border border-honey/40 bg-honey/10 p-5" role="status">
+        <p class="text-sm font-semibold text-clay-deep">Antes de que salga a la venta</p>
+        <ul class="mt-2 flex flex-col gap-1.5 text-sm text-ink-soft">
+          <li>
+            · El <strong class="text-ink">slug</strong> y el
+            <strong class="text-ink">nombre</strong> llevan un «copia» provisional.
+            El slug no puede repetirse entre productos.
+          </li>
+          <li>
+            · Las <strong class="text-ink">existencias quedaron en 0</strong>: copiarlas
+            habría inventado inventario que nadie compró.
+          </li>
+          <li>
+            · La copia está <strong class="text-ink">retirada de la venta</strong>. Se
+            activa desde el inventario cuando esté lista.
+          </li>
+        </ul>
+      </div>
+    }
 
     @if (loading()) {
       <div class="rounded-lg border border-sand bg-bone p-8 text-center">
