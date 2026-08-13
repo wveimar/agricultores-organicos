@@ -28,21 +28,21 @@ export class ShopPage {
    * en el carrito y el checkout; aquí basta la regla, que no cambia.
    */
   protected readonly guarantees = [
-    {
-      title: 'Se cosecha para tu pedido',
-      body: 'Pides hasta el viernes al mediodía y el domingo sale de la finca a tu casa. Nada espera en bodega.',
-    },
-    {
-      title: 'Precio justo en origen',
-      body: 'El 72 % de lo que pagas se queda en la finca que lo cultivó.',
-    },
-    {
-      title: 'Sin plástico',
-      body: 'Empacamos en papel y canastas retornables que recogemos en el despacho siguiente.',
-    },
-    {
-      title: 'Si no te gusta, no lo pagas',
-      body: 'Nos lo dices y te devolvemos el valor de ese producto.',
-    },
+ {
+    title: 'Se cosecha para tu pedido',
+    body: 'Pides hasta el viernes al mediodía y el domingo sale de la finca a tu casa. Nada espera en bodega.',
+  },
+  {
+    title: 'Precio justo en origen',
+    body: 'El 72 % de lo que pagas se queda en la finca que lo cultivó, beneficiando directamente a nuestros campesinos.',
+  },
+  {
+    title: 'Empaque consciente',
+    body: 'Puedes elegir nuestra canastilla retornable o recibir tu pedido en bolsa. Así reducimos el consumo de plástico.',
+  },
+  {
+    title: 'Del campo a tu casa',
+    body: 'Productos frescos, saludables y de calidad, provenientes de la economía campesina y sin intermediarios.',
+  },
   ];
 }

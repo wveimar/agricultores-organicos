@@ -26,7 +26,7 @@ export const CATEGORIES: readonly Category[] = [
   {
     id: 'todos',
     name: 'Todo el huerto',
-    description: 'Cosechado esta semana por 38 familias campesinas.',
+    description: 'Cosechado esta semana por familias campesinas.',
   },
   {
     id: 'verduras',
@@ -534,7 +534,7 @@ export const PRODUCTS: readonly Product[] = [
     costPrice: 66_800,
     unit: 'canasta',
     quantity: 1,
-    origin: '38 fincas asociadas',
+    origin: '10 fincas asociadas',
     rating: 4.8,
     reviewCount: 619,
     badge: 'bestseller',
@@ -554,7 +554,7 @@ export const PRODUCTS: readonly Product[] = [
     costPrice: 109_500,
     unit: 'canasta',
     quantity: 1,
-    origin: '38 fincas asociadas',
+    origin: '3 fincas asociadas',
     rating: 4.7,
     reviewCount: 208,
     stock: 42,

@@ -15,7 +15,7 @@ export class Footer {
     },
     {
       title: 'La cooperativa',
-      links: ['Nuestras 38 fincas', 'Cómo fijamos los precios', 'Certificación orgánica', 'Trabaja con nosotros'],
+      links: ['Nuestras 3 fincas', 'Cómo fijamos los precios', 'Certificación orgánica', 'Trabaja con nosotros'],
     },
     {
       title: 'Ayuda',
