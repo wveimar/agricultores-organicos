@@ -6,8 +6,14 @@ import { ApiClient } from '../api/api-client';
 import { FREE_SHIPPING_THRESHOLD, SHIPPING_COST } from '../models/cart.model';
 import { Order, OrderLine, OrderTotals, PaymentProof } from '../models/order.model';
 
-/** Número de la cooperativa en formato internacional, sin `+` ni espacios. */
-export const WHATSAPP_NUMBER = '573001234567';
+/**
+ * Número de la cooperativa en formato internacional, sin `+` ni espacios.
+ *
+ * `wa.me` exige el indicativo del país pegado al número y sin símbolos: con
+ * `+57 301 606 6121` el enlace abre WhatsApp sin destinatario, y el cliente
+ * cree que envió el mensaje.
+ */
+export const WHATSAPP_NUMBER = '573016066121';
 
 /** Datos para la consignación manual. No hay pasarela de pago. */
 export const BANK_DETAILS = {
