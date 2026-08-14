@@ -5,6 +5,7 @@ import {
   ApiClient,
   ApiClosing,
   ApiClosingOrder,
+  ApiConsolidation,
   ApiErrorBody,
   ApiOrder,
   ApiOrderStatusLogEntry,
@@ -334,6 +335,34 @@ export class AdminApiService {
         this.salesLoading.set(false);
       },
       error: () => this.salesLoading.set(false),
+    });
+  }
+
+  // ─────────────────────────── Consolidado semanal ───────────────────────────
+
+  readonly consolidation = signal<ApiConsolidation | null>(null);
+  readonly consolidationLoading = signal(false);
+  readonly consolidationError = signal<string | null>(null);
+
+  /**
+   * Carga el consolidado. Sin rango trae la jornada abierta.
+   *
+   * No se cachea entre visitas a la pantalla: entre el jueves y el viernes se
+   * aprueban pedidos, y un consolidado viejo manda a cosechar de menos.
+   */
+  loadConsolidation(range: { desde?: string; hasta?: string } = {}): void {
+    this.consolidationLoading.set(true);
+    this.consolidationError.set(null);
+
+    this.api.consolidation(range).subscribe({
+      next: (data) => {
+        this.consolidation.set(data);
+        this.consolidationLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.consolidationError.set(error.message);
+        this.consolidationLoading.set(false);
+      },
     });
   }
 

@@ -187,6 +187,10 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     if (pathname === '/api/admin/reports/closings' && method === 'GET') {
       return reports.closings(env, user);
     }
+    // Consolidado semanal: qué cosechar y a quién se le lleva.
+    if (pathname === '/api/admin/reports/consolidation' && method === 'GET') {
+      return reports.consolidation(request, env, user);
+    }
 
     // Detalle de un cierre pasado: qué pedidos lo componen.
     const closingOrdersMatch = pathname.match(

@@ -72,6 +72,14 @@ export const ADMIN_ROUTES: Routes = [
         loadComponent: () => import('./reports/sales-reports').then((m) => m.SalesReports),
       },
       {
+        path: 'consolidado',
+        // Lo usan los dos lados: quien coordina la cosecha y quien reparte.
+        canActivate: [roleGuard('GESTOR_PEDIDOS', 'ADMIN_INVENTARIO')],
+        title: 'Consolidado · Panel',
+        loadComponent: () =>
+          import('./reports/consolidation-report').then((m) => m.ConsolidationReport),
+      },
+      {
         path: 'usuarios',
         // Gestionar cuentas es dar y quitar acceso al panel entero: solo
         // SUPER_ADMIN. El servidor aplica la misma regla, que es la que cuenta.

@@ -93,10 +93,14 @@
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const p=JSON.parse\\(d\\).products;const con=p.filter\\(x=>x.cantidadUnidad!==undefined\\);console.log\\('  productos:',p.length,'· con cantidadUnidad en la respuesta:',con.length\\);if\\(con.length\\){const v=con.find\\(x=>x.cantidadUnidad>1\\)||con[0];console.log\\('  ejemplo:',v.nombre,'→',v.cantidadUnidad,v.unidad\\)}}\\)\")",
       "Bash(sed -i 's/colspan=\"7\"/colspan=\"8\"/g' src/app/features/admin/inventory/inventory-dashboard.html)",
       "Bash(sed -i 's|<p class=\"text-overline font-semibold uppercase text-ink-muted\">Se ofrecen</p>\\\\n    <p class=\"tabular mt-2 font-display text-h3 text-ink\">{{ offeredCount\\(\\) }}</p>|&|' src/app/features/admin/inventory/inventory-dashboard.html)",
-      "Bash(sed -i 's#\"qa:duplicar\": #\"qa:destacados\": \"node worker/tests/qa-destacados-borrado.mjs\",\\\\n \"db:migrate:destacado\": \"wrangler d1 execute DB --local --file=worker/migrations/0008_destacado.sql\",\\\\n \"db:migrate:destacado:remote\": \"wrangler d1 execute DB --remote --file=worker/migrations/0008_destacado.sql\",\\\\n \"qa:duplicar\": #' package.json)"
+      "Bash(sed -i 's#\"qa:duplicar\": #\"qa:destacados\": \"node worker/tests/qa-destacados-borrado.mjs\",\\\\n \"db:migrate:destacado\": \"wrangler d1 execute DB --local --file=worker/migrations/0008_destacado.sql\",\\\\n \"db:migrate:destacado:remote\": \"wrangler d1 execute DB --remote --file=worker/migrations/0008_destacado.sql\",\\\\n \"qa:duplicar\": #' package.json)",
+      "Bash(curl -s http://localhost:8797/api/products -o /dev/null)",
+      "Bash(node worker/tests/qa-consolidado.mjs http://localhost:8797)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const r=JSON.parse\\(d\\);console.log\\('ventana:',JSON.stringify\\(r.ventana\\)\\);console.log\\('regla:',JSON.stringify\\(r.regla\\)\\);console.log\\('\\\\nPRODUCTOS'\\);r.productos.forEach\\(p=>console.log\\('  ',p.grupoAdmin.padEnd\\(17\\),p.nombre.padEnd\\(24\\),String\\(p.cantidadTotal\\).padStart\\(4\\),'x',p.cantidadUnidad,p.unidad\\)\\);console.log\\('\\\\nDOMICILIOS:',JSON.stringify\\(r.domicilios\\)\\);console.log\\('TOTALES:',JSON.stringify\\(r.totales\\)\\);console.log\\('PENDIENTES:',JSON.stringify\\(r.pendientes\\)\\);}\\)\")"
     ],
     "additionalDirectories": [
-      "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos"
+      "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos",
+      "C:\\Users\\Administrador\\AppData\\Local\\Temp\\claude\\c--Users-Administrador-Documents-agenciaSoft-agricultores-organicos\\b0d33b20-6a0d-426d-b943-d9e5c7b17c97\\scratchpad"
     ]
   }
 }

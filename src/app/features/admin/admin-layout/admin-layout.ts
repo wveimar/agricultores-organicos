@@ -39,6 +39,11 @@ export class AdminLayout {
       roles: ['GESTOR_PEDIDOS'],
       badge: this.adminApi.pendingCount,
     },
+    {
+      path: '/admin/consolidado',
+      label: 'Consolidado',
+      roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'],
+    },
     { path: '/admin/reportes', label: 'Reportes', roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'] },
     { path: '/admin/usuarios', label: 'Usuarios', roles: ['SUPER_ADMIN'] },
   ];

@@ -1,0 +1,264 @@
+<header class="flex flex-col gap-1">
+  <h1 class="text-h2 text-ink">Consolidado semanal</h1>
+  <p class="text-sm text-ink-soft">
+    Lo que hay que cosechar y a quién se le lleva. Solo cuenta lo aprobado.
+  </p>
+</header>
+
+<!-- ─────────────────────────── Ventana y filtros ─────────────────────────── -->
+<div class="mt-6 rounded-lg border border-sand bg-bone p-5">
+  <div class="flex flex-wrap items-end gap-4">
+    <div class="flex flex-col gap-1">
+      <label for="desde" class="text-overline font-semibold uppercase text-ink-muted">Desde</label>
+      <input
+        id="desde"
+        type="date"
+        class="rounded-md border border-stone bg-bone px-3 py-2 text-sm text-ink"
+        [value]="desde()"
+        [max]="today"
+        (change)="setDesde($any($event.target).value)"
+      />
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label for="hasta" class="text-overline font-semibold uppercase text-ink-muted">Hasta</label>
+      <input
+        id="hasta"
+        type="date"
+        class="rounded-md border border-stone bg-bone px-3 py-2 text-sm text-ink"
+        [value]="hasta()"
+        [max]="today"
+        (change)="setHasta($any($event.target).value)"
+      />
+    </div>
+
+    <button
+      type="button"
+      class="rounded-full bg-moss px-6 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep"
+      (click)="aplicar()"
+    >
+      Aplicar
+    </button>
+
+    @if (rangoActivo()) {
+      <button
+        type="button"
+        class="rounded-full border border-sand px-5 py-2.5 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
+        (click)="verJornadaAbierta()"
+      >
+        Ver semana en curso
+      </button>
+    }
+  </div>
+
+  @if (data(); as info) {
+    <p class="mt-4 text-xs text-ink-muted">
+      @if (info.ventana.soloJornadaAbierta) {
+        Mostrando la jornada abierta: pedidos aprobados que aún no entraron en un
+        cierre de caja. Es lo que sale el próximo domingo.
+      } @else {
+        Mostrando pedidos creados entre {{ info.ventana.desde ?? 'el inicio' }} y
+        {{ info.ventana.hasta ?? 'hoy' }}, incluidos los ya archivados en un cierre.
+      }
+    </p>
+  }
+</div>
+
+@if (adminApi.consolidationError(); as error) {
+  <p class="mt-6 rounded-md border border-berry/40 bg-berry/5 px-4 py-3 text-sm text-berry" role="alert">
+    {{ error }}
+  </p>
+}
+
+@if (adminApi.consolidationLoading()) {
+  <p class="mt-6 text-sm text-ink-muted" role="status">Cargando consolidado…</p>
+}
+
+@if (data(); as info) {
+  <!-- ──────────────────────────── Cifras de cabecera ──────────────────────────── -->
+  <div class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="rounded-lg border border-sand bg-bone p-5">
+      <p class="text-overline font-semibold uppercase text-ink-muted">Productos</p>
+      <p class="tabular mt-2 font-display text-h3 text-ink">{{ info.totales.referencias }}</p>
+      <p class="mt-1 text-xs text-ink-muted">Referencias a preparar</p>
+    </div>
+
+    <div class="rounded-lg border border-sand bg-bone p-5">
+      <p class="text-overline font-semibold uppercase text-ink-muted">Pedidos</p>
+      <p class="tabular mt-2 font-display text-h3 text-ink">{{ info.totales.pedidos }}</p>
+      <p class="tabular mt-1 text-xs text-ink-muted">{{ info.totales.unidades }} unidades</p>
+    </div>
+
+    <div class="rounded-lg border border-sand bg-bone p-5">
+      <p class="text-overline font-semibold uppercase text-ink-muted">Domicilios cobrados</p>
+      <p class="tabular mt-2 font-display text-h3 text-ink">{{ info.domicilios.totalRecaudado | cop }}</p>
+      <p class="tabular mt-1 text-xs text-ink-muted">
+        {{ info.domicilios.conCobro }} con cobro · {{ info.domicilios.sinCobro }} gratis
+      </p>
+    </div>
+
+    <div class="rounded-lg border border-sand bg-bone p-5">
+      <p class="text-overline font-semibold uppercase text-ink-muted">Venta de producto</p>
+      <p class="tabular mt-2 font-display text-h3 text-ink">{{ info.totales.ventaProducto | cop }}</p>
+      <p class="mt-1 text-xs text-ink-muted">Sin contar el domicilio</p>
+    </div>
+  </div>
+
+  <!-- Pedidos sin aprobar: no entran, pero cambian la cosecha si se aprueban -->
+  @if (info.pendientes.pedidos > 0) {
+    <p class="mt-4 rounded-md border border-honey/50 bg-honey/8 px-4 py-3 text-sm text-ink" role="status">
+      Hay <strong class="tabular">{{ info.pendientes.pedidos }}</strong>
+      {{ info.pendientes.pedidos === 1 ? 'pedido' : 'pedidos' }} sin confirmar pago
+      ({{ info.pendientes.subtotal | cop }}). No están en esta lista: si se aprueban
+      antes de cosechar, hay que volver a generarla.
+    </p>
+  }
+
+  <!-- ───────────────── Tabla 1 · Consolidado para el productor ───────────────── -->
+  <section class="mt-8">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h2 class="font-display text-h3 text-ink">Para la finca</h2>
+        <p class="mt-1 text-sm text-ink-soft">Cuánto preparar de cada producto, todo sumado.</p>
+      </div>
+
+      <button
+        type="button"
+        class="rounded-full bg-clay px-6 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep disabled:opacity-40"
+        [disabled]="info.productos.length === 0"
+        (click)="copyProducerList()"
+      >
+        {{ copied() ? '✓ Copiado' : 'Copiar para WhatsApp' }}
+      </button>
+    </div>
+
+    @if (copyFailed()) {
+      <div class="mt-4 rounded-md border border-sand bg-linen/60 p-4">
+        <p class="text-sm text-ink-soft">
+          El navegador no dejó copiar automáticamente. Selecciona el texto y cópialo a mano:
+        </p>
+        <pre class="mt-3 max-h-64 overflow-auto rounded-md border border-sand bg-bone p-4 text-xs leading-relaxed text-ink">{{ buildProducerText() }}</pre>
+      </div>
+    }
+
+    @if (info.productos.length === 0) {
+      <p class="mt-4 rounded-lg border border-sand bg-bone px-4 py-8 text-center text-sm text-ink-muted">
+        No hay pedidos aprobados en esta ventana. Nada que cosechar todavía.
+      </p>
+    } @else {
+      @for (group of grouped(); track group.grupo) {
+        <div class="mt-5 overflow-hidden rounded-lg border border-sand bg-bone">
+          <p class="border-b border-sand bg-linen/60 px-4 py-2.5 text-overline font-semibold uppercase text-moss">
+            {{ group.label }}
+          </p>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-sand text-xs uppercase tracking-wide text-ink-muted">
+                  <th scope="col" class="px-4 py-2.5 font-semibold">Producto</th>
+                  <th scope="col" class="px-4 py-2.5 text-right font-semibold">Cantidad</th>
+                  <th scope="col" class="px-4 py-2.5 font-semibold">Presentación</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (producto of group.items; track producto.productId) {
+                  <tr class="border-b border-sand/60 last:border-0">
+                    <td class="px-4 py-3">
+                      <p class="font-medium text-ink">{{ producto.nombre }}</p>
+                      <p class="tabular mt-0.5 text-xs text-ink-muted">
+                        {{ producto.pedidos }}
+                        {{ producto.pedidos === 1 ? 'pedido' : 'pedidos' }}
+                        @if (tieneEquivalencia(producto)) {
+                          · total {{ equivalencia(producto) }}
+                        }
+                      </p>
+                    </td>
+                    <td class="tabular px-4 py-3 text-right font-display text-h3 text-ink">
+                      {{ producto.cantidadTotal }}
+                    </td>
+                    <td class="px-4 py-3 text-ink-soft">{{ presentacion(producto) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+    }
+  </section>
+
+  <!-- ────────────────────── Tabla 2 · Hoja de ruta y domicilios ────────────────────── -->
+  <section class="mt-10">
+    <h2 class="font-display text-h3 text-ink">Reparto y domicilios</h2>
+    <p class="mt-1 text-sm text-ink-soft">
+      Domicilio de {{ info.regla.costoEnvio | cop }} por debajo de
+      {{ info.regla.umbralEnvioGratis | cop }}. Gratis a partir de ahí.
+    </p>
+
+    @if (hayDescuadres()) {
+      <p class="mt-4 rounded-md border border-berry/40 bg-berry/5 px-4 py-3 text-sm text-ink" role="status">
+        <strong class="text-berry">
+          {{ info.domicilios.descuadres }}
+          {{ info.domicilios.descuadres === 1 ? 'pedido no sigue' : 'pedidos no siguen' }}
+          la regla vigente
+        </strong>
+        (diferencia de {{ info.domicilios.diferencia | cop }}). Es normal en pedidos
+        anteriores al último cambio de tarifa; si son recientes, hay que revisarlo.
+      </p>
+    }
+
+    @if (pedidos().length === 0) {
+      <p class="mt-4 rounded-lg border border-sand bg-bone px-4 py-8 text-center text-sm text-ink-muted">
+        Sin pedidos que repartir en esta ventana.
+      </p>
+    } @else {
+      <div class="mt-4 overflow-hidden rounded-lg border border-sand bg-bone">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead>
+              <tr class="border-b border-sand text-xs uppercase tracking-wide text-ink-muted">
+                <th scope="col" class="px-4 py-2.5 font-semibold">Cliente y dirección</th>
+                <th scope="col" class="px-4 py-2.5 text-right font-semibold">Subtotal</th>
+                <th scope="col" class="px-4 py-2.5 text-right font-semibold">Domicilio</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (pedido of pedidos(); track pedido.id) {
+                <!-- El domicilio cobrado se tiñe: es la fila que hay que cuadrar
+                     contra la consignación y la que se revisa de un vistazo. -->
+                <tr
+                  class="border-b border-sand/60 last:border-0"
+                  [class]="pedido.cobroEnvio ? 'bg-clay/5' : ''"
+                >
+                  <td class="px-4 py-3">
+                    <p class="font-medium text-ink">{{ pedido.clienteNombre }}</p>
+                    <p class="mt-0.5 text-xs text-ink-soft">{{ pedido.clienteDireccion }}</p>
+                    <p class="tabular mt-0.5 text-xs text-ink-muted">
+                      {{ pedido.referencia }} · {{ pedido.clienteTelefono }} ·
+                      {{ pedido.unidades }} uds
+                    </p>
+                  </td>
+
+                  <td class="tabular px-4 py-3 text-right text-ink">{{ pedido.subtotal | cop }}</td>
+
+                  <td class="px-4 py-3 text-right">
+                    @if (pedido.cobroEnvio) {
+                      <span class="tabular font-semibold text-clay-deep">{{ pedido.envio | cop }}</span>
+                    } @else {
+                      <span class="text-xs font-medium uppercase tracking-wide text-moss">Gratis</span>
+                    }
+
+                    @if (!pedido.envioCorrecto) {
+                      <p class="mt-1 text-xs text-berry">{{ descuadreLabel(pedido) }}</p>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+  </section>
+}

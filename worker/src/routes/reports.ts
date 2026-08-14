@@ -3,6 +3,47 @@ import { Env, JwtPayload } from '../types';
 import { requireRole } from '../auth/middleware';
 
 /**
+ * Regla de domicilio vigente, duplicada aquí a propósito.
+ *
+ * La fuente para cobrar es `src/app/core/models/cart.model.ts`: el navegador
+ * calcula el envío y lo manda en `POST /api/orders`, que hoy lo acepta tal
+ * cual. Esta copia **no** cobra nada; sirve para auditar: el consolidado
+ * recalcula lo que debió cobrarse y señala los pedidos donde no coincide.
+ *
+ * Si la tarifa cambia, hay que cambiarla en los dos sitios. Por eso la regla
+ * viaja en la respuesta (`regla`) y se pinta en pantalla: si alguien mueve una
+ * y olvida la otra, el informe empieza a marcar descuadres en masa y se nota
+ * el mismo día en vez de al cuadrar la caja.
+ */
+export const FREE_SHIPPING_THRESHOLD = 70_000;
+export const SHIPPING_COST = 5_000;
+
+/**
+ * Colombia no aplica horario de verano, así que el desfase es constante.
+ *
+ * `creado_en` se guarda en UTC. Un pedido hecho el jueves a las 8 p. m. en
+ * Colombia queda grabado como viernes 01:00 UTC, así que filtrar por la fecha
+ * cruda lo pondría en la semana siguiente — justo el pedido que sí alcanzó el
+ * cierre. Todas las comparaciones de fecha de este informe se hacen sobre la
+ * hora local para que "del 10 al 14" signifique lo que el administrador cree.
+ */
+const COLOMBIA_OFFSET = '-5 hours';
+
+/** `YYYY-MM-DD` y nada más: lo que entra va directo a `datetime()` de SQLite. */
+function optionalDate(value: string | null, field: string): string | null {
+  if (value === null || value === '') {
+    return null;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw ApiError.badRequest(
+      'fecha-invalida',
+      `El parámetro "${field}" debe tener el formato AAAA-MM-DD.`,
+    );
+  }
+  return value;
+}
+
+/**
  * GET /api/admin/reports/sales — resumen de ventas por producto.
  *
  * Una sola consulta agregada con funciones de ventana: la clasificación ABC se
@@ -291,6 +332,198 @@ export async function closingOrders(
     .all();
 
   return json({ orders: results });
+}
+
+interface ConsolidationOrderRow {
+  id: string;
+  referencia: string;
+  clienteNombre: string;
+  clienteTelefono: string;
+  clienteDireccion: string;
+  estado: string;
+  subtotal: number;
+  envio: number;
+  total: number;
+  unidades: number;
+  creadoEn: string;
+}
+
+/**
+ * GET /api/admin/reports/consolidation — qué cosechar y a quién llevarlo.
+ *
+ * Los pedidos cierran el jueves al mediodía, el informe se arma el viernes y
+ * se despacha el domingo. Esta es la hoja que se le manda al agricultor: no
+ * pedido por pedido, sino "45 kg de tomate en total".
+ *
+ * ### Qué se cuenta
+ *
+ * `estado IN ('aprobado','enviado')`, exactamente el mismo conjunto que
+ * `cashSummary` y `closeCash`. No es un detalle: es lo que hace que el
+ * "recaudado por domicilios" de este informe cuadre con `envios_cobrados` del
+ * cierre de caja. Un pedido en `verificacion` todavía no tiene la
+ * consignación comprobada, y cosechar contra él es cosechar contra una
+ * promesa — por eso van aparte, en `pendientes`, como aviso.
+ *
+ * ### Ventana
+ *
+ * Sin fechas, se toma la jornada abierta (`closing_id IS NULL`): lo que se
+ * cosecha para el próximo domingo. Con `desde`/`hasta`, el rango *es* la
+ * definición de la ventana y entran también los pedidos ya archivados en un
+ * cierre, que es lo que permite releer una semana pasada. La respuesta
+ * describe en `ventana` cuál de los dos modos se aplicó.
+ */
+export async function consolidation(
+  request: Request,
+  env: Env,
+  user: JwtPayload,
+): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS', 'ADMIN_INVENTARIO');
+
+  const url = new URL(request.url);
+  const desde = optionalDate(url.searchParams.get('desde'), 'desde');
+  const hasta = optionalDate(url.searchParams.get('hasta'), 'hasta');
+
+  if (desde && hasta && desde > hasta) {
+    throw ApiError.badRequest('rango-invalido', 'La fecha inicial es posterior a la final.');
+  }
+
+  // El WHERE se arma con fragmentos fijos y valores enlazados: lo que viene de
+  // la URL nunca se concatena en el SQL.
+  const filtros: string[] = [`o.estado IN ('aprobado', 'enviado')`];
+  const params: string[] = [];
+
+  if (desde) {
+    filtros.push(`datetime(o.creado_en, '${COLOMBIA_OFFSET}') >= datetime(?)`);
+    params.push(desde);
+  }
+  if (hasta) {
+    // `< día siguiente` y no `<= hasta`: con `<=` se caerían todos los pedidos
+    // del propio día `hasta` salvo los de las 00:00:00 en punto.
+    filtros.push(`datetime(o.creado_en, '${COLOMBIA_OFFSET}') < datetime(?, '+1 day')`);
+    params.push(hasta);
+  }
+
+  const soloJornadaAbierta = !desde && !hasta;
+  if (soloJornadaAbierta) {
+    filtros.push('o.closing_id IS NULL');
+  }
+
+  const where = filtros.join(' AND ');
+
+  const [productosResult, pedidosResult, pendientesResult] = await env.DB.batch([
+    // Consolidado para la finca.
+    //
+    // `producto_nombre` sale de `order_items` —copiado al vender, así que el
+    // informe sigue nombrando lo que se pidió aunque el catálogo cambie— pero
+    // la unidad hay que traerla de `products`: `order_items` no la guarda. Si
+    // alguien cambia la presentación después del cierre, esa columna refleja
+    // la nueva. Es el único dato del informe que no es histórico.
+    env.DB.prepare(
+      `SELECT oi.product_id                          AS productId,
+              MAX(oi.producto_nombre)                AS nombre,
+              SUM(oi.cantidad)                       AS cantidadTotal,
+              COUNT(DISTINCT oi.order_id)            AS pedidos,
+              COALESCE(MAX(p.unidad), 'unidad')      AS unidad,
+              COALESCE(MAX(p.cantidad_unidad), 1)    AS cantidadUnidad,
+              COALESCE(MAX(p.grupo_admin), 'verduras') AS grupoAdmin,
+              COALESCE(MAX(p.origen), '')            AS origen
+         FROM order_items oi
+         JOIN orders o    ON o.id = oi.order_id
+         LEFT JOIN products p ON p.id = oi.product_id
+        WHERE ${where}
+        GROUP BY oi.product_id
+        ORDER BY grupoAdmin ASC, nombre ASC`,
+    ).bind(...params),
+
+    // Hoja de ruta: a quién se le lleva y qué se le cobró de domicilio.
+    env.DB.prepare(
+      `SELECT o.id,
+              o.referencia,
+              o.cliente_nombre     AS clienteNombre,
+              o.cliente_telefono   AS clienteTelefono,
+              o.cliente_direccion  AS clienteDireccion,
+              o.estado,
+              o.subtotal,
+              o.envio,
+              o.total,
+              COALESCE(SUM(i.cantidad), 0) AS unidades,
+              o.creado_en          AS creadoEn
+         FROM orders o
+         LEFT JOIN order_items i ON i.order_id = o.id
+        WHERE ${where}
+        GROUP BY o.id
+        ORDER BY o.creado_en ASC`,
+    ).bind(...params),
+
+    // Lo que todavía no está aprobado dentro de la misma ventana. No entra en
+    // el consolidado, pero el agricultor necesita saber que existe: si se
+    // aprueban el viernes por la mañana, la cosecha cambia.
+    env.DB.prepare(
+      `SELECT COUNT(*) AS pedidos,
+              COALESCE(SUM(o.subtotal), 0) AS subtotal
+         FROM orders o
+        WHERE o.estado IN ('verificacion', 'pendiente')
+          ${desde ? `AND datetime(o.creado_en, '${COLOMBIA_OFFSET}') >= datetime(?)` : ''}
+          ${hasta ? `AND datetime(o.creado_en, '${COLOMBIA_OFFSET}') < datetime(?, '+1 day')` : ''}`,
+    ).bind(...params),
+  ]);
+
+  const pedidos = pedidosResult.results as unknown as ConsolidationOrderRow[];
+
+  // El cobro esperado se recalcula aquí, no se lee de la base: el objetivo es
+  // precisamente detectar cuándo lo guardado no corresponde a la regla.
+  const detalle = pedidos.map((pedido) => {
+    const envioEsperado = pedido.subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST;
+    return {
+      ...pedido,
+      cobroEnvio: pedido.envio > 0,
+      envioEsperado,
+      envioCorrecto: pedido.envio === envioEsperado,
+      diferenciaEnvio: pedido.envio - envioEsperado,
+    };
+  });
+
+  const conEnvio = detalle.filter((p) => p.cobroEnvio);
+  const descuadres = detalle.filter((p) => !p.envioCorrecto);
+
+  const pendientes = pendientesResult.results[0] as unknown as {
+    pedidos: number;
+    subtotal: number;
+  };
+
+  return json({
+    ventana: {
+      desde,
+      hasta,
+      soloJornadaAbierta,
+      estados: ['aprobado', 'enviado'],
+    },
+    regla: {
+      umbralEnvioGratis: FREE_SHIPPING_THRESHOLD,
+      costoEnvio: SHIPPING_COST,
+    },
+    productos: productosResult.results,
+    pedidos: detalle,
+    domicilios: {
+      pedidos: detalle.length,
+      conCobro: conEnvio.length,
+      sinCobro: detalle.length - conEnvio.length,
+      totalRecaudado: conEnvio.reduce((suma, p) => suma + p.envio, 0),
+      // Cuánto se dejó de cobrar (o se cobró de más) frente a la regla.
+      diferencia: descuadres.reduce((suma, p) => suma + p.diferenciaEnvio, 0),
+      descuadres: descuadres.length,
+    },
+    totales: {
+      pedidos: detalle.length,
+      referencias: productosResult.results.length,
+      unidades: detalle.reduce((suma, p) => suma + p.unidades, 0),
+      ventaProducto: detalle.reduce((suma, p) => suma + p.subtotal, 0),
+    },
+    pendientes: {
+      pedidos: pendientes?.pedidos ?? 0,
+      subtotal: pendientes?.subtotal ?? 0,
+    },
+  });
 }
 
 /** GET /api/admin/reports/closings — historial de cierres. */

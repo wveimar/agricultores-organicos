@@ -181,6 +181,74 @@ export interface ApiCashSummary {
   readonly porMetodo: readonly { metodo: string; pedidos: number; total: number }[];
 }
 
+/** Una línea del consolidado: cuánto hay que cosechar de un producto. */
+export interface ApiConsolidationProduct {
+  readonly productId: string;
+  readonly nombre: string;
+  /** Presentaciones vendidas, no unidades de medida. */
+  readonly cantidadTotal: number;
+  readonly pedidos: number;
+  readonly unidad: string;
+  /** Cuánto lleva cada presentación: 500 con `unidad: 'gr'`. */
+  readonly cantidadUnidad: number;
+  readonly grupoAdmin: string;
+  readonly origen: string;
+}
+
+/** Un pedido en la hoja de ruta, con el domicilio ya auditado. */
+export interface ApiConsolidationOrder {
+  readonly id: string;
+  readonly referencia: string;
+  readonly clienteNombre: string;
+  readonly clienteTelefono: string;
+  readonly clienteDireccion: string;
+  readonly estado: string;
+  readonly subtotal: number;
+  readonly envio: number;
+  readonly total: number;
+  readonly unidades: number;
+  readonly creadoEn: string;
+  readonly cobroEnvio: boolean;
+  /** Lo que la regla vigente dice que debió cobrarse. */
+  readonly envioEsperado: number;
+  readonly envioCorrecto: boolean;
+  readonly diferenciaEnvio: number;
+}
+
+export interface ApiConsolidation {
+  readonly ventana: {
+    readonly desde: string | null;
+    readonly hasta: string | null;
+    readonly soloJornadaAbierta: boolean;
+    readonly estados: readonly string[];
+  };
+  readonly regla: {
+    readonly umbralEnvioGratis: number;
+    readonly costoEnvio: number;
+  };
+  readonly productos: readonly ApiConsolidationProduct[];
+  readonly pedidos: readonly ApiConsolidationOrder[];
+  readonly domicilios: {
+    readonly pedidos: number;
+    readonly conCobro: number;
+    readonly sinCobro: number;
+    readonly totalRecaudado: number;
+    readonly diferencia: number;
+    readonly descuadres: number;
+  };
+  readonly totales: {
+    readonly pedidos: number;
+    readonly referencias: number;
+    readonly unidades: number;
+    readonly ventaProducto: number;
+  };
+  /** Pedidos sin aprobar en la misma ventana: no entran, pero avisan. */
+  readonly pendientes: {
+    readonly pedidos: number;
+    readonly subtotal: number;
+  };
+}
+
 /** Una línea del detalle de un cierre: el pedido tal y como entró en la caja. */
 export interface ApiClosingOrder {
   readonly id: string;
@@ -472,6 +540,21 @@ export class ApiClient {
         products: ApiSalesRow[];
         totals: { unidades: number; ingresos: number; costo: number; ganancia: number };
       }>('/api/admin/reports/sales')
+      .pipe(catchError(handleError));
+  }
+
+  /**
+   * Consolidado semanal. Sin fechas trae la jornada abierta —lo que se cosecha
+   * para el próximo domingo—; con ellas, el rango pedido.
+   */
+  consolidation(range: { desde?: string; hasta?: string } = {}): Observable<ApiConsolidation> {
+    const query = new URLSearchParams();
+    if (range.desde) query.set('desde', range.desde);
+    if (range.hasta) query.set('hasta', range.hasta);
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+
+    return this.http
+      .get<ApiConsolidation>(`/api/admin/reports/consolidation${suffix}`)
       .pipe(catchError(handleError));
   }
 
