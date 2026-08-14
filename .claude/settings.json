@@ -97,7 +97,8 @@
       "Bash(curl -s http://localhost:8797/api/products -o /dev/null)",
       "Bash(node worker/tests/qa-consolidado.mjs http://localhost:8797)",
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const r=JSON.parse\\(d\\);console.log\\('ventana:',JSON.stringify\\(r.ventana\\)\\);console.log\\('regla:',JSON.stringify\\(r.regla\\)\\);console.log\\('\\\\nPRODUCTOS'\\);r.productos.forEach\\(p=>console.log\\('  ',p.grupoAdmin.padEnd\\(17\\),p.nombre.padEnd\\(24\\),String\\(p.cantidadTotal\\).padStart\\(4\\),'x',p.cantidadUnidad,p.unidad\\)\\);console.log\\('\\\\nDOMICILIOS:',JSON.stringify\\(r.domicilios\\)\\);console.log\\('TOTALES:',JSON.stringify\\(r.totales\\)\\);console.log\\('PENDIENTES:',JSON.stringify\\(r.pendientes\\)\\);}\\)\")",
-      "Bash(git commit -m 'Mejorar legibilidad de la tabla de consolidado *)"
+      "Bash(git commit -m 'Mejorar legibilidad de la tabla de consolidado *)",
+      "Bash(git commit -m 'Reorganizar tabla de consolidado con columnas explícitas *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos",
