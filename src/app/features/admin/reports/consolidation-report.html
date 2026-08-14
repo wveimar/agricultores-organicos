@@ -157,8 +157,7 @@
               <thead>
                 <tr class="border-b border-sand text-xs uppercase tracking-wide text-ink-muted">
                   <th scope="col" class="px-4 py-2.5 font-semibold">Producto</th>
-                  <th scope="col" class="px-4 py-2.5 text-right font-semibold">Cantidad</th>
-                  <th scope="col" class="px-4 py-2.5 font-semibold">Presentación</th>
+                  <th scope="col" class="px-4 py-2.5 text-right font-semibold">Preparar</th>
                 </tr>
               </thead>
               <tbody>
@@ -169,15 +168,17 @@
                       <p class="tabular mt-0.5 text-xs text-ink-muted">
                         {{ producto.pedidos }}
                         {{ producto.pedidos === 1 ? 'pedido' : 'pedidos' }}
-                        @if (tieneEquivalencia(producto)) {
-                          · total {{ equivalencia(producto) }}
-                        }
                       </p>
                     </td>
-                    <td class="tabular px-4 py-3 text-right font-display text-h3 text-ink">
-                      {{ producto.cantidadTotal }}
+                    <td class="px-4 py-3 text-right">
+                      <!-- Cantidad × presentación = total equivalencia -->
+                      <p class="tabular font-display text-h3 text-ink">
+                        {{ producto.cantidadTotal }} × {{ presentacion(producto) }}
+                      </p>
+                      @if (tieneEquivalencia(producto)) {
+                        <p class="tabular mt-0.5 text-sm font-semibold text-moss">= {{ equivalencia(producto) }}</p>
+                      }
                     </td>
-                    <td class="px-4 py-3 text-ink-soft">{{ presentacion(producto) }}</td>
                   </tr>
                 }
               </tbody>
