@@ -50,6 +50,9 @@ export class ConsolidationReport {
   protected readonly desde = signal('');
   protected readonly hasta = signal('');
 
+  /** Productos seleccionados para filtrar por agricultor. */
+  protected readonly selectedProductIds = signal<Set<string>>(new Set());
+
   /** Estado del botón de copiar: vuelve solo a `false` a los 2 s. */
   protected readonly copied = signal(false);
   protected readonly copyFailed = signal(false);
@@ -60,9 +63,25 @@ export class ConsolidationReport {
 
   protected readonly data = this.adminApi.consolidation;
 
-  /** Agrupa el consolidado por frutas / verduras / agroindustriales. */
+  /**
+   * Productos visibles después del filtro de selección.
+   * Si no hay nada seleccionado, muestra todos (comportamiento por defecto).
+   * Si hay selecciones, solo muestra los marcados.
+   */
+  protected readonly filteredProducts = computed(() => {
+    const todos = this.data()?.productos ?? [];
+    const selected = this.selectedProductIds();
+
+    if (selected.size === 0) {
+      return todos;
+    }
+
+    return todos.filter((p) => selected.has(p.productId));
+  });
+
+  /** Agrupa el consolidado filtrado por frutas / verduras / agroindustriales. */
   protected readonly grouped = computed(() => {
-    const productos = this.data()?.productos ?? [];
+    const productos = this.filteredProducts();
     const groups = new Map<string, ApiConsolidationProduct[]>();
 
     for (const producto of productos) {
@@ -79,6 +98,26 @@ export class ConsolidationReport {
       label: GROUP_LABEL[grupo] ?? grupo,
       items,
     }));
+  });
+
+  /** Cuántos productos están seleccionados. */
+  protected readonly selectedCount = computed(() => this.selectedProductIds().size);
+
+  /** Totales recalculados del consolidado filtrado. */
+  protected readonly filteredTotals = computed(() => {
+    const filtered = this.filteredProducts();
+
+    if (filtered.length === 0) {
+      return {
+        productos: 0,
+        unidades: 0,
+      };
+    }
+
+    return {
+      productos: filtered.length,
+      unidades: filtered.reduce((sum, p) => sum + p.cantidadTotal, 0),
+    };
   });
 
   /** Pedidos con domicilio cobrado primero: son los que hay que revisar. */
@@ -159,12 +198,42 @@ export class ConsolidationReport {
     return producto.cantidadUnidad > 1;
   }
 
+  // ─────────────────────────── Selección de productos ────────────────────────────
+
+  protected toggleProduct(productId: string): void {
+    this.selectedProductIds.update((selected) => {
+      const newSet = new Set(selected);
+      if (newSet.has(productId)) {
+        newSet.delete(productId);
+      } else {
+        newSet.add(productId);
+      }
+      return newSet;
+    });
+  }
+
+  protected isSelected(productId: string): boolean {
+    return this.selectedProductIds().has(productId);
+  }
+
+  protected selectAll(): void {
+    const todos = this.data()?.productos ?? [];
+    this.selectedProductIds.set(new Set(todos.map((p) => p.productId)));
+  }
+
+  protected clearSelection(): void {
+    this.selectedProductIds.set(new Set());
+  }
+
   // ──────────────────────────── Copiar para WhatsApp ────────────────────────────
 
   /**
    * Texto plano, sin tablas ni markdown: WhatsApp no las renderiza y en un
    * teléfono en la bodega lo que se lee es una lista corta con la cifra al
    * final de cada línea.
+   *
+   * Si hay productos seleccionados, solo muestra esos. Si no hay selección,
+   * muestra todos (para no dejar sin nada que copiar).
    */
   protected buildProducerText(): string {
     const data = this.data();
@@ -190,6 +259,7 @@ export class ConsolidationReport {
       ].join('\n'),
     );
 
+    const filtered = this.filteredTotals();
     const aviso =
       data.pendientes.pedidos > 0
         ? [
@@ -205,7 +275,7 @@ export class ConsolidationReport {
       cabecera,
       ...bloques,
       '',
-      `Total: ${data.totales.referencias} productos · ${data.totales.pedidos} pedidos`,
+      `Total: ${filtered.productos} productos · ${filtered.unidades} unidades`,
       aviso,
     ]
       .filter((line) => line !== '')
