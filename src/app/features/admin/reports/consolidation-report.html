@@ -157,7 +157,10 @@
               <thead>
                 <tr class="border-b border-sand text-xs uppercase tracking-wide text-ink-muted">
                   <th scope="col" class="px-4 py-2.5 font-semibold">Producto</th>
-                  <th scope="col" class="px-4 py-2.5 text-right font-semibold">Preparar</th>
+                  <th scope="col" class="px-4 py-2.5 text-right font-semibold">Cantidad</th>
+                  <th scope="col" class="px-4 py-2.5 font-semibold">Presentación</th>
+                  <th scope="col" class="px-4 py-2.5 text-right font-semibold">Pedidos</th>
+                  <th scope="col" class="px-4 py-2.5 text-right font-semibold">Total a pedir</th>
                 </tr>
               </thead>
               <tbody>
@@ -165,18 +168,19 @@
                   <tr class="border-b border-sand/60 last:border-0">
                     <td class="px-4 py-3">
                       <p class="font-medium text-ink">{{ producto.nombre }}</p>
-                      <p class="tabular mt-0.5 text-xs text-ink-muted">
-                        {{ producto.pedidos }}
-                        {{ producto.pedidos === 1 ? 'pedido' : 'pedidos' }}
-                      </p>
+                    </td>
+                    <td class="tabular px-4 py-3 text-right font-display text-h3 text-ink">
+                      {{ producto.cantidadTotal }}
+                    </td>
+                    <td class="px-4 py-3 text-ink-soft">{{ presentacion(producto) }}</td>
+                    <td class="tabular px-4 py-3 text-right text-ink-muted">
+                      {{ producto.pedidos }}
                     </td>
                     <td class="px-4 py-3 text-right">
-                      <!-- Cantidad × presentación = total equivalencia -->
-                      <p class="tabular font-display text-h3 text-ink">
-                        {{ producto.cantidadTotal }} × {{ presentacion(producto) }}
-                      </p>
                       @if (tieneEquivalencia(producto)) {
-                        <p class="tabular mt-0.5 text-sm font-semibold text-moss">= {{ equivalencia(producto) }}</p>
+                        <p class="tabular font-semibold text-moss">{{ equivalencia(producto) }}</p>
+                      } @else {
+                        <p class="tabular font-semibold text-ink">{{ producto.cantidadTotal }} {{ presentacion(producto) }}</p>
                       }
                     </td>
                   </tr>
