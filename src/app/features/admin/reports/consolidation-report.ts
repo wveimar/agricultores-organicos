@@ -53,6 +53,9 @@ export class ConsolidationReport {
   /** Productos seleccionados para filtrar por agricultor. */
   protected readonly selectedProductIds = signal<Set<string>>(new Set());
 
+  /** Toggle para activar/desactivar el filtro de seleccionados. */
+  protected readonly showOnlySelected = signal(false);
+
   /** Estado del botón de copiar: vuelve solo a `false` a los 2 s. */
   protected readonly copied = signal(false);
   protected readonly copyFailed = signal(false);
@@ -64,15 +67,16 @@ export class ConsolidationReport {
   protected readonly data = this.adminApi.consolidation;
 
   /**
-   * Productos visibles después del filtro de selección.
-   * Si no hay nada seleccionado, muestra todos (comportamiento por defecto).
-   * Si hay selecciones, solo muestra los marcados.
+   * Productos visibles: todos por defecto, o solo los seleccionados si el toggle está activo.
+   * La selección se ve en las filas (fondo coloreado) pero no filtra la lista a menos que
+   * el usuario active "Ver solo seleccionados".
    */
   protected readonly filteredProducts = computed(() => {
     const todos = this.data()?.productos ?? [];
     const selected = this.selectedProductIds();
+    const filterActive = this.showOnlySelected();
 
-    if (selected.size === 0) {
+    if (!filterActive || selected.size === 0) {
       return todos;
     }
 
@@ -223,6 +227,10 @@ export class ConsolidationReport {
 
   protected clearSelection(): void {
     this.selectedProductIds.set(new Set());
+  }
+
+  protected toggleFilter(): void {
+    this.showOnlySelected.update((v) => !v);
   }
 
   // ──────────────────────────── Copiar para WhatsApp ────────────────────────────
