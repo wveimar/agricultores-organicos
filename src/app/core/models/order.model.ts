@@ -36,6 +36,33 @@ export function isCancelable(status: OrderStatus): boolean {
   return CANCELABLE.includes(status);
 }
 
+/**
+ * Estados desde los que todavía se pueden tocar las líneas del pedido.
+ *
+ * Igual que `CANCELABLE`, pero incluye `aprobado`: aprobar solo confirma el
+ * pago y descuenta inventario, no congela qué se pidió. Un pedido enviado ya
+ * salió de la finca y uno cancelado ya no es una venta — ninguno de los dos
+ * admite editar qué llevaba. El servidor aplica la misma regla.
+ */
+export const EDITABLE: readonly OrderStatus[] = ['verificacion', 'pendiente', 'aprobado'];
+
+export function isEditable(status: OrderStatus): boolean {
+  return EDITABLE.includes(status);
+}
+
+/**
+ * Eventos de la traza de un pedido: los estados reales más `'editado'`, una
+ * marca de auditoría que no es un estado — el pedido sigue donde estaba, solo
+ * cambiaron sus líneas. Ver la migración 0009 para el porqué de que viva en
+ * `order_status_log` y no en `orders.estado`.
+ */
+export type OrderLogEvent = OrderStatus | 'editado';
+
+export const ORDER_LOG_LABELS: Readonly<Record<OrderLogEvent, string>> = {
+  ...ORDER_STATUS_LABELS,
+  editado: 'Productos editados',
+};
+
 /** Comprobante de consignación subido por el cliente. */
 export interface PaymentProof {
   readonly fileName: string;

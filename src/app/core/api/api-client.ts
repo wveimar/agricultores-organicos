@@ -122,7 +122,7 @@ export interface ApiOrderItem {
 }
 
 export interface ApiOrderStatusLogEntry {
-  readonly estado: 'verificacion' | 'pendiente' | 'aprobado' | 'enviado';
+  readonly estado: 'verificacion' | 'pendiente' | 'aprobado' | 'enviado' | 'cancelado' | 'editado';
   readonly actorId: string | null;
   /** Nombre del cliente en la creación; nombre del admin en el resto de pasos. */
   readonly actorNombre: string | null;
@@ -506,6 +506,20 @@ export class ApiClient {
   shipOrder(id: string): Observable<ApiOrder> {
     return this.http
       .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/enviar`, {})
+      .pipe(map((res) => res.order), catchError(handleError));
+  }
+
+  /**
+   * Reemplaza las líneas de un pedido por la lista completa que se le pasa.
+   * El Worker calcula el diff contra lo guardado: aquí no hace falta decir
+   * qué se añadió, quitó o cambió, solo cómo debe quedar el pedido al final.
+   */
+  updateOrderItems(
+    id: string,
+    items: readonly { productId: string; cantidad: number }[],
+  ): Observable<ApiOrder> {
+    return this.http
+      .patch<{ order: ApiOrder }>(`/api/admin/orders/${id}/items`, { items })
       .pipe(map((res) => res.order), catchError(handleError));
   }
 

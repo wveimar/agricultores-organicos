@@ -7,21 +7,43 @@ import {
   signal,
 } from '@angular/core';
 import { AdminApiService } from '../../../core/services/admin-api.service';
+import { CatalogService } from '../../../core/services/catalog.service';
 import {
   ApiErrorBody,
   ApiOrder,
   ApiOrderStatusLogEntry,
   Shortfall,
 } from '../../../core/api/api-client';
-import { ORDER_STATUS_LABELS, OrderStatus, isCancelable } from '../../../core/models/order.model';
+import {
+  ORDER_LOG_LABELS,
+  ORDER_STATUS_LABELS,
+  OrderStatus,
+  isCancelable,
+  isEditable,
+} from '../../../core/models/order.model';
+import { FREE_SHIPPING_THRESHOLD, SHIPPING_COST } from '../../../core/models/cart.model';
+import { isInStock } from '../../../core/models/product.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
-const STATUS_STYLES: Readonly<Record<OrderStatus, string>> = {
+/** Una línea del pedido tal como está en edición, antes de guardar. */
+interface DraftLine {
+  readonly productId: string;
+  readonly productName: string;
+  readonly unitPrice: number;
+  readonly quantity: number;
+  /** No estaba en el pedido original: se pinta distinto para que se note. */
+  readonly isNew: boolean;
+}
+
+const STATUS_STYLES: Readonly<Record<OrderStatus | 'editado', string>> = {
   verificacion: 'bg-clay/15 text-clay-deep',
   pendiente: 'bg-honey/20 text-clay-deep',
   aprobado: 'bg-sage-light text-moss-deep',
   enviado: 'bg-linen text-ink-soft',
   cancelado: 'bg-berry/12 text-berry',
+  // Marca de auditoría, no un estado: tono neutro, distinto de los otros
+  // cinco, para que no se lea como si el pedido hubiera cambiado de fase.
+  editado: 'bg-sage/20 text-moss-deep',
 };
 
 const FILTERS: ReadonlyArray<{ value: OrderStatus | 'todos'; label: string }> = [
@@ -41,9 +63,11 @@ const FILTERS: ReadonlyArray<{ value: OrderStatus | 'todos'; label: string }> = 
 })
 export class OrdersManager {
   protected readonly adminApi = inject(AdminApiService);
+  protected readonly catalog = inject(CatalogService);
 
   protected readonly filters = FILTERS;
   protected readonly statusLabels = ORDER_STATUS_LABELS;
+  protected readonly logLabels = ORDER_LOG_LABELS;
   protected readonly statusStyles = STATUS_STYLES;
 
   protected readonly activeFilter = signal<OrderStatus | 'todos'>('todos');
@@ -269,6 +293,7 @@ export class OrdersManager {
     this.cancelReason.set('');
     this.blocked.set(null);
     this.feedback.set(null);
+    this.cancelEdit();
   }
 
   protected dismissCancel(): void {
@@ -302,6 +327,7 @@ export class OrdersManager {
     this.cancelingId.set(null);
     this.blocked.set(null);
     this.feedback.set(null);
+    this.cancelEdit();
   }
 
   protected dismissDelete(): void {
@@ -327,6 +353,192 @@ export class OrdersManager {
         this.workingId.set(null);
         this.deletingId.set(null);
         this.feedback.set(error.message);
+      },
+    });
+  }
+
+  // ─────────────────────────── Editar productos ───────────────────────────
+
+  protected readonly editingId = signal<string | null>(null);
+  protected readonly draftLines = signal<readonly DraftLine[]>([]);
+  protected readonly productSearch = signal('');
+  protected readonly savingEdit = signal(false);
+  protected readonly editShortfalls = signal<readonly Shortfall[] | null>(null);
+  protected readonly editError = signal<string | null>(null);
+
+  /**
+   * Cantidad original por producto, tomada al abrir la edición. Sirve para
+   * avisar en el momento —antes de guardar— cuando un incremento pide más de
+   * lo que el catálogo tiene disponible ahora mismo. Es solo un aviso local:
+   * la validación real, la que de verdad protege el inventario, vuelve a
+   * ocurrir en el servidor al guardar.
+   */
+  private originalQuantities = new Map<string, number>();
+
+  protected canEditItems(order: ApiOrder): boolean {
+    return isEditable(order.estado as OrderStatus) && order.closingId === null;
+  }
+
+  protected startEdit(order: ApiOrder): void {
+    this.editingId.set(order.id);
+    this.cancelingId.set(null);
+    this.deletingId.set(null);
+    this.blocked.set(null);
+    this.editShortfalls.set(null);
+    this.editError.set(null);
+    this.productSearch.set('');
+    this.feedback.set(null);
+
+    this.originalQuantities = new Map(order.items.map((item) => [item.productId, item.cantidad]));
+
+    this.draftLines.set(
+      order.items.map((item) => ({
+        productId: item.productId,
+        productName: item.productoNombre,
+        unitPrice: item.precioUnitario,
+        quantity: item.cantidad,
+        isNew: false,
+      })),
+    );
+
+    if (!this.expandedId()) {
+      this.expandedId.set(order.id);
+    }
+  }
+
+  protected cancelEdit(): void {
+    this.editingId.set(null);
+    this.draftLines.set([]);
+    this.productSearch.set('');
+    this.editShortfalls.set(null);
+    this.editError.set(null);
+  }
+
+  protected increment(productId: string): void {
+    this.draftLines.update((lines) =>
+      lines.map((line) =>
+        line.productId === productId ? { ...line, quantity: line.quantity + 1 } : line,
+      ),
+    );
+  }
+
+  protected decrement(productId: string): void {
+    this.draftLines.update((lines) =>
+      lines.map((line) =>
+        line.productId === productId
+          ? { ...line, quantity: Math.max(1, line.quantity - 1) }
+          : line,
+      ),
+    );
+  }
+
+  protected removeLine(productId: string): void {
+    this.draftLines.update((lines) => lines.filter((line) => line.productId !== productId));
+  }
+
+  /** Resultados del buscador: en stock, activos y que no estén ya en el pedido. */
+  protected readonly searchResults = computed(() => {
+    const term = this.productSearch().trim().toLowerCase();
+    if (term.length < 2) {
+      return [];
+    }
+
+    const already = new Set(this.draftLines().map((line) => line.productId));
+
+    return this.catalog
+      .all()
+      .filter(
+        (product) =>
+          !already.has(product.id) &&
+          isInStock(product) &&
+          product.name.toLowerCase().includes(term),
+      )
+      .slice(0, 8);
+  });
+
+  protected addProduct(product: { id: string; name: string; price: number }): void {
+    this.draftLines.update((lines) => [
+      ...lines,
+      { productId: product.id, productName: product.name, unitPrice: product.price, quantity: 1, isNew: true },
+    ]);
+    this.productSearch.set('');
+  }
+
+  /**
+   * Unidades adicionales que esta línea pide por encima de lo que ya tenía el
+   * pedido. 0 o negativo significa que no está pidiendo más —está igual o
+   * devolviendo—, y no hace falta comprobar disponibilidad.
+   */
+  private extraRequested(line: DraftLine): number {
+    return line.quantity - (this.originalQuantities.get(line.productId) ?? 0);
+  }
+
+  /**
+   * Aviso local de stock. Lee `catalog.all()`, que se cargó una vez al entrar
+   * al panel y no seguro está al segundo exacto — por eso es un aviso, no un
+   * bloqueo duro: el guardado real vuelve a validar contra D1.
+   */
+  protected stockWarning(line: DraftLine): string | null {
+    const extra = this.extraRequested(line);
+    if (extra <= 0) {
+      return null;
+    }
+
+    const disponible = this.catalog.productById(line.productId)?.stock ?? 0;
+    if (extra > disponible) {
+      return `Solo hay ${disponible} disponible${disponible === 1 ? '' : 's'} para añadir.`;
+    }
+    return null;
+  }
+
+  protected readonly hasStockWarnings = computed(() =>
+    this.draftLines().some((line) => this.stockWarning(line) !== null),
+  );
+
+  protected readonly projectedSubtotal = computed(() =>
+    this.draftLines().reduce((sum, line) => sum + line.unitPrice * line.quantity, 0),
+  );
+
+  protected readonly projectedShipping = computed(() =>
+    this.projectedSubtotal() >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST,
+  );
+
+  protected readonly projectedTotal = computed(
+    () => this.projectedSubtotal() + this.projectedShipping(),
+  );
+
+  protected saveEdit(order: ApiOrder): void {
+    if (this.draftLines().length === 0 || this.hasStockWarnings()) {
+      return;
+    }
+
+    this.savingEdit.set(true);
+    this.editShortfalls.set(null);
+    this.editError.set(null);
+
+    const items = this.draftLines().map((line) => ({
+      productId: line.productId,
+      cantidad: line.quantity,
+    }));
+
+    this.adminApi.updateOrderItems(order.id, items).subscribe({
+      next: () => {
+        this.savingEdit.set(false);
+        this.editingId.set(null);
+        this.draftLines.set([]);
+        this.feedback.set(`${order.referencia} actualizado.`);
+        this.loadHistory(order.id);
+      },
+      error: (error: ApiErrorBody) => {
+        this.savingEdit.set(false);
+
+        if (error.code === 'stock-insuficiente') {
+          const shortfalls = (error.details as { shortfalls?: Shortfall[] } | undefined)?.shortfalls ?? [];
+          this.editShortfalls.set(shortfalls);
+          return;
+        }
+
+        this.editError.set(error.message);
       },
     });
   }

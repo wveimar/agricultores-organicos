@@ -100,7 +100,9 @@
       "Bash(git commit -m 'Mejorar legibilidad de la tabla de consolidado *)",
       "Bash(git commit -m 'Reorganizar tabla de consolidado con columnas explícitas *)",
       "Bash(git commit -m 'Añadir filtro de productos por agricultor en consolidado *)",
-      "Bash(git commit -m 'Corregir lógica de filtro: mostrar todos por defecto, toggle para seleccionados *)"
+      "Bash(git commit -m 'Corregir lógica de filtro: mostrar todos por defecto, toggle para seleccionados *)",
+      "Bash(curl -s http://localhost:8799/api/products -o /dev/null)",
+      "Bash(node worker/tests/qa-editar-pedido.mjs http://localhost:8799)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Administrador\\Documents\\agenciaSoft\\agricultores_organicos",

@@ -314,6 +314,25 @@ export class AdminApiService {
     return this.api.orderHistory(id);
   }
 
+  /**
+   * Guarda la lista de líneas editada. Si el pedido tenía stock reservado, el
+   * Worker ya ajustó el inventario en la misma transacción: se refresca el
+   * catálogo para que el panel de inventario no quede con cifras viejas.
+   */
+  updateOrderItems(
+    id: string,
+    items: readonly { productId: string; cantidad: number }[],
+  ): Observable<ApiOrder> {
+    return this.api.updateOrderItems(id, items).pipe(
+      tap((updated) => {
+        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+        if (this.products().length > 0) {
+          this.loadProducts();
+        }
+      }),
+    );
+  }
+
   /** Imagen del comprobante (Workers KV), tras el JWT. */
   orderReceipt(id: string): Observable<Blob> {
     return this.api.orderReceipt(id);

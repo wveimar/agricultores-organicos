@@ -28,6 +28,18 @@ export class CatalogService {
   readonly loading = signal(true);
   readonly loadError = signal<string | null>(null);
 
+  /**
+   * Catálogo completo, sin filtrar. Sirve para búsquedas puntuales —como
+   * añadir un producto a un pedido desde el panel de administración— que no
+   * deben compartir el `query`/`activeCategory` de la vitrina pública.
+   *
+   * Es el catálogo público (`GET /api/products`, sin costo ni margen), así
+   * que `GESTOR_PEDIDOS` puede usarlo aunque no tenga acceso a
+   * `/api/admin/products`: es la misma información que ya ve en el detalle
+   * de un pedido a través de `stockDisponible`.
+   */
+  readonly all = this.products.asReadonly();
+
   readonly activeCategory = signal<CategoryId | 'todos'>('todos');
   readonly sort = signal<SortOption>('destacados');
   readonly query = signal('');

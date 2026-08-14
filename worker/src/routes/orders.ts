@@ -3,6 +3,18 @@ import { Env, JwtPayload } from '../types';
 import { requireRole } from '../auth/middleware';
 import { decodeDataUrl, validateDataUrl } from '../receipts';
 
+/**
+ * Misma regla que `src/app/core/models/cart.model.ts`. Editar un pedido
+ * recalcula el envío con la tarifa **vigente hoy**, no con la que estaba
+ * activa cuando se hizo el pedido — a diferencia del resto de los campos
+ * históricos de `order_items`, que sí se congelan. Es lo que pide esta
+ * funcionalidad: si el admin quita una línea y el subtotal cruza el umbral,
+ * el domicilio tiene que reflejarlo, no quedarse con la tarifa del día en que
+ * el cliente pidió.
+ */
+const FREE_SHIPPING_THRESHOLD = 70_000;
+const SHIPPING_COST = 5_000;
+
 interface IncomingItem {
   productId?: unknown;
   cantidad?: unknown;
@@ -477,6 +489,234 @@ export async function cancel(
       ? items.reduce((suma, item) => suma + item.cantidad, 0)
       : 0,
   });
+}
+
+/** Estados desde los que el contenido del pedido todavía se puede tocar. */
+const EDITABLE_STATES = ['verificacion', 'pendiente', 'aprobado'] as const;
+
+interface UpdateItemsBody {
+  items?: unknown;
+}
+
+/**
+ * PATCH /api/admin/orders/:id/items — cambia qué y cuánto lleva un pedido.
+ *
+ * El cuerpo manda la lista **completa** de líneas que el pedido debe tener al
+ * terminar, no un parche incremental: es lo que ya construye el formulario en
+ * el panel (cantidades con +/-, líneas quitadas, productos añadidos desde el
+ * buscador), así que aquí solo hay que compararla contra lo que hay guardado.
+ *
+ * ── Qué se toca y qué no ──
+ *
+ * - Una línea que **ya existía** y solo cambia de cantidad conserva su
+ *   `precio_unitario`/`costo_unitario`: son el precio al que de verdad se
+ *   vendió, y no deben moverse porque el catálogo haya cambiado desde
+ *   entonces — el mismo principio que protege `create()`.
+ * - Una línea **nueva** sí toma el precio y costo actuales del catálogo, tal
+ *   como se congelaría si el pedido se creara hoy.
+ * - El inventario **solo se mueve si `stock_reservado = 1`**. Un pedido
+ *   `pendiente` por teléfono no ha tocado el inventario todavía —lo hará
+ *   `approve()`—, así que editar sus cantidades aquí es un cambio de
+ *   contenido puro. Tocar `stock_actual` en ese caso reservaría inventario
+ *   que la aprobación volvería a descontar por segunda vez.
+ *
+ * Igual que `create()`, la disponibilidad se valida antes de escribir para dar
+ * un error legible, y el CHECK `stock_actual >= 0` es la garantía real ante
+ * una carrera con otra venta concurrente.
+ */
+export async function updateItems(
+  request: Request,
+  env: Env,
+  user: JwtPayload,
+  orderId: string,
+): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const body = await readJson<UpdateItemsBody>(request);
+
+  if (!Array.isArray(body.items) || body.items.length === 0) {
+    throw ApiError.badRequest(
+      'carrito-vacio',
+      'Un pedido no puede quedar sin líneas. Para eso está cancelar o eliminar.',
+    );
+  }
+  if (body.items.length > 100) {
+    throw ApiError.badRequest('carrito-grande', 'Un pedido admite máximo 100 líneas.');
+  }
+
+  const order = await env.DB.prepare(
+    `SELECT id, estado, stock_reservado, closing_id FROM orders WHERE id = ?1`,
+  )
+    .bind(orderId)
+    .first<{ id: string; estado: string; stock_reservado: number; closing_id: string | null }>();
+
+  if (!order) {
+    throw ApiError.notFound('Ese pedido no existe.');
+  }
+  if (order.closing_id !== null) {
+    throw ApiError.conflict(
+      'pedido-archivado',
+      'Este pedido ya entró en un cierre de caja: cambiar sus líneas descuadraría esa jornada.',
+    );
+  }
+  if (!EDITABLE_STATES.includes(order.estado as (typeof EDITABLE_STATES)[number])) {
+    throw ApiError.conflict(
+      'estado-invalido',
+      `Un pedido "${order.estado}" ya no admite cambios en sus productos.`,
+    );
+  }
+
+  const required = aggregate(body.items as IncomingItem[]);
+
+  const { results: currentItems } = await env.DB.prepare(
+    `SELECT product_id, producto_nombre, precio_unitario, costo_unitario, cantidad
+       FROM order_items WHERE order_id = ?1`,
+  )
+    .bind(orderId)
+    .all<{
+      product_id: string;
+      producto_nombre: string;
+      precio_unitario: number;
+      costo_unitario: number;
+      cantidad: number;
+    }>();
+
+  const existing = new Map(currentItems.map((item) => [item.product_id, item]));
+  const touchedIds = new Set<string>([...required.keys(), ...existing.keys()]);
+  const products = await loadProducts(env, [...touchedIds]);
+
+  interface Delta {
+    productId: string;
+    oldQty: number;
+    newQty: number;
+    diff: number;
+  }
+
+  const deltas: Delta[] = [];
+  const shortfalls: Shortfall[] = [];
+
+  for (const productId of touchedIds) {
+    const oldQty = existing.get(productId)?.cantidad ?? 0;
+    const newQty = required.get(productId) ?? 0;
+    const diff = newQty - oldQty;
+
+    if (diff === 0) {
+      continue;
+    }
+
+    // Un incremento neto necesita producto activo y unidades disponibles,
+    // tanto si el pedido ya reservó stock como si no: sin esto, un pedido
+    // `pendiente` se podría editar hacia algo que `approve()` rechazaría
+    // después, y el admin se enteraría tarde.
+    if (diff > 0) {
+      const product = products.get(productId);
+      if (!product) {
+        throw ApiError.badRequest(
+          'producto-invalido',
+          `El producto ${productId} no existe o ya no está a la venta.`,
+        );
+      }
+      if (product.stock_actual < diff) {
+        shortfalls.push({
+          productId,
+          productName: product.nombre,
+          requested: diff,
+          available: product.stock_actual,
+        });
+      }
+    }
+
+    deltas.push({ productId, oldQty, newQty, diff });
+  }
+
+  if (shortfalls.length > 0) {
+    throw ApiError.badRequest(
+      'stock-insuficiente',
+      'No se guardó: falta inventario para las unidades añadidas.',
+      { shortfalls },
+    );
+  }
+
+  if (deltas.length === 0) {
+    // Nada cambió de verdad — mismas líneas, mismas cantidades.
+    return json({ order: await loadOrder(env, orderId) });
+  }
+
+  // Subtotal del pedido resultante: precio histórico para lo que ya estaba,
+  // precio de catálogo para lo que se añade.
+  let subtotal = 0;
+  for (const [productId, cantidad] of required) {
+    const historico = existing.get(productId);
+    const precio = historico ? historico.precio_unitario : products.get(productId)!.precio;
+    subtotal += precio * cantidad;
+  }
+
+  const envio = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST;
+  const now = new Date().toISOString();
+
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(
+      `UPDATE orders SET subtotal = ?2, envio = ?3, total = ?4 WHERE id = ?1`,
+    ).bind(orderId, subtotal, envio, subtotal + envio),
+    env.DB.prepare(
+      `INSERT INTO order_status_log (order_id, estado, actor_id, actor_nombre)
+       VALUES (?1, 'editado', ?2, ?3)`,
+    ).bind(orderId, user.sub, user.nombre),
+  ];
+
+  for (const delta of deltas) {
+    if (delta.newQty === 0) {
+      statements.push(
+        env.DB.prepare(`DELETE FROM order_items WHERE order_id = ?1 AND product_id = ?2`).bind(
+          orderId,
+          delta.productId,
+        ),
+      );
+    } else if (delta.oldQty === 0) {
+      const product = products.get(delta.productId)!;
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO order_items
+             (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+        ).bind(
+          orderId,
+          delta.productId,
+          product.nombre,
+          product.precio,
+          product.precio_costo,
+          delta.newQty,
+        ),
+      );
+    } else {
+      statements.push(
+        env.DB.prepare(
+          `UPDATE order_items SET cantidad = ?3 WHERE order_id = ?1 AND product_id = ?2`,
+        ).bind(orderId, delta.productId, delta.newQty),
+      );
+    }
+
+    // El inventario en vivo solo existe si el pedido lo reservó. Un `diff`
+    // positivo pide más (se resta), uno negativo devuelve (se suma) — la
+    // misma resta cubre las dos direcciones.
+    if (order.stock_reservado === 1) {
+      statements.push(
+        env.DB.prepare(
+          `UPDATE products
+              SET stock_actual = stock_actual - ?2, actualizado_en = ?3
+            WHERE id = ?1`,
+        ).bind(delta.productId, delta.diff, now),
+      );
+    }
+  }
+
+  try {
+    await env.DB.batch(statements);
+  } catch (error) {
+    throw translateConstraint(error);
+  }
+
+  return json({ order: await loadOrder(env, orderId) });
 }
 
 /**
