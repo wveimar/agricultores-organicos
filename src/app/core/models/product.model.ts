@@ -8,6 +8,7 @@ export type ProductUnit =
   | 'libra'
   | 'unidad'
   | 'manojo'
+  | 'mililitro'
   | 'canasta'
   | 'bolsa'
   | 'frasco';
@@ -170,6 +171,7 @@ export const UNIT_LABELS: Readonly<Record<ProductUnit, { singular: string; plura
   libra: { singular: 'libra', plural: 'libras' },
   unidad: { singular: 'unidad', plural: 'unidades' },
   manojo: { singular: 'manojo', plural: 'manojos' },
+  mililitro: { singular: 'mililitro', plural: 'mililitros' },
   canasta: { singular: 'canasta', plural: 'canastas' },
   bolsa: { singular: 'bolsa', plural: 'bolsas' },
   frasco: { singular: 'frasco', plural: 'frascos' },

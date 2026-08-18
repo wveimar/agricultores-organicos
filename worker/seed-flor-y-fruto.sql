@@ -10,7 +10,7 @@
 --    en este comentario, que es donde no rompe nada.
 --  · El dinero es INTEGER en pesos. Nunca REAL.
 --  · `badge` solo admite: nuevo, bestseller, temporada, ultimas-unidades.
---  · `unidad` solo admite: kg, libra, unidad, manojo, canasta, bolsa, frasco.
+--  · `unidad` solo admite: kg, libra, unidad, manojo, mililitro, canasta, bolsa, frasco.
 -- ============================================================================
 
 INSERT INTO products (id, slug, nombre, tagline, categoria_id, grupo_admin, precio, precio_costo, precio_anterior, unidad, origen, rating, review_count, badge, stock_actual, stock_seguridad, imagen, imagen_hover, imagen_alt) VALUES
