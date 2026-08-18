@@ -192,6 +192,8 @@ export interface ApiConsolidationProduct {
   /** Cuánto lleva cada presentación: 500 con `unidad: 'gr'`. */
   readonly cantidadUnidad: number;
   readonly grupoAdmin: string;
+  /** Categoría fina (lácteos, mieles, verduras…), no solo el grupo macro. */
+  readonly categoriaId: string;
   readonly origen: string;
 }
 

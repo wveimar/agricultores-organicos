@@ -78,6 +78,7 @@ export type CategoryId =
   | 'verduras'
   | 'frutas'
   | 'lacteos'
+  | 'mieles'
   | 'listos'
   | 'granos'
   | 'despensa'
@@ -123,10 +124,8 @@ export type AdminGroup = 'frutas' | 'verduras' | 'agroindustriales';
 export const ADMIN_GROUP_OF: Readonly<Record<CategoryId, AdminGroup>> = {
   frutas: 'frutas',
   verduras: 'verduras',
-  // Los lácteos van a `agroindustriales` porque `grupo_admin` solo admite tres
-  // valores por CHECK en D1, y de los tres es el que les corresponde: no salen
-  // del huerto, salen de un proceso.
   lacteos: 'agroindustriales',
+  mieles: 'agroindustriales',
   listos: 'agroindustriales',
   granos: 'agroindustriales',
   despensa: 'agroindustriales',

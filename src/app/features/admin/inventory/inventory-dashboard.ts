@@ -2,14 +2,28 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
+import { CategoryFilterService } from '../../../core/services/category-filter.service';
 import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
 import {
   ADMIN_GROUP_LABELS,
+  ADMIN_GROUP_OF,
   AdminGroup,
   ProductUnit,
   unitPresentation,
 } from '../../../core/models/product.model';
+import { CATEGORIES } from '../../../core/data/mock-catalog';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
+import { CategoryFilterComponent } from '../../../shared/components/category-filter/category-filter';
+
+/**
+ * Categorías finas que caen bajo "Agroindustriales" — lácteos, mieles,
+ * listos, granos, despensa, canastas. Salen de `CATEGORIES`, la misma lista
+ * que pinta los chips de la vitrina, para no mantener las etiquetas por
+ * duplicado en dos sitios.
+ */
+const AGROINDUSTRIAL_CATEGORIES = CATEGORIES.filter(
+  (c) => c.id !== 'todos' && ADMIN_GROUP_OF[c.id] === 'agroindustriales',
+);
 
 type StockLevel = 'agotado' | 'critico' | 'ok';
 
@@ -29,12 +43,13 @@ function levelOf(product: ApiProduct): StockLevel {
 
 @Component({
   selector: 'app-inventory-dashboard',
-  imports: [ReactiveFormsModule, RouterLink, CopPipe],
+  imports: [ReactiveFormsModule, RouterLink, CopPipe, CategoryFilterComponent],
   templateUrl: './inventory-dashboard.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class InventoryDashboard {
   protected readonly adminApi = inject(AdminApiService);
+  protected readonly categoryFilter = inject(CategoryFilterService);
   private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
 
@@ -43,6 +58,24 @@ export class InventoryDashboard {
 
   protected readonly activeGroup = signal<AdminGroup | 'todos'>('todos');
   protected readonly query = signal('');
+
+  /**
+   * Desplegable de categoría fina — lácteos, mieles… — que solo tiene sentido
+   * dentro de "Agroindustriales", así que se oculta bajo cualquier otro grupo.
+   * Reutiliza `categoryFilter.adminFilterValue`: es la misma selección que
+   * lee Reportes, para no llevar dos filtros de categoría independientes en
+   * pantallas que hablan del mismo inventario.
+   */
+  protected readonly showFineFilter = computed(() => this.activeGroup() === 'agroindustriales');
+
+  protected readonly fineOptions = computed(() => [
+    { value: 'todos', label: 'Todas', count: this.categoryFilter.adminCounts()['agroindustriales'] ?? 0 },
+    ...AGROINDUSTRIAL_CATEGORIES.map((c) => ({
+      value: c.id,
+      label: c.name,
+      count: this.categoryFilter.adminCounts()[c.id] ?? 0,
+    })),
+  ]);
   /** Cuando está activo, la tabla solo muestra lo que hay que reponer. */
   protected readonly onlyAlerts = signal(false);
 
@@ -83,6 +116,10 @@ export class InventoryDashboard {
     const term = this.query().trim().toLowerCase();
     const onlyAlerts = this.onlyAlerts();
     const availability = this.availability();
+    // Solo aplica de verdad cuando el grupo activo es 'agroindustriales':
+    // fuera de ese grupo el desplegable ni se muestra, así que un valor
+    // residual ('lacteos' de una visita anterior) no debe filtrar "Frutas".
+    const fineCategory = this.showFineFilter() ? this.categoryFilter.adminFilterValue() : 'todos';
 
     return this.adminApi
       .products()
@@ -90,6 +127,9 @@ export class InventoryDashboard {
         const offered = product.activo !== 0;
 
         if (group !== 'todos' && product.grupoAdmin !== group) {
+          return false;
+        }
+        if (fineCategory !== 'todos' && product.categoriaId !== fineCategory) {
           return false;
         }
         if (availability === 'ofertados' && !offered) {
@@ -234,7 +274,12 @@ export class InventoryDashboard {
 
   protected setGroup(group: AdminGroup | 'todos'): void {
     this.activeGroup.set(group);
+    this.categoryFilter.setAdminFilterValue('todos');
     this.editingId.set(null);
+  }
+
+  protected setFineCategory(value: string): void {
+    this.categoryFilter.setAdminFilterValue(value);
   }
 
   protected onQuery(event: Event): void {

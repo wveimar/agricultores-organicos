@@ -426,6 +426,10 @@ export async function consolidation(
               COALESCE(MAX(p.unidad), 'unidad')      AS unidad,
               COALESCE(MAX(p.cantidad_unidad), 1)    AS cantidadUnidad,
               COALESCE(MAX(p.grupo_admin), 'verduras') AS grupoAdmin,
+              -- Categoría fina (lácteos, mieles, verduras...), no solo el grupo
+              -- macro: es lo que deja filtrar el consolidado por línea de
+              -- negocio real y no solo por "agroindustriales" en bloque.
+              COALESCE(MAX(p.categoria_id), '')      AS categoriaId,
               COALESCE(MAX(p.origen), '')            AS origen
          FROM order_items oi
          JOIN orders o    ON o.id = oi.order_id

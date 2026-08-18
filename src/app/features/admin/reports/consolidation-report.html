@@ -123,14 +123,31 @@
           <p class="mt-1 text-sm text-ink-soft">Cuánto preparar de cada producto, todo sumado.</p>
         </div>
 
-        <button
-          type="button"
-          class="rounded-full bg-clay px-6 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep disabled:opacity-40"
-          [disabled]="filteredProducts().length === 0"
-          (click)="copyProducerList()"
-        >
-          {{ copied() ? '✓ Copiado' : 'Copiar para WhatsApp' }}
-        </button>
+        <div class="flex flex-wrap items-center gap-3">
+          <!--
+            Misma categoría que el desplegable de Inventario, vía
+            `CategoryFilterService`: filtrar a "Mieles" aquí y en Inventario
+            es la misma pregunta —¿cuánto hay de esta línea?— hecha desde dos
+            pantallas distintas.
+          -->
+          @if (categoryOptions().length > 2) {
+            <app-category-filter
+              variant="select"
+              [options]="categoryOptions()"
+              [selectedValue]="categoryFilter.adminFilterValue()"
+              (valueChange)="setCategory($event)"
+            />
+          }
+
+          <button
+            type="button"
+            class="rounded-full bg-clay px-6 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep disabled:opacity-40"
+            [disabled]="filteredProducts().length === 0"
+            (click)="copyProducerList()"
+          >
+            {{ copied() ? '✓ Copiado' : 'Copiar para WhatsApp' }}
+          </button>
+        </div>
       </div>
 
       <!-- Filtro de productos por agricultor -->

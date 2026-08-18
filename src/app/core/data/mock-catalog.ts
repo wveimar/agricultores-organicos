@@ -44,6 +44,11 @@ export const CATEGORIES: readonly Category[] = [
     description: 'De un hato pequeño en el altiplano, ordeñado a mano.',
   },
   {
+    id: 'mieles',
+    name: 'Mieles y apicultura',
+    description: 'Miel, polen y propóleo de colmenares propios, sin pasteurizar.',
+  },
+  {
     id: 'listos',
     name: 'Listos para comer',
     description: 'Preparados cada mañana con la cosecha del día.',

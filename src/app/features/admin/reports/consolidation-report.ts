@@ -1,11 +1,19 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { AdminApiService } from '../../../core/services/admin-api.service';
+import { CategoryFilterService } from '../../../core/services/category-filter.service';
 import {
   ApiConsolidationOrder,
   ApiConsolidationProduct,
 } from '../../../core/api/api-client';
 import { ADMIN_GROUP_LABELS, ProductUnit, UNIT_LABELS } from '../../../core/models/product.model';
+import { CATEGORIES } from '../../../core/data/mock-catalog';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
+import { CategoryFilterComponent } from '../../../shared/components/category-filter/category-filter';
+
+/** Nombre legible de cada `categoria_id` fina, tomado de la misma lista que pinta la vitrina. */
+const CATEGORY_LABEL: Readonly<Record<string, string>> = Object.fromEntries(
+  CATEGORIES.filter((c) => c.id !== 'todos').map((c) => [c.id, c.name]),
+);
 
 /** Etiqueta de cada grupo, para los encabezados del consolidado. */
 const GROUP_LABEL: Readonly<Record<string, string>> = Object.fromEntries(
@@ -33,12 +41,13 @@ function todayInColombia(): string {
 
 @Component({
   selector: 'app-consolidation-report',
-  imports: [CopPipe],
+  imports: [CopPipe, CategoryFilterComponent],
   templateUrl: './consolidation-report.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ConsolidationReport {
   protected readonly adminApi = inject(AdminApiService);
+  protected readonly categoryFilter = inject(CategoryFilterService);
 
   protected readonly today = todayInColombia();
 
@@ -67,20 +76,54 @@ export class ConsolidationReport {
   protected readonly data = this.adminApi.consolidation;
 
   /**
-   * Productos visibles: todos por defecto, o solo los seleccionados si el toggle está activo.
-   * La selección se ve en las filas (fondo coloreado) pero no filtra la lista a menos que
-   * el usuario active "Ver solo seleccionados".
+   * Opciones del desplegable de categoría: solo las que de verdad tienen algo
+   * que cosechar esta ventana, con su conteo real. Ofrecer "Frutas" cuando no
+   * hay ni un producto de frutas en el consolidado sería un filtro que
+   * siempre vacía la tabla.
+   */
+  protected readonly categoryOptions = computed(() => {
+    const productos = this.data()?.productos ?? [];
+    const counts = new Map<string, number>();
+
+    for (const producto of productos) {
+      counts.set(producto.categoriaId, (counts.get(producto.categoriaId) ?? 0) + 1);
+    }
+
+    return [
+      { value: 'todos', label: 'Todas', count: productos.length },
+      ...[...counts.entries()]
+        .sort((a, b) => (CATEGORY_LABEL[a[0]] ?? a[0]).localeCompare(CATEGORY_LABEL[b[0]] ?? b[0], 'es'))
+        .map(([categoriaId, count]) => ({
+          value: categoriaId,
+          label: CATEGORY_LABEL[categoriaId] ?? categoriaId,
+          count,
+        })),
+    ];
+  });
+
+  protected setCategory(value: string): void {
+    this.categoryFilter.setAdminFilterValue(value);
+  }
+
+  /**
+   * Productos visibles: filtrados por categoría (comparte selección con
+   * Inventario, vía `CategoryFilterService`) y, encima, por lo que el
+   * administrador haya marcado para un agricultor concreto.
+   *
+   * La selección se ve en las filas (fondo coloreado) pero no reduce la
+   * lista a menos que el usuario active "Ver solo seleccionados": son dos
+   * filtros independientes que se componen, no uno que reemplaza al otro.
    */
   protected readonly filteredProducts = computed(() => {
-    const todos = this.data()?.productos ?? [];
+    const porCategoria = this.categoryFilter.consolidationFiltered();
     const selected = this.selectedProductIds();
     const filterActive = this.showOnlySelected();
 
     if (!filterActive || selected.size === 0) {
-      return todos;
+      return porCategoria;
     }
 
-    return todos.filter((p) => selected.has(p.productId));
+    return porCategoria.filter((p) => selected.has(p.productId));
   });
 
   /** Agrupa el consolidado filtrado por frutas / verduras / agroindustriales. */
@@ -220,9 +263,14 @@ export class ConsolidationReport {
     return this.selectedProductIds().has(productId);
   }
 
+  /**
+   * Selecciona lo visible bajo el filtro de categoría actual, no todo el
+   * consolidado: filtrar a "Mieles" y pulsar "Todas" debe marcar las mieles,
+   * no colar de vuelta lo que el filtro acababa de ocultar.
+   */
   protected selectAll(): void {
-    const todos = this.data()?.productos ?? [];
-    this.selectedProductIds.set(new Set(todos.map((p) => p.productId)));
+    const visibles = this.categoryFilter.consolidationFiltered();
+    this.selectedProductIds.set(new Set(visibles.map((p) => p.productId)));
   }
 
   protected clearSelection(): void {
