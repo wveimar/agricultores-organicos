@@ -56,6 +56,10 @@ export interface ApiProduct {
   readonly imagen: string;
   readonly imagenHover: string | null;
   readonly imagenAlt: string;
+  /** Producto sombrilla del que esta fila es variante. `null` = producto suelto o madre. */
+  readonly parentId?: string | null;
+  /** Solo en las madres: 'presentación', 'sabor'… */
+  readonly varianteEtiqueta?: string | null;
   /**
    * Precio ya con el descuento del nivel de mayorista de la sesión. Solo llega
    * en `/api/products` y solo si la cuenta tiene tarifa para ese producto: sin
@@ -118,6 +122,8 @@ export function toProduct(p: ApiProduct): Product {
     image: p.imagen,
     imageHover: p.imagenHover ?? undefined,
     imageAlt: p.imagenAlt,
+    parentId: p.parentId ?? undefined,
+    variantLabel: p.varianteEtiqueta ?? undefined,
   };
 }
 
@@ -445,6 +451,10 @@ export class ApiClient {
     imagen: string;
     imagenHover?: string;
     imagenAlt: string;
+    /** Id del producto sombrilla: nace ya como variante suya. */
+    parentId?: string | null;
+    /** Solo tiene efecto en las madres: 'presentación', 'sabor'… */
+    varianteEtiqueta?: string | null;
   }): Observable<ApiProduct> {
     return this.http
       .post<{ product: ApiProduct }>('/api/admin/products', input)
@@ -488,6 +498,14 @@ export class ApiClient {
     imagen: string;
     imagenHover?: string;
     imagenAlt: string;
+    /**
+     * `null` desliga la variante y la deja suelta; **omitirlo** deja el vínculo
+     * como esté. El Worker distingue los dos casos a propósito, para que un
+     * formulario que no conozca este campo no pueda soltar variantes de su
+     * madre al guardar un cambio de precio.
+     */
+    parentId?: string | null;
+    varianteEtiqueta?: string | null;
   }): Observable<ApiProduct> {
     return this.http
       .put<{ product: ApiProduct }>(`/api/admin/products/${id}`, input)

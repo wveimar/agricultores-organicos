@@ -79,6 +79,15 @@ CREATE TABLE products (
   rating          REAL    NOT NULL DEFAULT 0 CHECK (rating >= 0 AND rating <= 5),
   review_count    INTEGER NOT NULL DEFAULT 0 CHECK (review_count >= 0),
   badge           TEXT    CHECK (badge IS NULL OR badge IN ('nuevo', 'bestseller', 'temporada', 'ultimas-unidades')),
+  -- "Más vendido" de la portada. Separado de `badge` porque `badge` es
+  -- excluyente y un producto puede ser destacado *y* de temporada a la vez.
+  -- Es una decisión comercial que se toma en el panel, no un reflejo del stock.
+  --
+  -- Llegó por la migración 0008 y llevaba desde entonces sin bajar aquí, así
+  -- que `db:reset` dejaba una base sin esta columna y distinta de producción.
+  -- Tras un reset nadie sale destacado: se marcan desde Inventario, o de golpe
+  -- con `UPDATE products SET destacado = 1 WHERE badge = 'bestseller';`.
+  destacado       INTEGER NOT NULL DEFAULT 0 CHECK (destacado IN (0, 1)),
 
   -- ¡Este CHECK es el que garantiza que nunca se venda de más!
   -- Si dos aprobaciones concurrentes intentan descontar el mismo stock, la
@@ -96,6 +105,18 @@ CREATE TABLE products (
   imagen_hover    TEXT,
   imagen_alt      TEXT    NOT NULL,
   activo          INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
+
+  -- Variantes (ver migración 0012). Cada presentación de la miel y cada sabor
+  -- de la kambucha es una fila propia, porque cada una tiene su inventario
+  -- físico y el CHECK de `stock_actual` protege una fila, no un JSON.
+  -- `parent_id` apunta al producto sombrilla; NULL = producto normal o padre.
+  -- ON DELETE SET NULL, no CASCADE: borrar un padre no puede llevarse el
+  -- inventario de sus hijas, al que además apunta `order_items`.
+  parent_id       TEXT    REFERENCES products(id) ON DELETE SET NULL
+                          CHECK (parent_id IS NULL OR parent_id <> id),
+  -- Qué distingue a las hijas, escrito en el padre: 'presentación', 'sabor'.
+  variante_etiqueta TEXT,
+
   actualizado_en  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -105,6 +126,11 @@ CREATE INDEX idx_products_categoria ON products (categoria_id) WHERE activo = 1;
 CREATE INDEX idx_products_grupo     ON products (grupo_admin)  WHERE activo = 1;
 -- Alertas de reposición: se resuelve leyendo solo el índice.
 CREATE INDEX idx_products_stock     ON products (stock_actual, stock_seguridad) WHERE activo = 1;
+-- "¿Quiénes son las hijas de este id?", una vez por padre. Parcial: las filas
+-- sin madre —casi todo el catálogo— no ocupan sitio en él.
+CREATE INDEX idx_products_parent    ON products (parent_id) WHERE parent_id IS NOT NULL;
+-- La portada pide solo los destacados activos: se resuelve sin recorrer nada más.
+CREATE INDEX idx_products_destacado ON products (destacado) WHERE activo = 1 AND destacado = 1;
 
 -- ───────────────────────────── Cierres de caja ─────────────────────────────
 

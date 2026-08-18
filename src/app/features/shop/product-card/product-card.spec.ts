@@ -37,6 +37,10 @@ class CatalogStub {
   productById(): Product | undefined {
     return undefined;
   }
+  /** Sin variantes: estas pruebas miran la tarjeta de un producto suelto. */
+  getProductVariants(): readonly Product[] {
+    return [];
+  }
 }
 
 class KvStub {

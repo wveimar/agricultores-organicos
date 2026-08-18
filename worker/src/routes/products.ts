@@ -50,7 +50,8 @@ const PUBLIC_COLUMNS = `
   id, slug, nombre, tagline, categoria_id AS categoriaId, grupo_admin AS grupoAdmin,
   precio, precio_anterior AS precioAnterior, unidad, cantidad_unidad AS cantidadUnidad, origen, rating,
   review_count AS reviewCount, badge, destacado, stock_actual AS stock,
-  imagen, imagen_hover AS imagenHover, imagen_alt AS imagenAlt
+  imagen, imagen_hover AS imagenHover, imagen_alt AS imagenAlt,
+  parent_id AS parentId, variante_etiqueta AS varianteEtiqueta
 `;
 
 /** El panel además ve costo, umbral de reposición, clase ABC y disponibilidad. */
@@ -63,11 +64,94 @@ const ADMIN_COLUMNS = `
   (precio - precio_costo) AS margenUnitario
 `;
 
+/** `null`, o un id no vacío. Cualquier otra cosa es un 400. */
+function readParentId(value: unknown): string | null {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    throw ApiError.badRequest('padre-invalido', 'El producto principal debe ser un id.');
+  }
+  return value;
+}
+
+/**
+ * Cómo se llama lo que distingue a las variantes: 'presentación', 'sabor'.
+ *
+ * Texto libre y no una lista cerrada: es una palabra que solo se pinta en el
+ * modal, y cerrarla obligaría a una migración cada vez que aparezca una línea
+ * nueva (tamaño, molienda, corte…). Se recorta a 40 para que no se pueda meter
+ * un párrafo donde va una palabra.
+ */
+function readVariantLabel(value: unknown): string | null {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    throw ApiError.badRequest(
+      'variante-etiqueta-invalida',
+      'La etiqueta de variante debe ser un texto.',
+    );
+  }
+  return value.trim().slice(0, 40) || null;
+}
+
+/**
+ * Comprueba que `parentId` puede ser madre de `productId`.
+ *
+ * Tres cosas que no pueden pasar y por qué:
+ *
+ * · Que la madre no exista — la FK ya lo rechazaría, pero como un error del
+ *   motor, no como un 400 con un mensaje que se pueda leer.
+ * · Que la madre sea ella misma una variante — el catálogo solo pinta un nivel
+ *   ("madre → hijas"). Una nieta no se ve en ninguna parte: ni tiene tarjeta
+ *   propia (tiene `parent_id`) ni sale en el modal de nadie.
+ * · Que el producto tenga ya hijas propias — convertirlo en hija las dejaría
+ *   colgando de una nieta, con el mismo resultado.
+ */
+async function checkParent(env: Env, productId: string | null, parentId: string): Promise<void> {
+  if (productId && parentId === productId) {
+    throw ApiError.badRequest('variante-circular', 'Un producto no puede ser variante de sí mismo.');
+  }
+
+  const madre = await env.DB.prepare(`SELECT parent_id FROM products WHERE id = ?1`)
+    .bind(parentId)
+    .first<{ parent_id: string | null }>();
+
+  if (!madre) {
+    throw ApiError.badRequest('padre-inexistente', 'El producto principal indicado no existe.');
+  }
+  if (madre.parent_id !== null) {
+    throw ApiError.badRequest(
+      'variante-anidada',
+      'Ese producto ya es una variante de otro. Las variantes no admiten variantes.',
+    );
+  }
+
+  if (productId) {
+    const hija = await env.DB.prepare(`SELECT 1 FROM products WHERE parent_id = ?1 LIMIT 1`)
+      .bind(productId)
+      .first();
+    if (hija) {
+      throw ApiError.badRequest(
+        'padre-con-variantes',
+        'Este producto ya agrupa variantes propias, así que no puede ser a su vez variante de otro.',
+      );
+    }
+  }
+}
+
 /**
  * GET /api/products — catálogo público.
  *
  * Una sola consulta indexada, sin JOIN ni N+1. Filtros opcionales por
  * categoría y grupo.
+ *
+ * Las variantes viajan aquí mismo, como filas normales con `parentId` puesto.
+ * No hay un endpoint aparte para pedir las hijas de un producto: eso sería una
+ * petición por tarjeta abierta, y el catálogo entero cabe de sobra en la
+ * respuesta que ya se estaba haciendo. Quien las esconde de la rejilla es la
+ * tienda (`CatalogService.visible`), que las guarda para el modal.
  */
 export async function listPublic(request: Request, env: Env, url: URL): Promise<Response> {
   const categoria = url.searchParams.get('categoria');
@@ -148,6 +232,11 @@ export async function listAdmin(env: Env, user: JwtPayload): Promise<Response> {
 /**
  * GET /api/admin/products/alerts — lo que hay que reponer.
  * Se resuelve contra idx_products_stock sin escanear la tabla.
+ *
+ * Las madres de variantes quedan fuera. Su `stock_actual` es 0 por definición
+ * —el inventario está en las hijas— así que cumplirían la condición para
+ * siempre y se instalarían en lo alto de la lista de reposición, empujando
+ * hacia abajo lo que de verdad se está acabando.
  */
 export async function listAlerts(env: Env, user: JwtPayload): Promise<Response> {
   requireRole(user, 'ADMIN_INVENTARIO');
@@ -155,6 +244,7 @@ export async function listAlerts(env: Env, user: JwtPayload): Promise<Response> 
   const { results } = await env.DB.prepare(
     `SELECT ${ADMIN_COLUMNS} FROM products
       WHERE activo = 1 AND stock_actual <= stock_seguridad
+        AND NOT EXISTS (SELECT 1 FROM products h WHERE h.parent_id = products.id)
       ORDER BY stock_actual ASC`,
   ).all();
 
@@ -357,6 +447,10 @@ interface UpdateFullBody {
   imagen?: unknown;
   imagenHover?: unknown;
   imagenAlt?: unknown;
+  /** Id del producto sombrilla, o `null` para desligarlo y dejarlo suelto. */
+  parentId?: unknown;
+  /** Solo en las madres: 'presentación', 'sabor'… */
+  varianteEtiqueta?: unknown;
 }
 
 /**
@@ -421,6 +515,35 @@ export async function updateFull(
   checkImageSource(imagen, 'imagen');
   checkImageSource(imagenHover, 'imagen hover');
 
+  /**
+   * El vínculo de variante solo se toca si viene en el cuerpo.
+   *
+   * Este endpoint es un PUT y reemplaza el resto de campos sin preguntar, pero
+   * aquí eso sería una trampa: el formulario del panel todavía no manda estos
+   * dos campos, así que cualquier edición de precio o de foto desde Inventario
+   * desligaría las variantes de su madre sin que nadie lo pidiera ni lo viera.
+   * Ausente significa "no lo cambies"; `null` explícito sí desliga.
+   */
+  const tocaParent = 'parentId' in body;
+  const tocaEtiqueta = 'varianteEtiqueta' in body;
+
+  const parentId = tocaParent ? readParentId(body.parentId) : null;
+  if (parentId) {
+    await checkParent(env, productId, parentId);
+  }
+  const varianteEtiqueta = tocaEtiqueta ? readVariantLabel(body.varianteEtiqueta) : null;
+
+  const extras: string[] = [];
+  const extraValores: unknown[] = [];
+  if (tocaParent) {
+    extraValores.push(parentId);
+    extras.push(`parent_id = ?${13 + extraValores.length}`);
+  }
+  if (tocaEtiqueta) {
+    extraValores.push(varianteEtiqueta);
+    extras.push(`variante_etiqueta = ?${13 + extraValores.length}`);
+  }
+
   const updateSlug = slug ? slug : nombre
     .toLowerCase()
     .trim()
@@ -434,10 +557,10 @@ export async function updateFull(
         slug = ?1, nombre = ?2, tagline = ?3, categoria_id = ?4, grupo_admin = ?5,
         precio = ?6, precio_costo = ?7, unidad = ?8, cantidad_unidad = ?9, origen = ?10,
         imagen = ?11, imagen_hover = ?12, imagen_alt = ?13,
-        actualizado_en = datetime('now')
-       WHERE id = ?14`,
+        ${extras.map((set) => `${set}, `).join('')}actualizado_en = datetime('now')
+       WHERE id = ?${14 + extraValores.length}`,
     )
-      .bind(updateSlug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt, productId)
+      .bind(updateSlug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt, ...extraValores, productId)
       .run();
   } catch (error) {
     if ((error as Error).message.includes('UNIQUE constraint failed: products.slug')) {
@@ -471,6 +594,10 @@ interface CreateBody {
   imagen?: unknown;
   imagenHover?: unknown;
   imagenAlt?: unknown;
+  /** Id del producto sombrilla: nace ya como variante suya. */
+  parentId?: unknown;
+  /** Solo en las madres: 'presentación', 'sabor'… */
+  varianteEtiqueta?: unknown;
 }
 
 /**
@@ -532,6 +659,14 @@ export async function create(
   checkImageSource(imagen, 'imagen');
   checkImageSource(imagenHover, 'imagen hover');
 
+  // `productId` va a null: el producto todavía no existe, así que no hay
+  // circularidad ni hijas propias que comprobar, solo que la madre valga.
+  const parentId = readParentId(body.parentId);
+  if (parentId) {
+    await checkParent(env, null, parentId);
+  }
+  const varianteEtiqueta = readVariantLabel(body.varianteEtiqueta);
+
   if (!slug) {
     slug = nombre
       .toLowerCase()
@@ -548,10 +683,10 @@ export async function create(
       `INSERT INTO products (
         id, slug, nombre, tagline, categoria_id, grupo_admin,
         precio, precio_costo, unidad, cantidad_unidad, origen,
-        imagen, imagen_hover, imagen_alt
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`,
+        imagen, imagen_hover, imagen_alt, parent_id, variante_etiqueta
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)`,
     )
-      .bind(id, slug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt)
+      .bind(id, slug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt, parentId, varianteEtiqueta)
       .run();
   } catch (error) {
     if ((error as Error).message.includes('UNIQUE constraint failed: products.slug')) {

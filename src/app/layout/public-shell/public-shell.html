@@ -13,5 +13,11 @@
 
 <app-footer />
 
-<!-- Vive fuera de <main> porque es una capa flotante sobre toda la tienda -->
+<!-- Viven fuera de <main> porque son capas flotantes sobre toda la tienda -->
 <app-cart-drawer />
+<!--
+  Una sola instancia para toda la vitrina, no una por tarjeta: dentro de un
+  <article> con transformaciones, un `position: fixed` deja de medirse contra
+  la ventana. Ver `VariantPicker`.
+-->
+<app-product-variants-modal />

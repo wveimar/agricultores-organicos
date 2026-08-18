@@ -179,6 +179,87 @@
         }
       </div>
 
+      <!--
+        Variantes. Se llega aquí con la madre ya elegida desde «Añadir
+        variante» del inventario, o se elige a mano en el desplegable.
+      -->
+      <div class="space-y-5 rounded-md border border-sand/50 bg-linen/30 p-5">
+        <div>
+          <p class="text-sm font-semibold text-ink">Variantes</p>
+          <p class="mt-1 text-sm text-ink-soft">
+            Para lo que se vende en varios tamaños o sabores y cada uno tiene su
+            propio inventario.
+          </p>
+        </div>
+
+        <div>
+          <label for="parent" class="block text-sm font-semibold text-ink">
+            Producto principal
+          </label>
+          <select
+            id="parent"
+            formControlName="parentId"
+            (change)="onParentChange($event)"
+            class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+          >
+            <option value="">Ninguno · se vende por sí solo</option>
+            @for (madre of madresPosibles(); track madre.id) {
+              <option [value]="madre.id">{{ madre.nombre }}</option>
+            }
+          </select>
+        </div>
+
+        @if (madreActual(); as madre) {
+          <div class="rounded-md border border-sage/40 bg-sage-light/40 px-4 py-3.5">
+            <p class="text-sm text-ink-soft">
+              Este producto no tendrá tarjeta propia en la tienda: aparecerá al
+              elegir dentro de <strong class="text-ink">{{ madre.nombre }}</strong>.
+              Rellenamos categoría, origen y fotos con las suyas — cambia el
+              <strong class="text-ink">nombre</strong>, el
+              <strong class="text-ink">precio</strong> y la
+              <strong class="text-ink">cantidad</strong>, que es lo que distingue
+              a una variante de otra.
+            </p>
+
+            @if (hermanas().length > 0) {
+              <p class="mt-3 text-sm font-semibold text-moss-deep">
+                Ya existen {{ hermanas().length }}:
+              </p>
+              <ul class="mt-1 flex flex-col gap-1">
+                @for (hermana of hermanas(); track hermana.id) {
+                  <li class="flex items-baseline justify-between gap-3 text-sm text-ink-soft">
+                    <span class="truncate">{{ hermana.nombre }}</span>
+                    <span class="tabular shrink-0 text-xs text-ink-muted">
+                      {{ hermana.precio | cop }}
+                    </span>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        } @else {
+          <div>
+            <label for="variante-etiqueta" class="block text-sm font-semibold text-ink">
+              Etiqueta de variante <span class="font-normal text-ink-muted">(opcional)</span>
+            </label>
+            <input
+              id="variante-etiqueta"
+              type="text"
+              formControlName="varianteEtiqueta"
+              class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+              placeholder="presentación, sabor, tamaño…"
+            />
+            <p class="mt-2 text-sm text-ink-soft">
+              Solo hace falta si esta ficha va a agrupar variantes. El cliente
+              leerá
+              <strong class="text-ink">
+                «Elige tu {{ form.controls.varianteEtiqueta.value || 'opción' }}»
+              </strong>.
+            </p>
+          </div>
+        }
+      </div>
+
       <!-- Imágenes -->
       <div class="space-y-5 rounded-md border border-sand/50 bg-linen/30 p-5">
         <p class="text-sm font-semibold text-ink">Imágenes</p>

@@ -79,6 +79,89 @@ export interface Product {
   readonly imageHover?: string;
   /** Texto alternativo real y descriptivo, nunca vacío (doc/plan.md §7). */
   readonly imageAlt: string;
+  /**
+   * Id del producto sombrilla cuando este es una variante — la Miel de 500 gr
+   * apunta a la ficha "Miel de Abejas". `undefined` en todo lo demás.
+   *
+   * La vitrina no pinta tarjeta para las variantes: aparecen dentro del modal
+   * de su madre. El carrito y el pedido, en cambio, solo ven variantes, porque
+   * el inventario y el precio viven en ellas.
+   */
+  readonly parentId?: string;
+  /**
+   * Solo en las madres: cómo se llama lo que distingue a sus variantes
+   * —«presentación» para la miel, «sabor» para la kambucha—. Es un dato y no
+   * una deducción: mirar si los precios coinciden acierta en estos dos casos y
+   * falla en cuanto haya dos tamaños al mismo precio.
+   */
+  readonly variantLabel?: string;
+}
+
+/**
+ * Plural de la palabra que nombra la variante: «3 presentaciones», «3 sabores».
+ *
+ * `variantLabel` es texto libre que se escribe en el panel, así que la copia
+ * no puede llevar el plural escrito a mano. Las tres reglas del castellano
+ * bastan para lo que cabe ahí —una palabra corriente en singular— y ante
+ * cualquier duda devuelve algo legible, nunca un «sabors».
+ */
+export function pluralizeVariantLabel(label: string, count: number): string {
+  if (count === 1) {
+    return label;
+  }
+  // «presentación» → «presentaciones»: el plural se lleva la tilde por delante.
+  if (/ón$/i.test(label)) {
+    return `${label.slice(0, -2)}ones`;
+  }
+  if (/s$/i.test(label)) {
+    return label;
+  }
+  return /[aeiouáéíóú]$/i.test(label) ? `${label}s` : `${label}es`;
+}
+
+/** Lo que la tarjeta de una madre necesita saber de sus variantes. */
+export interface VariantSummary {
+  readonly count: number;
+  /** Unidades sumadas de todas las variantes: si es 0, la madre está agotada. */
+  readonly stock: number;
+  /** El más barato y el más caro **entre los que quedan**. */
+  readonly fromPrice: number;
+  readonly toPrice: number;
+  /**
+   * `true` cuando todas valen igual (los sabores). Entonces la ficha muestra
+   * un precio a secas y no un «Desde», que sobre tres botellas al mismo precio
+   * solo confunde.
+   */
+  readonly samePrice: boolean;
+}
+
+/**
+ * Resume las variantes de un producto, o `null` si no tiene.
+ *
+ * El rango se calcula sobre lo que **queda en bodega**: con el tarro de 300 gr
+ * agotado, anunciar «Desde $16.000» manda al cliente a un precio que no puede
+ * pagar. Si no queda ninguna, se usan todas para no dejar la ficha sin cifra
+ * mientras el velo de "Agotado" la cubre.
+ */
+export function summarizeVariants(variants: readonly Product[]): VariantSummary | null {
+  if (variants.length === 0) {
+    return null;
+  }
+
+  const stock = variants.reduce((total, variant) => total + variant.stock, 0);
+  const disponibles = variants.filter(isInStock);
+  const precios = (disponibles.length > 0 ? disponibles : variants).map((v) => v.price);
+
+  const fromPrice = Math.min(...precios);
+  const toPrice = Math.max(...precios);
+
+  return {
+    count: variants.length,
+    stock,
+    fromPrice,
+    toPrice,
+    samePrice: fromPrice === toPrice,
+  };
 }
 
 /**

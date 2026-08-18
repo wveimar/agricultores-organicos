@@ -37,6 +37,8 @@ interface StockRow {
   precio: number;
   precio_costo: number;
   stock_actual: number;
+  /** 1 si el producto agrupa variantes: entonces él no se vende, sus hijas sí. */
+  tiene_variantes: number;
 }
 
 /** Faltante concreto, para que el cliente sepa qué ajustar. */
@@ -71,14 +73,37 @@ function aggregate(items: readonly IncomingItem[]): Map<string, number> {
 async function loadProducts(env: Env, ids: readonly string[]): Promise<Map<string, StockRow>> {
   const placeholders = ids.map((_, index) => `?${index + 1}`).join(', ');
   const { results } = await env.DB.prepare(
-    `SELECT id, nombre, precio, precio_costo, stock_actual
-       FROM products
-      WHERE activo = 1 AND id IN (${placeholders})`,
+    `SELECT p.id, p.nombre, p.precio, p.precio_costo, p.stock_actual,
+            EXISTS (SELECT 1 FROM products h WHERE h.parent_id = p.id) AS tiene_variantes
+       FROM products p
+      WHERE p.activo = 1 AND p.id IN (${placeholders})`,
   )
     .bind(...ids)
     .all<StockRow>();
 
   return new Map(results.map((row) => [row.id, row]));
+}
+
+/**
+ * Un producto que agrupa variantes no se vende él mismo.
+ *
+ * Su fila existe para tener foto, nombre y categoría —es la portada de la
+ * miel, no un tarro— y su `stock_actual` es 0 justamente por eso. Sin este
+ * corte, pedir la madre reventaría más abajo contra el CHECK de stock, y el
+ * cliente leería "no hay unidades suficientes" cuando lo que pasa es que hay
+ * que elegir de cuál. La tienda ya no lo ofrece; esto es para quien llame a la
+ * API a mano.
+ */
+function rejectParents(ids: Iterable<string>, products: Map<string, StockRow>): void {
+  for (const productId of ids) {
+    const product = products.get(productId);
+    if (product?.tiene_variantes) {
+      throw ApiError.badRequest(
+        'producto-con-variantes',
+        `"${product.nombre}" se vende por variantes. Elige una de sus presentaciones.`,
+      );
+    }
+  }
 }
 
 /**
@@ -128,6 +153,8 @@ export async function create(request: Request, env: Env): Promise<Response> {
 
   const required = aggregate(body.items as IncomingItem[]);
   const products = await loadProducts(env, [...required.keys()]);
+
+  rejectParents(required.keys(), products);
 
   // Validación amable: se responde con los faltantes exactos antes de intentar
   // escribir. El CHECK de la base sigue siendo la garantía real ante carreras.
@@ -677,6 +704,11 @@ export async function updateItems(
           `El producto ${productId} no existe o ya no está a la venta.`,
         );
       }
+      // Solo se mira al **subir** una línea. Si un producto que ya se había
+      // vendido pasó después a agrupar variantes, su línea vieja se puede
+      // conservar o reducir: bloquearla entera dejaría el pedido inmodificable
+      // por un cambio de catálogo posterior a la compra.
+      rejectParents([productId], products);
       if (product.stock_actual < diff) {
         shortfalls.push({
           productId,

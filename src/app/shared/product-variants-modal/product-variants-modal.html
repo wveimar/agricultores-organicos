@@ -1,0 +1,170 @@
+<!--
+  Selector de variantes. Hoja inferior en móvil (el pulgar llega al botón sin
+  estirarse) y tarjeta centrada a partir de sm. Cierra con el fondo, con la ×
+  o con Escape, y devuelve el foco a la tarjeta que lo abrió.
+-->
+@if (picker.parent(); as parent) {
+  <!-- Fondo -->
+  <div
+    class="animate-fade-in fixed inset-0 z-70 bg-moss-deep/45 backdrop-blur-sm"
+    (click)="picker.close()"
+    aria-hidden="true"
+  ></div>
+
+  <!--
+    Contenedor sin eventos: así los clics fuera de la hoja atraviesan hasta el
+    fondo y lo cierran, sin necesidad de frenar la propagación en cada hijo.
+  -->
+  <div class="pointer-events-none fixed inset-0 z-70 flex items-end justify-center sm:items-center sm:p-6">
+    <section
+      class="animate-rise-in pointer-events-auto flex max-h-[88vh] w-full flex-col rounded-t-2xl bg-bone shadow-2xl sm:max-h-[80vh] sm:max-w-lg sm:rounded-2xl"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="titulo-variantes"
+      aria-describedby="ayuda-variantes"
+    >
+      <!-- Asa de la hoja: solo en móvil, donde se arrastra con el pulgar -->
+      <div class="flex justify-center pt-3 sm:hidden" aria-hidden="true">
+        <span class="h-1 w-10 rounded-full bg-stone"></span>
+      </div>
+
+      <!-- Cabecera -->
+      <header class="flex items-start gap-4 border-b border-sand px-5 py-4 sm:px-6 sm:py-5">
+        <img
+          [src]="parent.image"
+          alt=""
+          aria-hidden="true"
+          class="size-14 shrink-0 rounded-lg object-cover sm:size-16"
+        />
+
+        <div class="min-w-0 flex-1">
+          <h2 id="titulo-variantes" class="text-h3 truncate text-ink">{{ parent.name }}</h2>
+          <!--
+            «tu» y no «la/el»: `what()` viene de la base de datos y puede ser
+            femenino («presentación») o masculino («sabor»). Un artículo fijo
+            acertaría en un caso y chirriaría en el otro.
+          -->
+          <p id="ayuda-variantes" class="mt-1 text-sm text-ink-soft">
+            Elige tu {{ what() }} antes de añadir a la canasta.
+          </p>
+        </div>
+
+        <button
+          #closeButton
+          type="button"
+          class="flex size-10 shrink-0 items-center justify-center rounded-full text-ink-soft transition-colors duration-200 hover:bg-linen hover:text-ink"
+          aria-label="Cerrar"
+          (click)="picker.close()"
+        >
+          <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" />
+          </svg>
+        </button>
+      </header>
+
+      <!-- Opciones -->
+      <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
+        @if (soldOut()) {
+          <p class="mb-3 rounded-lg border border-dashed border-sand px-4 py-6 text-center text-sm text-ink-soft">
+            Esta semana no quedó nada disponible de {{ parent.name }}. Vuelve el
+            lunes: el catálogo cambia con lo que esté en su punto.
+          </p>
+        }
+
+        <fieldset class="flex flex-col gap-2.5">
+          <legend class="sr-only">Elige tu {{ what() }} de {{ parent.name }}</legend>
+
+          @for (choice of choices(); track choice.product.id) {
+            <label
+              class="group flex cursor-pointer items-center gap-3.5 rounded-xl border border-sand bg-bone px-4 py-3.5 transition-colors duration-200 hover:border-sage has-[:checked]:border-moss has-[:checked]:bg-sage-light/45 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-clay has-[:disabled]:cursor-not-allowed has-[:disabled]:border-sand has-[:disabled]:bg-linen/60 has-[:disabled]:opacity-70"
+            >
+              <input
+                type="radio"
+                name="variante"
+                class="peer sr-only"
+                [value]="choice.product.id"
+                [checked]="selectedId() === choice.product.id"
+                [disabled]="!choice.available"
+                (change)="select(choice.product.id)"
+              />
+
+              <!--
+                Punto del radio, dibujado a mano para que siga la paleta. El
+                de dentro va con `group-has-[:checked]:` y no con
+                `peer-checked:`: `peer` solo alcanza a los hermanos del input,
+                y este está un nivel más abajo.
+              -->
+              <span
+                class="flex size-5 shrink-0 items-center justify-center rounded-full border border-stone transition-colors duration-200 peer-checked:border-moss peer-checked:bg-moss"
+                aria-hidden="true"
+              >
+                <span class="size-1.5 rounded-full bg-bone opacity-0 transition-opacity duration-200 group-has-[:checked]:opacity-100"></span>
+              </span>
+
+              <span class="min-w-0 flex-1">
+                <span class="block truncate font-semibold text-ink">{{ choice.label }}</span>
+
+                <span class="mt-0.5 block text-sm text-ink-muted">
+                  @if (choice.detail) {
+                    {{ choice.detail }}
+                  }
+                  @if (!choice.available) {
+                    <span class="font-semibold text-berry">Agotado</span>
+                  } @else if (choice.atLimit) {
+                    <span class="text-clay-deep">
+                      {{ choice.detail ? '·' : '' }} Ya llevas las {{ choice.inCart }} que quedan
+                    </span>
+                  } @else if (choice.inCart > 0) {
+                    <span class="text-moss">
+                      {{ choice.detail ? '·' : '' }} {{ choice.inCart }} en la canasta
+                    </span>
+                  } @else if (choice.lowStock) {
+                    <span class="text-clay-deep">
+                      {{ choice.detail ? '·' : '' }} Quedan {{ choice.product.stock }}
+                    </span>
+                  }
+                </span>
+              </span>
+
+              <span class="shrink-0 text-right">
+                <span
+                  class="tabular block font-semibold"
+                  [class]="choice.product.listPrice ? 'text-moss' : 'text-ink'"
+                >
+                  {{ choice.product.price | cop }}
+                </span>
+
+                @if (choice.product.listPrice; as lista) {
+                  <span class="tabular block text-xs text-ink-muted line-through">
+                    {{ lista | cop }}
+                  </span>
+                }
+              </span>
+            </label>
+          }
+        </fieldset>
+      </div>
+
+      <!-- Pie: lo que se va a añadir, y el botón que lo hace -->
+      <footer class="flex items-center gap-4 border-t border-sand px-5 py-4 sm:px-6">
+        <div class="min-w-0 flex-1">
+          @if (selected(); as choice) {
+            <p class="truncate text-sm text-ink-soft">{{ choice.label }}</p>
+            <p class="tabular text-lg font-semibold text-ink">{{ choice.product.price | cop }}</p>
+          } @else {
+            <p class="text-sm text-ink-muted">Elige tu {{ what() }}</p>
+          }
+        </div>
+
+        <button
+          type="button"
+          class="shrink-0 rounded-full bg-moss px-6 py-3.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:bg-stone disabled:text-bone/80"
+          [disabled]="!canAdd()"
+          (click)="confirm()"
+        >
+          Añadir a la canasta
+        </button>
+      </footer>
+    </section>
+  </div>
+}

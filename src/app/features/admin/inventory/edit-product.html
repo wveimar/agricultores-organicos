@@ -218,6 +218,123 @@
           }
         </div>
 
+        <!--
+          Variantes. Un producto puede venderse solo, agrupar presentaciones o
+          sabores, o ser una de ellas. Lo tres estados salen de un único campo:
+          `parentId` vacío o con el id de la ficha que lo agrupa.
+        -->
+        <div class="space-y-5 rounded-md border border-sand/50 bg-linen/30 p-5">
+          <div>
+            <p class="text-sm font-semibold text-ink">Variantes</p>
+            <p class="mt-1 text-sm text-ink-soft">
+              Para lo que se vende en varios tamaños o sabores y cada uno tiene
+              su propio inventario.
+            </p>
+          </div>
+
+          @if (esMadre()) {
+            <!--
+              Ya agrupa variantes: no se le puede colgar de nadie, porque sus
+              hijas quedarían a dos niveles y el catálogo solo pinta uno.
+            -->
+            <div class="rounded-md border border-sage/40 bg-sage-light/40 px-4 py-3.5">
+              <p class="text-sm font-semibold text-moss-deep">
+                Esta ficha agrupa {{ variantes().length }} variantes
+              </p>
+              <ul class="mt-2 flex flex-col gap-1">
+                @for (variante of variantes(); track variante.id) {
+                  <li class="flex items-baseline justify-between gap-3 text-sm text-ink-soft">
+                    <a
+                      [routerLink]="['/admin/inventario/editar', variante.id]"
+                      class="truncate underline decoration-sage underline-offset-2 hover:text-ink"
+                    >
+                      {{ variante.nombre }}
+                    </a>
+                    <span class="tabular shrink-0 text-xs text-ink-muted">
+                      {{ variante.precio | cop }} · {{ variante.stock }} en bodega
+                    </span>
+                  </li>
+                }
+              </ul>
+              <p class="mt-3 text-sm text-ink-soft">
+                El inventario de esta ficha lo llevan sus variantes
+                ({{ stockDeVariantes() }} unidades en total). La tienda no la
+                vende directamente: al pulsar «Elegir» abre la lista de arriba.
+              </p>
+            </div>
+
+            <div>
+              <label for="variante-etiqueta" class="block text-sm font-semibold text-ink">
+                ¿Qué distingue a estas variantes?
+              </label>
+              <input
+                id="variante-etiqueta"
+                type="text"
+                formControlName="varianteEtiqueta"
+                class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+                placeholder="presentación, sabor, tamaño…"
+              />
+              <p class="mt-2 text-sm text-ink-soft">
+                Una sola palabra, en singular. El cliente leerá
+                <strong class="text-ink">
+                  «Elige tu {{ form.controls.varianteEtiqueta.value || 'opción' }}»
+                </strong>.
+              </p>
+            </div>
+          } @else {
+            <div>
+              <label for="parent" class="block text-sm font-semibold text-ink">
+                Producto principal
+              </label>
+              <select
+                id="parent"
+                formControlName="parentId"
+                (change)="onParentChange($event)"
+                class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+              >
+                <option value="">Ninguno · se vende por sí solo</option>
+                @for (madre of madresPosibles(); track madre.id) {
+                  <option [value]="madre.id">{{ madre.nombre }}</option>
+                }
+              </select>
+
+              @if (madreActual(); as madre) {
+                <p class="mt-2 text-sm text-ink-soft">
+                  Este producto deja de tener tarjeta propia en la tienda:
+                  aparecerá dentro de
+                  <strong class="text-ink">{{ madre.nombre }}</strong>, y su
+                  stock y su precio se cobran por separado.
+                </p>
+              } @else {
+                <p class="mt-2 text-sm text-ink-soft">
+                  Déjalo así si se vende solo. Para agruparlo con otros tamaños
+                  o sabores, elige aquí la ficha que los reúne — o crea las
+                  variantes desde ella con «Añadir variante».
+                </p>
+              }
+            </div>
+
+            @if (!parentSeleccionado()) {
+              <div>
+                <label for="variante-etiqueta" class="block text-sm font-semibold text-ink">
+                  Etiqueta de variante <span class="font-normal text-ink-muted">(opcional)</span>
+                </label>
+                <input
+                  id="variante-etiqueta"
+                  type="text"
+                  formControlName="varianteEtiqueta"
+                  class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+                  placeholder="presentación, sabor, tamaño…"
+                />
+                <p class="mt-2 text-sm text-ink-soft">
+                  Solo hace falta cuando esta ficha vaya a agrupar variantes.
+                  Es la palabra que verá el cliente al elegir.
+                </p>
+              </div>
+            }
+          }
+        </div>
+
         <!-- Imágenes -->
         <div class="space-y-5 rounded-md border border-sand/50 bg-linen/30 p-5">
           <p class="text-sm font-semibold text-ink">Imágenes</p>

@@ -9,6 +9,7 @@ import {
   ADMIN_GROUP_OF,
   AdminGroup,
   ProductUnit,
+  pluralizeVariantLabel,
   unitPresentation,
 } from '../../../core/models/product.model';
 import { CATEGORIES } from '../../../core/data/mock-catalog';
@@ -193,6 +194,38 @@ export class InventoryDashboard {
 
   protected levelOf(product: ApiProduct): StockLevel {
     return levelOf(product);
+  }
+
+  // ─────────────────────────────── Variantes ───────────────────────────────
+
+  protected variantsOf(product: ApiProduct): readonly ApiProduct[] {
+    return this.adminApi.variantsOf(product.id);
+  }
+
+  protected isParent(product: ApiProduct): boolean {
+    return this.adminApi.isParent(product.id);
+  }
+
+  /** La ficha que agrupa a esta variante, para nombrarla en su fila. */
+  protected parentOf(product: ApiProduct): ApiProduct | undefined {
+    return product.parentId ? this.adminApi.productById(product.parentId) : undefined;
+  }
+
+  /**
+   * Lo que de verdad hay de una ficha madre: la suma de sus variantes.
+   *
+   * Su `stock_actual` es 0 porque no se vende directamente, y enseñar ese cero
+   * en la tabla haría pensar que se agotó algo que está lleno en bodega.
+   */
+  protected variantStock(product: ApiProduct): number {
+    return this.variantsOf(product).reduce((total, variante) => total + variante.stock, 0);
+  }
+
+  /** «3 presentaciones», «3 sabores», «3 variantes» si nadie puso la palabra. */
+  protected variantSummary(product: ApiProduct): string {
+    const count = this.variantsOf(product).length;
+    const word = product.varianteEtiqueta || 'variante';
+    return `${count} ${pluralizeVariantLabel(word, count)}`;
   }
 
   protected marginOf(product: ApiProduct): number {

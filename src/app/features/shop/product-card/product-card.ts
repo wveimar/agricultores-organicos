@@ -1,9 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { CartService } from '../../../core/services/cart.service';
+import { CatalogService } from '../../../core/services/catalog.service';
+import { VariantPicker } from '../../../core/services/variant-picker.service';
 import {
   BADGE_LABELS,
   Product,
   isInStock,
+  pluralizeVariantLabel,
+  summarizeVariants,
   unitPresentation,
 } from '../../../core/models/product.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
@@ -34,6 +38,29 @@ export class ProductCard {
   readonly index = input<number>(99);
 
   private readonly cart = inject(CartService);
+  private readonly catalog = inject(CatalogService);
+  private readonly picker = inject(VariantPicker);
+
+  /**
+   * Resumen de las variantes, o `null` si este producto se vende solo.
+   *
+   * Cuando existe, manda sobre casi toda la ficha: el stock de la tarjeta es
+   * la suma del de sus variantes (la fila madre tiene 0, porque no hay ningún
+   * tarro que se llame "Miel de Abejas" a secas) y el precio es el de la más
+   * barata que quede.
+   */
+  protected readonly variants = computed(() =>
+    summarizeVariants(this.catalog.getProductVariants(this.product().id)),
+  );
+
+  /** «presentación», «sabor»… o «opción» si la madre no lo dice. */
+  protected readonly variantWord = computed(() => this.product().variantLabel ?? 'opción');
+
+  /** «3 presentaciones», «3 sabores». */
+  protected readonly variantCountLabel = computed(() => {
+    const count = this.variants()?.count ?? 0;
+    return `${count} ${pluralizeVariantLabel(this.variantWord(), count)}`;
+  });
 
   /** "500 gr", "5 unidades", o solo "kg" cuando la cantidad es 1. */
   protected readonly unitLabel = computed(() =>
@@ -51,7 +78,47 @@ export class ProductCard {
   protected readonly isPriority = computed(() => this.index() < 4);
 
   /** Disponibilidad derivada del inventario, no de un booleano guardado aparte. */
-  protected readonly available = computed(() => isInStock(this.product()));
+  protected readonly available = computed(() => {
+    const grupo = this.variants();
+    return grupo ? grupo.stock > 0 : isInStock(this.product());
+  });
+
+  /** Lo que se cobra: el propio, o el de la variante más barata disponible. */
+  protected readonly price = computed(
+    () => this.variants()?.fromPrice ?? this.product().price,
+  );
+
+  /**
+   * `true` cuando las variantes no cuestan lo mismo y hay que decir «Desde».
+   * Con los tres sabores de kambucha a un mismo precio se calla, porque ahí un
+   * "desde" sugeriría que alguno cuesta más.
+   */
+  protected readonly priceFrom = computed(() => {
+    const grupo = this.variants();
+    return grupo !== null && !grupo.samePrice;
+  });
+
+  /**
+   * Si lo que se muestra lleva tarifa de mayorista.
+   *
+   * En una ficha con variantes la pregunta no es por la fila madre —que no se
+   * vende y podría tener su propio descuento configurado por descuido— sino
+   * por las hijas, que son las que se cobran. `price()` ya viene descontado
+   * porque el servidor aplica la tarifa fila a fila.
+   */
+  protected readonly wholesale = computed(() => {
+    const hijas = this.catalog.getProductVariants(this.product().id);
+    return hijas.length > 0
+      ? hijas.some((variant) => variant.listPrice !== undefined)
+      : this.product().listPrice !== undefined;
+  });
+
+  /** Unidades ya en la canasta sumando todas las variantes de esta ficha. */
+  private readonly inCartVariants = computed(() =>
+    this.catalog
+      .getProductVariants(this.product().id)
+      .reduce((total, variant) => total + this.cart.quantityOf(variant.id), 0),
+  );
 
   protected readonly discountPercent = computed(() => {
     const { price, compareAtPrice } = this.product();
@@ -62,9 +129,34 @@ export class ProductCard {
   });
 
   /** Unidades ya añadidas, para mostrarlo en el botón. */
-  protected readonly inCart = computed(() => this.cart.quantityOf(this.product().id));
+  protected readonly inCart = computed(() =>
+    this.variants() ? this.inCartVariants() : this.cart.quantityOf(this.product().id),
+  );
 
+  /** Texto del botón. Con variantes no se añade nada: se abre la elección. */
+  protected readonly actionLabel = computed(() => {
+    const grupo = this.variants();
+
+    if (grupo) {
+      return this.inCart() > 0
+        ? `Elegir otra · ${this.inCart()} en la canasta`
+        : `Elegir entre ${grupo.count}`;
+    }
+
+    return this.inCart() > 0 ? `Añadir otro · ${this.inCart()} en el carrito` : 'Añadir';
+  });
+
+  /**
+   * Un producto con variantes no se puede añadir de un clic: no se sabría cuál
+   * de los tres tarros descontar. El botón abre el modal, y el que añade de
+   * verdad es él, con el id de la variante concreta. El Worker rechaza la
+   * madre por si alguien llama a la API sin pasar por aquí.
+   */
   protected add(): void {
+    if (this.variants()) {
+      this.picker.open(this.product());
+      return;
+    }
     this.cart.add(this.product());
   }
 }

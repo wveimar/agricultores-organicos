@@ -1,9 +1,17 @@
-import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
 import { ImageField } from './image-field/image-field';
+import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import {
   ALL_UNITS,
   ProductUnit,
@@ -13,7 +21,7 @@ import {
 
 @Component({
   selector: 'app-edit-product',
-  imports: [ReactiveFormsModule, RouterLink, ImageField],
+  imports: [ReactiveFormsModule, RouterLink, ImageField, CopPipe],
   templateUrl: './edit-product.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -49,7 +57,40 @@ export class EditProduct {
     imagenAlt: ['', Validators.required],
     imagen: ['', Validators.required],
     imagenHover: [''],
+    /** '' = se vende solo. Con un id, es variante de ese producto. */
+    parentId: [''],
+    /** Qué distingue a sus variantes. Solo se usa si este producto es madre. */
+    varianteEtiqueta: [''],
   });
+
+  // ─────────────────────────────── Variantes ───────────────────────────────
+
+  /** Las variantes que ya cuelgan de este producto, si es madre. */
+  protected readonly variantes = computed(() => this.adminApi.variantsOf(this.productId));
+
+  /**
+   * Madres posibles. Sale vacío si este producto ya agrupa variantes: colgarlo
+   * de otro convertiría a sus hijas en nietas, y el catálogo solo pinta un
+   * nivel. El desplegable se sustituye entonces por una explicación.
+   */
+  protected readonly madresPosibles = computed(() =>
+    this.adminApi.possibleParents(this.productId),
+  );
+
+  protected readonly esMadre = computed(() => this.variantes().length > 0);
+
+  /** Lo que hay escrito ahora mismo en el selector, para decidir qué mostrar. */
+  protected readonly parentSeleccionado = signal('');
+
+  protected readonly madreActual = computed(() => {
+    const id = this.parentSeleccionado();
+    return id ? this.adminApi.productById(id) : undefined;
+  });
+
+  /** Suma del inventario de las hijas: lo que de verdad hay de esta ficha. */
+  protected readonly stockDeVariantes = computed(() =>
+    this.variantes().reduce((total, variante) => total + variante.stock, 0),
+  );
 
   /** Unidades ofrecidas en el selector, con su etiqueta legible. */
   protected readonly unidades = ALL_UNITS.map((value) => ({
@@ -91,10 +132,17 @@ export class EditProduct {
           imagen: prod.imagen,
           imagenHover: prod.imagenHover ?? '',
           imagenAlt: prod.imagenAlt,
+          parentId: prod.parentId ?? '',
+          varianteEtiqueta: prod.varianteEtiqueta ?? '',
         });
+        this.parentSeleccionado.set(prod.parentId ?? '');
       }
     });
     this.loadProduct();
+  }
+
+  protected onParentChange(event: Event): void {
+    this.parentSeleccionado.set((event.target as HTMLSelectElement).value);
   }
 
   private loadProduct(): void {
@@ -119,7 +167,7 @@ export class EditProduct {
     this.updateError = null;
     this.updatingProduct = true;
 
-    const { nombre, slug, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover, imagenAlt } = this.form.getRawValue();
+    const { nombre, slug, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover, imagenAlt, parentId, varianteEtiqueta } = this.form.getRawValue();
 
     this.adminApi
       .updateProductFull(this.productId, {
@@ -136,6 +184,14 @@ export class EditProduct {
         imagen,
         imagenHover: imagenHover || undefined,
         imagenAlt,
+        // Se manda siempre —incluido `null`— porque este formulario **sí**
+        // muestra el campo: dejarlo vacío aquí es una decisión de quien edita,
+        // no un descuido de una pantalla que no lo conoce.
+        parentId: parentId || null,
+        // La etiqueta solo significa algo en una madre. Al colgar el producto
+        // de otra ficha se limpia, para que no quede un «presentación»
+        // huérfano que reaparecería si algún día se vuelve a soltar.
+        varianteEtiqueta: parentId ? null : varianteEtiqueta.trim() || null,
       })
       .subscribe({
         next: () => {

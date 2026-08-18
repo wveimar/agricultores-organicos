@@ -62,13 +62,26 @@
         <button
           type="button"
           class="flex w-full items-center justify-center gap-2 rounded-full bg-bone/95 px-5 py-3 text-sm font-semibold text-moss-deep backdrop-blur-sm transition-colors duration-200 hover:bg-moss hover:text-bone"
-          [attr.aria-label]="'Añadir ' + product().name + ' al carrito'"
+          [attr.aria-label]="
+            variants()
+              ? 'Elegir ' + variantWord() + ' de ' + product().name
+              : 'Añadir ' + product().name + ' al carrito'
+          "
+          [attr.aria-haspopup]="variants() ? 'dialog' : null"
           (click)="add()"
         >
-          <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-            <path d="M8 3v10M3 8h10" />
-          </svg>
-          {{ inCart() > 0 ? 'Añadir otro · ' + inCart() + ' en el carrito' : 'Añadir' }}
+          @if (variants()) {
+            <!-- Tres capas apiladas: "esto tiene varias opciones dentro" -->
+            <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 1.8 14.5 5 8 8.2 1.5 5z" />
+              <path d="m1.5 8 6.5 3.2L14.5 8M1.5 11l6.5 3.2L14.5 11" stroke-linecap="round" />
+            </svg>
+          } @else {
+            <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <path d="M8 3v10M3 8h10" />
+            </svg>
+          }
+          {{ actionLabel() }}
         </button>
       </div>
     }
@@ -107,22 +120,56 @@
         de al lado es `listPrice` (precio de catálogo), distinto del
         `compareAtPrice` de una oferta pública.
       -->
-      <span
-        class="tabular text-lg"
-        [class]="product().listPrice ? 'font-semibold text-moss' : 'text-ink'"
-      >
-        {{ product().price | cop }}
-      </span>
-
-      @if (product().listPrice; as lista) {
-        <span class="tabular text-sm text-ink-muted line-through">{{ lista | cop }}</span>
-      } @else if (product().compareAtPrice; as before) {
-        <span class="tabular text-sm text-ink-muted line-through">{{ before | cop }}</span>
+      @if (priceFrom()) {
+        <span class="text-sm text-ink-muted">Desde</span>
       }
 
-      <span class="text-sm text-ink-muted">/ {{ unitLabel() }}</span>
+      <span class="tabular text-lg" [class]="wholesale() ? 'font-semibold text-moss' : 'text-ink'">
+        {{ price() | cop }}
+      </span>
 
-      @if (product().wholesaleDiscount; as pct) {
+      <!--
+        El tachado es del producto suelto. En una ficha con variantes el precio
+        de al lado es el de la más barata, y tacharle el "antes" de la madre
+        compararía dos cosas distintas.
+      -->
+      @if (!variants()) {
+        @if (product().listPrice; as lista) {
+          <span class="tabular text-sm text-ink-muted line-through">{{ lista | cop }}</span>
+        } @else if (product().compareAtPrice; as before) {
+          <span class="tabular text-sm text-ink-muted line-through">{{ before | cop }}</span>
+        }
+      }
+
+      <!--
+        La presentación de la madre solo vale cuando todas las variantes la
+        comparten —los tres sabores van en la misma botella de 350 ml—. Con
+        tamaños distintos, decir "/ 300 gr" al lado de "Desde" describiría solo
+        a una de las tres.
+      -->
+      @if (!variants() || !priceFrom()) {
+        <span class="text-sm text-ink-muted">/ {{ unitLabel() }}</span>
+      }
+
+      @if (variants()) {
+        <span class="text-overline rounded-full bg-linen px-2 py-0.5 font-semibold uppercase text-ink-soft">
+          {{ variantCountLabel() }}
+        </span>
+      }
+
+      <!--
+        El porcentaje exacto solo se pinta en el producto suelto. Con variantes
+        cada una puede llevar el suyo, así que un único número mentiría sobre
+        al menos una: se anuncia que hay tarifa y el modal enseña cuál en cada
+        línea.
+      -->
+      @if (variants()) {
+        @if (wholesale()) {
+          <span class="text-overline rounded-full bg-sage-light px-2 py-0.5 font-semibold uppercase text-moss-deep">
+            Precio mayorista
+          </span>
+        }
+      } @else if (product().wholesaleDiscount; as pct) {
         <span class="text-overline rounded-full bg-sage-light px-2 py-0.5 font-semibold uppercase text-moss-deep">
           −{{ pct }} % mayorista
         </span>

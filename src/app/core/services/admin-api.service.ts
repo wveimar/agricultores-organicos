@@ -104,6 +104,8 @@ export class AdminApiService {
     imagen: string;
     imagenHover?: string;
     imagenAlt: string;
+    parentId?: string | null;
+    varianteEtiqueta?: string | null;
   }): Observable<ApiProduct> {
     return this.api.createProduct(input).pipe(
       tap((created) => {
@@ -198,12 +200,79 @@ export class AdminApiService {
     imagen: string;
     imagenHover?: string;
     imagenAlt: string;
+    parentId?: string | null;
+    varianteEtiqueta?: string | null;
   }): Observable<ApiProduct> {
     return this.api.updateProductFull(id, input).pipe(
       tap((updated) => {
+        // Basta con sustituir la fila: las agrupaciones de variantes son
+        // `computed` sobre esta misma señal, así que cambiar el `parentId` de
+        // una fila reordena los grupos solo, sin recargar el inventario.
         this.products.update((list) => list.map((p) => (p.id === id ? updated : p)));
       }),
     );
+  }
+
+  // ─────────────────────────────── Variantes ───────────────────────────────
+
+  /**
+   * Variantes agrupadas por el id de su madre.
+   *
+   * Se calcula una vez por carga del inventario, no una por fila pintada: la
+   * tabla tiene una fila por producto y preguntar recorriendo la lista en cada
+   * una sería cuadrático.
+   */
+  private readonly variantsByParent = computed<ReadonlyMap<string, readonly ApiProduct[]>>(() => {
+    const groups = new Map<string, ApiProduct[]>();
+
+    for (const product of this.products()) {
+      if (!product.parentId) {
+        continue;
+      }
+      const siblings = groups.get(product.parentId);
+      if (siblings) {
+        siblings.push(product);
+      } else {
+        groups.set(product.parentId, [product]);
+      }
+    }
+
+    for (const siblings of groups.values()) {
+      siblings.sort((a, b) => a.precio - b.precio || a.nombre.localeCompare(b.nombre, 'es'));
+    }
+
+    return groups;
+  });
+
+  variantsOf(parentId: string): readonly ApiProduct[] {
+    return this.variantsByParent().get(parentId) ?? [];
+  }
+
+  isParent(productId: string): boolean {
+    return this.variantsByParent().has(productId);
+  }
+
+  productById(id: string): ApiProduct | undefined {
+    return this.products().find((product) => product.id === id);
+  }
+
+  /**
+   * Productos que pueden hacer de madre para `productId`.
+   *
+   * Se descartan los mismos tres casos que rechaza el Worker, para que la
+   * elección imposible ni siquiera aparezca en el desplegable: uno mismo, las
+   * que ya son variantes de otro, y —si este producto ya agrupa variantes— se
+   * devuelve lista vacía, porque colgarlo lo convertiría en nieto de alguien.
+   */
+  possibleParents(productId: string | null): readonly ApiProduct[] {
+    if (productId && this.isParent(productId)) {
+      return [];
+    }
+
+    return this.products()
+      .filter((product) => !product.parentId && product.id !== productId)
+      .slice()
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
   }
 
   // ──────────────────────────────── Usuarios ────────────────────────────────

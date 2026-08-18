@@ -101,6 +101,70 @@ export class CatalogService {
   }
 
   /**
+   * Variantes agrupadas por el id de su madre.
+   *
+   * Se arma una vez por carga del catálogo en vez de recorrer la lista entera
+   * cada vez que una tarjeta pregunta por las suyas: con 40 productos en
+   * pantalla eso serían 40 recorridos por repintado.
+   *
+   * Se ordenan por precio y, a igualdad, por nombre. Así la miel sale 300 →
+   * 500 → 1000 (el orden en que se piensa un tamaño) y los sabores de la
+   * kambucha, que valen lo mismo, salen alfabéticos y estables.
+   */
+  private readonly variantsByParent = computed<ReadonlyMap<string, readonly Product[]>>(() => {
+    const groups = new Map<string, Product[]>();
+
+    for (const product of this.products()) {
+      if (!product.parentId) {
+        continue;
+      }
+      const siblings = groups.get(product.parentId);
+      if (siblings) {
+        siblings.push(product);
+      } else {
+        groups.set(product.parentId, [product]);
+      }
+    }
+
+    for (const siblings of groups.values()) {
+      siblings.sort((a, b) => a.price - b.price || a.name.localeCompare(b.name, 'es'));
+    }
+
+    return groups;
+  });
+
+  /**
+   * Las variantes de un producto, o `[]` si no tiene ninguna.
+   *
+   * Salen del catálogo que ya está en memoria: no hay una petición por tarjeta
+   * abierta. `GET /api/products` devuelve madres e hijas de una vez, y con los
+   * precios de mayorista de cada hija ya aplicados por el servidor.
+   */
+  getProductVariants(parentId: string): readonly Product[] {
+    return this.variantsByParent().get(parentId) ?? [];
+  }
+
+  hasVariants(parentId: string): boolean {
+    return this.variantsByParent().has(parentId);
+  }
+
+  /**
+   * Lo que merece tarjeta propia: todo menos las variantes.
+   *
+   * Una hija huérfana —su madre está desactivada, o se borró y la FK dejó el
+   * vínculo en NULL— sí aparece. Es preferible que se vea suelta a que
+   * desaparezca del catálogo sin que nadie note que dejó de venderse.
+   */
+  private readonly topLevel = computed<readonly Product[]>(() => {
+    const madres = new Set(
+      this.products().filter((product) => !product.parentId).map((product) => product.id),
+    );
+    return this.products().filter(
+      (product) => !product.parentId || !madres.has(product.parentId),
+    );
+  });
+
+  /**
    * Rejilla visible. Todo el filtrado ocurre en el cliente sobre un `computed`:
    * cambiar de categoría no navega ni recarga, solo recalcula la señal.
    */
@@ -108,27 +172,43 @@ export class CatalogService {
     const category = this.activeCategory();
     const term = this.query().trim().toLowerCase();
 
-    const filtered = this.products().filter((product) => {
+    const filtered = this.topLevel().filter((product) => {
       if (category !== 'todos' && product.categoryId !== category) {
         return false;
       }
       if (!term) {
         return true;
       }
+      // Una madre también responde por sus variantes: buscar "mango" tiene que
+      // encontrar la Kambucha, aunque esa palabra solo esté en una de sus
+      // botellas y la botella no tenga tarjeta propia.
       return (
-        product.name.toLowerCase().includes(term) ||
-        product.tagline.toLowerCase().includes(term) ||
-        product.origin.toLowerCase().includes(term)
+        this.matches(product, term) ||
+        this.getProductVariants(product.id).some((variant) => this.matches(variant, term))
       );
     });
 
     return this.applySort(filtered, this.sort());
   });
 
-  /** Nº de productos por categoría, para el contador de cada chip. */
+  private matches(product: Product, term: string): boolean {
+    return (
+      product.name.toLowerCase().includes(term) ||
+      product.tagline.toLowerCase().includes(term) ||
+      product.origin.toLowerCase().includes(term)
+    );
+  }
+
+  /**
+   * Nº de productos por categoría, para el contador de cada chip.
+   *
+   * Cuenta tarjetas, no filas: las tres presentaciones de la miel son un solo
+   * producto en la vitrina, y un chip que dijera "4" para luego enseñar una
+   * tarjeta estaría mintiendo.
+   */
   readonly counts = computed<Record<string, number>>(() => {
-    const totals: Record<string, number> = { todos: this.products().length };
-    for (const product of this.products()) {
+    const totals: Record<string, number> = { todos: this.topLevel().length };
+    for (const product of this.topLevel()) {
       totals[product.categoryId] = (totals[product.categoryId] ?? 0) + 1;
     }
     return totals;
@@ -151,8 +231,11 @@ export class CatalogService {
    * enseñar primero — la tarjeta ya avisa de que está agotado. Derivar esta
    * lista de las ventas convertiría la sección en un reflejo del pasado en vez
    * de en una decisión.
+   *
+   * Sale de `topLevel`, así que destacar una variante suelta no la saca a la
+   * portada: se destaca la ficha de la miel, no el tarro de 500 gr.
    */
-  readonly featured = computed(() => this.products().filter((product) => product.featured));
+  readonly featured = computed(() => this.topLevel().filter((product) => product.featured));
 
   /** Usado por `CartService` para rehidratar el carrito guardado por id. */
   productById(id: string): Product | undefined {

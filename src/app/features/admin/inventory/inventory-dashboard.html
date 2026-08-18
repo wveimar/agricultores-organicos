@@ -215,6 +215,21 @@
                   <div class="min-w-0">
                     <p class="truncate text-sm font-medium text-ink">{{ product.nombre }}</p>
                     <p class="truncate text-xs text-ink-muted">{{ product.origen }}</p>
+
+                    <!--
+                      De un vistazo, en qué lado del grupo está la fila. Sin
+                      esto, una ficha madre parece un producto agotado y una
+                      variante parece un duplicado del catálogo.
+                    -->
+                    @if (isParent(product)) {
+                      <span class="text-overline mt-1 inline-block rounded-full bg-sage-light px-2 py-0.5 font-semibold uppercase text-moss-deep">
+                        {{ variantSummary(product) }}
+                      </span>
+                    } @else if (parentOf(product); as madre) {
+                      <span class="text-overline mt-1 inline-block max-w-full truncate rounded-full bg-linen px-2 py-0.5 font-semibold uppercase text-ink-soft">
+                        Variante de {{ madre.nombre }}
+                      </span>
+                    }
                   </div>
                 </div>
               </th>
@@ -236,24 +251,43 @@
               </td>
 
               <td class="px-5 py-4">
-                <p class="tabular text-sm text-ink">
-                  {{ product.stock }}
-                  <span class="text-ink-muted">· mín. {{ product.stockSeguridad ?? 0 }}</span>
-                </p>
-                <!-- Barra: llena = el doble del umbral de seguridad -->
-                <div class="mt-1.5 h-1.5 w-28 overflow-hidden rounded-full bg-linen">
-                  <div
-                    class="h-full rounded-full transition-[width] duration-500"
-                    [class]="
-                      level === 'agotado' ? 'bg-berry' : level === 'critico' ? 'bg-honey' : 'bg-sage'
-                    "
-                    [style.width.%]="fillPercent(product)"
-                  ></div>
-                </div>
+                @if (isParent(product)) {
+                  <!--
+                    Una ficha madre tiene 0 en su fila porque no se vende
+                    directamente. Enseñar ese cero haría pensar que se agotó
+                    algo que está lleno: lo que hay es lo que suman sus
+                    variantes, y se repone en cada una de ellas.
+                  -->
+                  <p class="tabular text-sm text-ink">{{ variantStock(product) }}</p>
+                  <p class="text-xs text-ink-muted">Suma de sus variantes</p>
+                } @else {
+                  <p class="tabular text-sm text-ink">
+                    {{ product.stock }}
+                    <span class="text-ink-muted">· mín. {{ product.stockSeguridad ?? 0 }}</span>
+                  </p>
+                  <!-- Barra: llena = el doble del umbral de seguridad -->
+                  <div class="mt-1.5 h-1.5 w-28 overflow-hidden rounded-full bg-linen">
+                    <div
+                      class="h-full rounded-full transition-[width] duration-500"
+                      [class]="
+                        level === 'agotado' ? 'bg-berry' : level === 'critico' ? 'bg-honey' : 'bg-sage'
+                      "
+                      [style.width.%]="fillPercent(product)"
+                    ></div>
+                  </div>
+                }
               </td>
 
               <td class="px-5 py-4">
-                @if (offered) {
+                @if (offered && isParent(product)) {
+                  <!--
+                    El semáforo de stock no aplica: mide una fila, y esta no
+                    tiene inventario propio. Diría "Agotado" siempre.
+                  -->
+                  <span class="text-overline inline-block rounded-full bg-sage-light px-3 py-1.5 font-semibold uppercase text-moss-deep">
+                    Por variantes
+                  </span>
+                } @else if (offered) {
                   <span
                     class="text-overline inline-block rounded-full px-3 py-1.5 font-semibold uppercase"
                     [class]="stockStyles[level].chip"
@@ -339,6 +373,37 @@
                     >
                       ⋯
                     </a>
+
+                    <!--
+                      Añadir variante: solo en las fichas que pueden hacer de
+                      madre. Una variante no puede tener variantes propias, así
+                      que en sus filas el botón ni aparece — es la misma regla
+                      que aplica el Worker, dicha antes de pulsar.
+                    -->
+                    @if (!product.parentId) {
+                      <a
+                        [routerLink]="['/admin/inventario/crear']"
+                        [queryParams]="{ parent: product.id }"
+                        class="flex size-9 items-center justify-center rounded-full border border-sand text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+                        [attr.aria-label]="'Añadir una variante a ' + product.nombre"
+                        title="Añadir un tamaño o sabor a esta ficha"
+                      >
+                        <svg
+                          class="size-4"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.7"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M12 3 21 7.5 12 12 3 7.5z" />
+                          <path d="m3 12 9 4.5 9-4.5" />
+                          <path d="M18 18.5h5m-2.5-2.5v5" />
+                        </svg>
+                      </a>
+                    }
 
                     <!--
                       Duplicar: para variantes que comparten ficha y solo se

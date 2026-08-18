@@ -55,7 +55,12 @@
     "db:migrate:checks-cierres": "wrangler d1 execute DB --local --file=worker/migrations/0003_checks_cash_closings.sql",
     "db:migrate:checks-cierres:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0003_checks_cash_closings.sql",
     "qa:cleanup": "wrangler d1 execute DB --local --file=worker/tests/qa-cleanup.sql",
-    "qa:cleanup:remote": "wrangler d1 execute DB --remote --file=worker/tests/qa-cleanup.sql"
+    "qa:cleanup:remote": "wrangler d1 execute DB --remote --file=worker/tests/qa-cleanup.sql",
+    "db:migrate:variantes": "wrangler d1 execute DB --local --file=worker/migrations/0012_variantes.sql",
+    "db:migrate:variantes:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0012_variantes.sql",
+    "db:seed:variantes": "wrangler d1 execute DB --local --file=worker/seed-variantes.sql",
+    "db:seed:variantes:remote": "wrangler d1 execute DB --remote --file=worker/seed-variantes.sql",
+    "qa:variantes": "node worker/tests/qa-variantes.mjs"
   },
   "private": true,
   "packageManager": "npm@11.12.1",
