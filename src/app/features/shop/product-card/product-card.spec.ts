@@ -32,6 +32,8 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
 
 class CatalogStub {
   readonly loading = signal(false);
+  /** La observa `CartService` al recargarse el catálogo. Ver el stub gemelo en checkout-page.spec. */
+  readonly all = signal<readonly Product[]>([]);
   productById(): Product | undefined {
     return undefined;
   }

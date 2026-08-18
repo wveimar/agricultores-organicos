@@ -1,6 +1,7 @@
 import { ApiError, json, readJson, requireInt, requireString } from '../http';
 import { Env, JwtPayload } from '../types';
-import { requireRole } from '../auth/middleware';
+import { optionalAuth, requireRole } from '../auth/middleware';
+import { discountedPrice, loadDiscounts, loadUserRoles } from '../pricing';
 import { decodeDataUrl, validateDataUrl } from '../receipts';
 
 /**
@@ -87,6 +88,24 @@ async function loadProducts(env: Env, ids: readonly string[]): Promise<Map<strin
  * unidades salen de la disponibilidad aunque el pago esté sin verificar. El
  * pedido nace en estado `verificacion` con `stock_reservado = 1`, y por eso
  * aprobarlo después **no** vuelve a descontar.
+ *
+ * ── Qué decide el servidor y qué acepta del cliente ──
+ *
+ * El navegador manda **solo qué y cuánto**: `productId` y `cantidad`. Nunca
+ * precios. El importe se arma aquí leyendo `products.precio` y aplicando el
+ * descuento de mayorista que corresponda a la sesión, así que manipular el
+ * catálogo en devtools no cambia un peso de lo que se cobra.
+ *
+ * El envío también se calcula aquí, y esto sí cambió con los precios de
+ * mayorista: antes se aceptaba el `envio` que mandaba el carrito. Con un
+ * descuento por medio, el subtotal que ve el navegador y el que calcula el
+ * servidor pueden caer a lados distintos del umbral de envío gratis, y el
+ * cliente acabaría con envío gratis sobre un subtotal que ya no llega. El
+ * campo `envio` del cuerpo se sigue aceptando por compatibilidad, pero se
+ * ignora.
+ *
+ * La sesión es opcional: la tienda se compra sin cuenta, y quien no la tiene
+ * paga precio de lista.
  */
 export async function create(request: Request, env: Env): Promise<Response> {
   const body = await readJson<CreateOrderBody>(request);
@@ -94,7 +113,11 @@ export async function create(request: Request, env: Env): Promise<Response> {
   const clienteNombre = requireString(body.clienteNombre, 'clienteNombre', 120);
   const clienteTelefono = requireString(body.clienteTelefono, 'clienteTelefono', 40);
   const clienteDireccion = requireString(body.clienteDireccion, 'clienteDireccion', 240);
-  const envio = body.envio === undefined ? 0 : requireInt(body.envio, 'envio', 0);
+  // Se valida aunque no se use, para que un cuerpo con basura en este campo
+  // siga dando 400 y no pase inadvertido.
+  if (body.envio !== undefined) {
+    requireInt(body.envio, 'envio', 0);
+  }
 
   if (!Array.isArray(body.items) || body.items.length === 0) {
     throw ApiError.badRequest('carrito-vacio', 'El pedido no tiene productos.');
@@ -136,10 +159,26 @@ export async function create(request: Request, env: Env): Promise<Response> {
   }
 
   const orderId = crypto.randomUUID();
+
+  // Precio de mayorista, si la sesión lo tiene. Los roles se releen de la base
+  // en vez de creerle al JWT: el token dura 8 h y a una cuenta a la que se le
+  // retiró el nivel se le seguiría facturando con descuento el resto del día.
+  const session = await optionalAuth(request, env);
+  const roles = session ? await loadUserRoles(env, session.sub) : [];
+  const discounts = await loadDiscounts(env, [...required.keys()], roles);
+
+  /** Precio unitario ya con descuento. Es el que se congela en la línea. */
+  const unitPrice = (productId: string): number =>
+    discountedPrice(products.get(productId)!.precio, discounts.get(productId) ?? 0);
+
   const subtotal = [...required.entries()].reduce(
-    (total, [productId, cantidad]) => total + products.get(productId)!.precio * cantidad,
+    (total, [productId, cantidad]) => total + unitPrice(productId) * cantidad,
     0,
   );
+
+  // Sobre el subtotal ya descontado: es el importe que el cliente paga de
+  // verdad, y es el que decide si alcanza el envío gratis.
+  const envio = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST;
 
   const comprobanteNombre =
     typeof body.comprobanteNombre === 'string' ? body.comprobanteNombre.slice(0, 200) : null;
@@ -154,16 +193,21 @@ export async function create(request: Request, env: Env): Promise<Response> {
     // veces. El UNIQUE de la columna es la red de seguridad.
     env.DB.prepare(
       `INSERT INTO orders (
-         id, referencia, cliente_nombre, cliente_telefono, cliente_direccion,
+         id, referencia, user_id, cliente_nombre, cliente_telefono, cliente_direccion,
          estado, stock_reservado, subtotal, envio, total,
          comprobante_nombre, comprobante_url
        ) VALUES (
          ?1,
          'ORD-' || (SELECT COALESCE(MAX(CAST(substr(referencia, 5) AS INTEGER)), 1000) + 1 FROM orders),
-         ?2, ?3, ?4, 'verificacion', 1, ?5, ?6, ?7, ?8, ?9
+         ?2, ?3, ?4, ?5, 'verificacion', 1, ?6, ?7, ?8, ?9, ?10
        )`,
     ).bind(
       orderId,
+      // Queda apuntado quién compró cuando había sesión. Es lo que permite
+      // auditar después por qué una línea salió por debajo del precio de
+      // lista: sin esto, un pedido con descuento sería indistinguible de un
+      // error de precios.
+      session?.sub ?? null,
       clienteNombre,
       clienteTelefono,
       clienteDireccion,
@@ -192,7 +236,18 @@ export async function create(request: Request, env: Env): Promise<Response> {
         `INSERT INTO order_items
            (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-      ).bind(orderId, productId, product.nombre, product.precio, product.precio_costo, cantidad),
+      ).bind(
+        orderId,
+        productId,
+        product.nombre,
+        // El precio **cobrado**, no el de lista: la línea es el documento de
+        // lo que se facturó. Guardar aquí el de catálogo dejaría un pedido que
+        // suma más que su propio total, y descuadraría el cierre de caja, que
+        // se calcula sumando líneas.
+        unitPrice(productId),
+        product.precio_costo,
+        cantidad,
+      ),
     );
 
     // Si entre la validación y este UPDATE otra petición se llevó las unidades,
@@ -545,10 +600,16 @@ export async function updateItems(
   }
 
   const order = await env.DB.prepare(
-    `SELECT id, estado, stock_reservado, closing_id FROM orders WHERE id = ?1`,
+    `SELECT id, estado, stock_reservado, closing_id, user_id FROM orders WHERE id = ?1`,
   )
     .bind(orderId)
-    .first<{ id: string; estado: string; stock_reservado: number; closing_id: string | null }>();
+    .first<{
+      id: string;
+      estado: string;
+      stock_reservado: number;
+      closing_id: string | null;
+      user_id: string | null;
+    }>();
 
   if (!order) {
     throw ApiError.notFound('Ese pedido no existe.');
@@ -642,12 +703,24 @@ export async function updateItems(
     return json({ order: await loadOrder(env, orderId) });
   }
 
+  // Una línea nueva se cobra al precio que tendría **ese cliente** hoy, no al
+  // de lista: añadirle un producto a un pedido de mayorista desde el panel no
+  // puede salirle más caro que si lo hubiera puesto él mismo en el carrito.
+  // Si el pedido era de invitado (`user_id` nulo), no hay descuento que buscar.
+  const compradorRoles = order.user_id ? await loadUserRoles(env, order.user_id) : [];
+  const compradorDiscounts = await loadDiscounts(env, [...required.keys()], compradorRoles);
+
   // Subtotal del pedido resultante: precio histórico para lo que ya estaba,
-  // precio de catálogo para lo que se añade.
+  // precio de catálogo —con el descuento del comprador— para lo que se añade.
   let subtotal = 0;
   for (const [productId, cantidad] of required) {
     const historico = existing.get(productId);
-    const precio = historico ? historico.precio_unitario : products.get(productId)!.precio;
+    const precio = historico
+      ? historico.precio_unitario
+      : discountedPrice(
+          products.get(productId)!.precio,
+          compradorDiscounts.get(productId) ?? 0,
+        );
     subtotal += precio * cantidad;
   }
 
@@ -683,7 +756,7 @@ export async function updateItems(
           orderId,
           delta.productId,
           product.nombre,
-          product.precio,
+          discountedPrice(product.precio, compradorDiscounts.get(delta.productId) ?? 0),
           product.precio_costo,
           delta.newQty,
         ),

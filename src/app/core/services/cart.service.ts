@@ -1,4 +1,4 @@
-import { Injectable, computed, effect, inject, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { CartItem, FREE_SHIPPING_THRESHOLD, SHIPPING_COST } from '../models/cart.model';
 import { Product, isInStock } from '../models/product.model';
 import { CatalogService } from './catalog.service';
@@ -84,6 +84,36 @@ export class CartService {
         quantity: line.quantity,
       }));
       this.kv.put(KV_KEYS.cart, stored);
+    });
+
+    /**
+     * Reengancha las líneas al catálogo recién cargado.
+     *
+     * Cada línea guarda el `Product` tal y como estaba al añadirlo. Eso deja
+     * de ser inocuo con los precios de mayorista: quien llena el carrito y
+     * **después** inicia sesión vería el total de precios de lista mientras el
+     * servidor le cobra los de su tarifa. El total de la pantalla y el de la
+     * factura tienen que salir del mismo sitio, así que al recargarse el
+     * catálogo las líneas se vuelven a resolver contra él.
+     *
+     * `untracked` alrededor de la escritura es obligatorio: `update()` lee el
+     * valor actual de `lines`, y esa lectura dentro del efecto lo convertiría
+     * en dependencia de sí mismo — un bucle infinito.
+     */
+    effect(() => {
+      const catalogo = this.catalog.all();
+
+      untracked(() => {
+        if (!this.hydrated || catalogo.length === 0) {
+          return;
+        }
+        this.lines.update((lines) =>
+          lines.map((line) => {
+            const fresco = this.catalog.productById(line.product.id);
+            return fresco ? { ...line, product: fresco } : line;
+          }),
+        );
+      });
     });
   }
 

@@ -1,6 +1,7 @@
 import { ApiError, json, readJson, requireInt } from '../http';
 import { Env, JwtPayload } from '../types';
-import { requireRole } from '../auth/middleware';
+import { optionalAuth, requireRole } from '../auth/middleware';
+import { discountedPrice, loadDiscounts, loadUserRoles } from '../pricing';
 
 /**
  * Tope de una imagen de producto ya en base64.
@@ -68,7 +69,7 @@ const ADMIN_COLUMNS = `
  * Una sola consulta indexada, sin JOIN ni N+1. Filtros opcionales por
  * categoría y grupo.
  */
-export async function listPublic(env: Env, url: URL): Promise<Response> {
+export async function listPublic(request: Request, env: Env, url: URL): Promise<Response> {
   const categoria = url.searchParams.get('categoria');
   const grupo = url.searchParams.get('grupo');
 
@@ -86,8 +87,44 @@ export async function listPublic(env: Env, url: URL): Promise<Response> {
 
   sql += ' ORDER BY nombre COLLATE NOCASE';
 
-  const { results } = await env.DB.prepare(sql).bind(...bindings).all();
-  return json({ products: results });
+  const { results } = await env.DB.prepare(sql).bind(...bindings).all<{
+    id: string;
+    precio: number;
+  }>();
+
+  /**
+   * El precio de mayorista se resuelve aquí y no en el navegador.
+   *
+   * La tienda podría bajarse la tabla de descuentos y multiplicar, pero
+   * entonces cualquiera vería los tratos de todos los niveles con solo abrir
+   * la pestaña de red. Así cada cuenta recibe **su** precio ya calculado y
+   * nada más, y `POST /api/orders` vuelve a calcularlo por su cuenta al
+   * cobrar: lo que viaja aquí es para pintar, no para facturar.
+   *
+   * Sin sesión —la compra de invitado, que es el caso normal— no se consulta
+   * nada: `loadDiscounts` corta en seco si no hay rol de mayorista.
+   */
+  const session = await optionalAuth(request, env);
+  const roles = session ? await loadUserRoles(env, session.sub) : [];
+  const discounts = await loadDiscounts(env, results.map((p) => p.id), roles);
+
+  if (discounts.size === 0) {
+    return json({ products: results });
+  }
+
+  return json({
+    products: results.map((product) => {
+      const porcentaje = discounts.get(product.id);
+      if (!porcentaje) {
+        return product;
+      }
+      return {
+        ...product,
+        precioMayorista: discountedPrice(product.precio, porcentaje),
+        descuentoMayorista: porcentaje,
+      };
+    }),
+  });
 }
 
 /**

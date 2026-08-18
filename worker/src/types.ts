@@ -36,13 +36,32 @@ export interface Env {
   readonly EMAIL_FROM?: string;
 }
 
-export type UserRole = 'ADMIN_INVENTARIO' | 'GESTOR_PEDIDOS' | 'SUPER_ADMIN';
+/**
+ * Niveles de mayorista. No abren ninguna sección del panel: lo único que
+ * cambian es el precio que se le cobra a esa cuenta en la tienda.
+ */
+export type WholesaleRole = 'MAYORISTA_N1' | 'MAYORISTA_N2' | 'MAYORISTA_N3';
+
+export const WHOLESALE_ROLES: readonly WholesaleRole[] = [
+  'MAYORISTA_N1',
+  'MAYORISTA_N2',
+  'MAYORISTA_N3',
+];
+
+export type StaffRole = 'ADMIN_INVENTARIO' | 'GESTOR_PEDIDOS' | 'SUPER_ADMIN';
+
+export type UserRole = StaffRole | WholesaleRole;
 
 export const ALL_ROLES: readonly UserRole[] = [
   'ADMIN_INVENTARIO',
   'GESTOR_PEDIDOS',
   'SUPER_ADMIN',
+  ...WHOLESALE_ROLES,
 ];
+
+export function isWholesaleRole(role: string): role is WholesaleRole {
+  return (WHOLESALE_ROLES as readonly string[]).includes(role);
+}
 
 /** Contenido del JWT ya verificado. */
 export interface JwtPayload {

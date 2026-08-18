@@ -20,7 +20,22 @@ export interface Product {
   /** Frase corta de apoyo bajo el nombre. */
   readonly tagline: string;
   readonly categoryId: CategoryId;
+  /**
+   * Lo que paga **este** cliente. Ya lleva aplicado el descuento de mayorista
+   * si la sesión tiene uno, así que carrito, checkout y totales suman con este
+   * campo sin saber nada de niveles ni porcentajes.
+   */
   readonly price: number;
+  /**
+   * Precio de catálogo, antes del descuento de mayorista. Solo se define
+   * cuando hay descuento — es lo que se pinta tachado al lado del precio real.
+   *
+   * Distinto de `compareAtPrice`, que es una oferta pública visible para todo
+   * el mundo: este solo lo ve la cuenta que tiene la tarifa.
+   */
+  readonly listPrice?: number;
+  /** Porcentaje aplicado, para el sello «−12 %». Solo con descuento activo. */
+  readonly wholesaleDiscount?: number;
   /** Precio anterior tachado. Solo si el producto está en oferta. */
   readonly compareAtPrice?: number;
   /**

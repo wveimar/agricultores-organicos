@@ -80,6 +80,15 @@ export const ADMIN_ROUTES: Routes = [
           import('./reports/consolidation-report').then((m) => m.ConsolidationReport),
       },
       {
+        path: 'mayoristas',
+        // Solo SUPER_ADMIN: a quién se le cobra menos y cuánto es una decisión
+        // comercial, no de inventario. El servidor aplica la misma regla.
+        canActivate: [roleGuard('SUPER_ADMIN')],
+        title: 'Tarifas de mayorista · Panel',
+        loadComponent: () =>
+          import('./wholesale/wholesale-tariffs').then((m) => m.WholesaleTariffs),
+      },
+      {
         path: 'usuarios',
         // Gestionar cuentas es dar y quitar acceso al panel entero: solo
         // SUPER_ADMIN. El servidor aplica la misma regla, que es la que cuenta.

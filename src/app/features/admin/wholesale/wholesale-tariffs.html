@@ -1,0 +1,288 @@
+<header class="flex flex-col gap-1">
+  <h1 class="text-h2 text-ink">Tarifas de mayorista</h1>
+  <p class="text-sm text-ink-soft">
+    Qué producto lleva descuento en cada nivel y de cuánto. Lo que se guarde aquí
+    es lo que cobra el servidor: la tienda solo lo muestra.
+  </p>
+</header>
+
+<!-- Nivel -->
+<div class="mt-6 flex flex-wrap gap-2" role="tablist" aria-label="Nivel de mayorista">
+  @for (nivel of tiers; track nivel) {
+    @let activo = tier() === nivel;
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="activo"
+      class="rounded-full border px-5 py-2.5 text-sm transition-all duration-200"
+      [class]="
+        activo
+          ? 'border-moss bg-moss text-bone'
+          : 'border-sand bg-bone text-ink-soft hover:border-stone'
+      "
+      (click)="selectTier(nivel)"
+    >
+      {{ roleLabels[nivel] }}
+    </button>
+  }
+</div>
+
+@if (tariff(); as datos) {
+  <!-- Resumen del nivel -->
+  <div class="mt-6 grid gap-4 sm:grid-cols-3">
+    <div class="rounded-lg border border-sand bg-bone p-5">
+      <p class="text-overline font-semibold uppercase text-ink-muted">Con tarifa</p>
+      <p class="tabular mt-2 font-display text-h3 text-ink">
+        {{ datos.resumen.conDescuento }}
+        <span class="text-base text-ink-muted">de {{ datos.resumen.total }}</span>
+      </p>
+      <p class="mt-1 text-xs text-ink-muted">El resto paga precio de lista</p>
+    </div>
+
+    <div
+      class="rounded-lg border bg-bone p-5"
+      [class]="datos.resumen.bajoCosto > 0 ? 'border-berry' : 'border-sand'"
+    >
+      <p class="text-overline font-semibold uppercase text-ink-muted">Bajo costo</p>
+      <p
+        class="tabular mt-2 font-display text-h3"
+        [class]="datos.resumen.bajoCosto > 0 ? 'text-berry' : 'text-ink'"
+      >
+        {{ datos.resumen.bajoCosto }}
+      </p>
+      <p class="mt-1 text-xs text-ink-muted">
+        @if (datos.resumen.bajoCosto > 0) {
+          Se venden por menos de lo que se le paga a la finca
+        } @else {
+          Ninguna tarifa vende bajo costo
+        }
+      </p>
+    </div>
+
+    <div class="rounded-lg border border-sand bg-bone p-5">
+      <p class="text-overline font-semibold uppercase text-ink-muted">Nivel</p>
+      <p class="mt-2 font-display text-h3 text-ink">{{ roleLabels[datos.role] }}</p>
+      <p class="mt-1 text-xs text-ink-muted">
+        Se asigna a cada cuenta desde Usuarios
+      </p>
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="mt-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div class="flex flex-wrap items-center gap-3">
+      <app-category-filter
+        variant="select"
+        [options]="categoryOptions()"
+        [selectedValue]="category()"
+        (valueChange)="category.set($event)"
+      />
+
+      <label class="flex cursor-pointer items-center gap-2 text-sm text-ink-soft">
+        <input
+          type="checkbox"
+          class="size-4 accent-clay"
+          [checked]="onlyWithDiscount()"
+          (change)="onlyWithDiscount.set(!onlyWithDiscount())"
+        />
+        Solo con tarifa
+      </label>
+    </div>
+
+    <div class="relative">
+      <label for="buscar-tarifa" class="sr-only">Buscar producto</label>
+      <input
+        id="buscar-tarifa"
+        type="search"
+        placeholder="Buscar producto…"
+        class="w-full rounded-full border border-sand bg-bone py-2.5 pl-10 pr-4 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss sm:w-64"
+        [value]="query()"
+        (input)="query.set($any($event.target).value)"
+      />
+      <svg
+        class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-muted"
+        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"
+      >
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" stroke-linecap="round" />
+      </svg>
+    </div>
+  </div>
+
+  <!-- Barra de aplicación masiva: solo aparece con algo marcado -->
+  @if (selectedCount() > 0) {
+    <div class="mt-4 flex flex-wrap items-center gap-4 rounded-lg border border-moss bg-sage-light/30 px-5 py-4">
+      <p class="text-sm font-semibold text-moss-deep">
+        {{ selectedCount() }} producto(s) marcado(s)
+      </p>
+
+      <div class="flex items-center gap-2">
+        <label for="bulk-pct" class="text-sm text-ink-soft">Aplicar</label>
+        <input
+          id="bulk-pct"
+          type="number"
+          min="0"
+          max="100"
+          step="1"
+          inputmode="numeric"
+          placeholder="0"
+          class="tabular w-20 rounded-md border border-stone bg-bone px-3 py-2 text-right text-sm text-ink focus:border-moss"
+          [value]="bulkPercent()"
+          (input)="bulkPercent.set($any($event.target).value)"
+        />
+        <span class="text-sm text-ink-soft">%</span>
+      </div>
+
+      <button
+        type="button"
+        class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="bulkSaving()"
+        (click)="applyBulk()"
+      >
+        {{ bulkSaving() ? 'Aplicando…' : 'Aplicar a los marcados' }}
+      </button>
+
+      <button
+        type="button"
+        class="rounded-full border border-sand px-4 py-2.5 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
+        (click)="clearSelection()"
+      >
+        Quitar marcas
+      </button>
+
+      <p class="w-full text-xs text-ink-muted">
+        Con 0 se retira la tarifa y esos productos vuelven al precio de lista.
+      </p>
+    </div>
+  }
+
+  @if (error(); as message) {
+    <p class="mt-4 rounded-md border border-berry/40 bg-berry/5 px-4 py-3 text-sm text-berry" role="alert">
+      {{ message }}
+    </p>
+  }
+
+  @if (feedback(); as message) {
+    <p class="mt-4 rounded-md border border-sage bg-sage-light/50 px-4 py-3 text-sm text-moss-deep" role="status">
+      {{ message }}
+    </p>
+  }
+
+  <!-- Tabla -->
+  <div class="mt-5 overflow-hidden rounded-lg border border-sand bg-bone">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm">
+        <caption class="sr-only">
+          Descuentos de {{ roleLabels[datos.role] }} por producto
+        </caption>
+        <thead>
+          <tr class="border-b border-sand text-xs uppercase tracking-wide text-ink-muted">
+            <th scope="col" class="px-4 py-3">
+              <input
+                type="checkbox"
+                class="size-4 cursor-pointer accent-moss"
+                [checked]="allVisibleSelected()"
+                (change)="toggleAllVisible()"
+                aria-label="Marcar todos los productos visibles"
+              />
+            </th>
+            <th scope="col" class="px-4 py-3 font-semibold">Producto</th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold">Precio lista</th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold">Descuento</th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold">Precio mayorista</th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold">Margen</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track row.productId) {
+            @let conTarifa = row.porcentaje !== null;
+            @let bajoCosto = belowCost(row);
+
+            <tr
+              class="border-b border-sand/60 last:border-0"
+              [class]="isSelected(row.productId) ? 'bg-sage/10' : ''"
+            >
+              <td class="px-4 py-3">
+                <input
+                  type="checkbox"
+                  class="size-4 cursor-pointer accent-moss"
+                  [checked]="isSelected(row.productId)"
+                  (change)="toggleRow(row.productId)"
+                  [attr.aria-label]="'Marcar ' + row.nombre"
+                />
+              </td>
+
+              <td class="px-4 py-3">
+                <p class="font-medium text-ink">
+                  {{ row.nombre }}
+                  @if (row.activo === 0) {
+                    <span class="text-overline ml-1 rounded-full bg-linen px-2 py-0.5 uppercase text-ink-muted">
+                      sin oferta
+                    </span>
+                  }
+                </p>
+                <p class="text-xs text-ink-muted">
+                  {{ unitLabel(row) }} · costo {{ row.precioCosto | cop }}
+                </p>
+              </td>
+
+              <td class="tabular px-4 py-3 text-right text-ink-soft">{{ row.precio | cop }}</td>
+
+              <td class="px-4 py-3 text-right">
+                <div class="flex items-center justify-end gap-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    inputmode="numeric"
+                    placeholder="—"
+                    class="tabular w-20 rounded-md border bg-bone px-3 py-1.5 text-right text-sm text-ink transition-colors duration-200 focus:border-moss disabled:opacity-50"
+                    [class]="conTarifa ? 'border-moss' : 'border-sand'"
+                    [value]="row.porcentaje ?? ''"
+                    [disabled]="savingId() === row.productId"
+                    [attr.aria-label]="'Descuento de ' + row.nombre"
+                    (change)="saveRow(row, $any($event.target).value)"
+                  />
+                  <span class="text-sm text-ink-muted">%</span>
+                </div>
+              </td>
+
+              <td class="px-4 py-3 text-right">
+                <p
+                  class="tabular font-semibold"
+                  [class]="bajoCosto ? 'text-berry' : conTarifa ? 'text-moss' : 'text-ink-muted'"
+                >
+                  {{ row.precioMayorista | cop }}
+                </p>
+                @if (bajoCosto) {
+                  <p class="text-xs text-berry">Por debajo del costo</p>
+                }
+              </td>
+
+              <td class="tabular px-4 py-3 text-right">
+                <span [class]="margin(row) < 0 ? 'text-berry' : 'text-ink-soft'">
+                  {{ margin(row) | cop }}
+                </span>
+                <span class="ml-1 text-xs text-ink-muted">({{ marginPercent(row) }} %)</span>
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="6" class="px-4 py-12 text-center text-sm text-ink-muted">
+                @if (onlyWithDiscount()) {
+                  Este nivel todavía no tiene ninguna tarifa. Quita el filtro para
+                  ver el catálogo y ponerle descuento a lo que corresponda.
+                } @else {
+                  Ningún producto coincide con el filtro.
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+} @else if (loading()) {
+  <p class="mt-6 text-sm text-ink-muted" role="status">Cargando tarifas…</p>
+}

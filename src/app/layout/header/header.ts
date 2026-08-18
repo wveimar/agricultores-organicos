@@ -10,6 +10,9 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { filter } from 'rxjs';
 import { CartService } from '../../core/services/cart.service';
+import { CatalogService } from '../../core/services/catalog.service';
+import { TokenStore } from '../../core/api/token-store';
+import { ROLE_LABELS } from '../../core/models/user.model';
 
 /** Píxeles de scroll a partir de los cuales el header se vuelve sólido. */
 const SOLID_THRESHOLD = 24;
@@ -21,7 +24,23 @@ const SOLID_THRESHOLD = 24;
 })
 export class Header {
   protected readonly cart = inject(CartService);
+  protected readonly tokens = inject(TokenStore);
+  private readonly catalog = inject(CatalogService);
   private readonly router = inject(Router);
+
+  /**
+   * Sello del nivel de mayorista. `null` para el cliente normal, que es el
+   * caso habitual y no debe ver nada.
+   *
+   * Sale de `CatalogService.wholesaleTier`, la misma señal que decide si los
+   * precios llegan con descuento: si el sello aparece, los precios de la
+   * vitrina ya son los de esa tarifa. Calcularlo aparte aquí permitiría que
+   * el sello dijera una cosa y los precios otra.
+   */
+  protected readonly wholesaleLabel = computed(() => {
+    const tier = this.catalog.wholesaleTier();
+    return tier ? ROLE_LABELS[tier] : null;
+  });
 
   /** true en cuanto se baja del umbral: dispara el cambio a fondo sólido. */
   protected readonly isScrolled = signal(false);

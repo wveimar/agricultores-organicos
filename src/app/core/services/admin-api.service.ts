@@ -12,12 +12,24 @@ import {
   ApiProduct,
   ApiSalesRow,
   ApiUser,
+  ApiWholesaleRow,
+  ApiWholesaleTariff,
 } from '../api/api-client';
-import { UserRole } from '../models/user.model';
+import { UserRole, WholesaleRole } from '../models/user.model';
 
 type SalesTotals = { unidades: number; ingresos: number; costo: number; ganancia: number };
 
 const EMPTY_TOTALS: SalesTotals = { unidades: 0, ingresos: 0, costo: 0, ganancia: 0 };
+
+/** Recalcula el resumen tras editar una fila, sin volver a pedir la tarifa. */
+function recomputeSummary(products: readonly ApiWholesaleRow[]): ApiWholesaleTariff['resumen'] {
+  const conDescuento = products.filter((p) => p.porcentaje !== null);
+  return {
+    conDescuento: conDescuento.length,
+    total: products.length,
+    bajoCosto: conDescuento.filter((p) => p.precioMayorista < p.precioCosto).length,
+  };
+}
 
 /**
  * Estado del panel administrativo respaldado por el Worker + D1.
@@ -355,6 +367,73 @@ export class AdminApiService {
       },
       error: () => this.salesLoading.set(false),
     });
+  }
+
+  // ─────────────────────────── Tarifas de mayorista ───────────────────────────
+
+  readonly wholesaleTariff = signal<ApiWholesaleTariff | null>(null);
+  readonly wholesaleLoading = signal(false);
+
+  loadWholesaleTariff(role: WholesaleRole): void {
+    this.wholesaleLoading.set(true);
+    // Se limpia antes de pedir: dejar la tarifa del nivel anterior en pantalla
+    // mientras carga el siguiente enseñaría descuentos que no son los de ese
+    // nivel, y son cifras sobre las que alguien decide.
+    this.wholesaleTariff.set(null);
+
+    this.api.wholesaleTariff(role).subscribe({
+      next: (tariff) => {
+        this.wholesaleTariff.set(tariff);
+        this.wholesaleLoading.set(false);
+      },
+      error: () => this.wholesaleLoading.set(false),
+    });
+  }
+
+  /**
+   * Fija el descuento de un producto y refleja el cambio en la tabla sin
+   * volver a pedir el catálogo entero: la respuesta ya trae el precio
+   * calculado por el servidor, que es el que se va a cobrar.
+   */
+  setWholesaleDiscount(
+    role: WholesaleRole,
+    productId: string,
+    porcentaje: number,
+  ): Observable<{
+    productId: string;
+    role: WholesaleRole;
+    porcentaje: number | null;
+    precioMayorista: number;
+    bajoCosto: boolean;
+  }> {
+    return this.api.setWholesaleDiscount(role, productId, porcentaje).pipe(
+      tap((res) => {
+        this.wholesaleTariff.update((tariff) => {
+          if (!tariff) {
+            return tariff;
+          }
+          const products = tariff.products.map((row) =>
+            row.productId === productId
+              ? { ...row, porcentaje: res.porcentaje, precioMayorista: res.precioMayorista }
+              : row,
+          );
+          return { ...tariff, products, resumen: recomputeSummary(products) };
+        });
+      }),
+    );
+  }
+
+  setWholesaleBulk(
+    role: WholesaleRole,
+    productIds: readonly string[],
+    porcentaje: number,
+  ): Observable<{ role: WholesaleRole; porcentaje: number | null; aplicados: number }> {
+    return this.api.setWholesaleBulk(role, productIds, porcentaje).pipe(
+      // Aquí sí se recarga: la respuesta masiva solo dice cuántos se aplicaron,
+      // no el precio resultante de cada uno. Recalcularlos en el navegador
+      // sería duplicar la fórmula del servidor en un tercer sitio.
+      tap(() => this.loadWholesaleTariff(role)),
+    );
   }
 
   // ─────────────────────────── Consolidado semanal ───────────────────────────

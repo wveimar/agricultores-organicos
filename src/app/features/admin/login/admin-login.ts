@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiClient, ApiErrorBody } from '../../../core/api/api-client';
+import { isWholesaleRole } from '../../../core/models/user.model';
 import { Turnstile } from '../../../shared/turnstile/turnstile';
 
 /*
@@ -80,8 +81,21 @@ export class AdminLogin {
     // token de Turnstile viaja con él porque quien decide si vale es el
     // servidor — comprobarlo aquí no serviría de nada contra un `curl`.
     this.api.login(email, password, this.turnstileToken()).subscribe({
-      next: () => {
+      next: (session) => {
         this.submitting.set(false);
+
+        // Una cuenta de mayorista no tiene nada que hacer en el panel: sus
+        // roles no abren ninguna sección, así que aterrizaría en una portada
+        // vacía sin entender por qué. Se le manda a la tienda, que es donde su
+        // sesión sí significa algo — los precios ya con su tarifa.
+        const soloMayorista =
+          session.user.roles.length > 0 && session.user.roles.every(isWholesaleRole);
+
+        if (soloMayorista) {
+          void this.router.navigateByUrl('/');
+          return;
+        }
+
         const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') ?? '/admin';
         void this.router.navigateByUrl(returnUrl);
       },

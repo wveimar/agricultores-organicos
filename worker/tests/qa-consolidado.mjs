@@ -152,20 +152,28 @@ t(
   `Y coincide con la regla: esperado ${cobrado.envioEsperado}, cobrado ${cobrado.envio}`,
 );
 
-// Pedido pequeño al que NO se le cobró: descuadre a favor del cliente.
+// Un cliente que manda `envio: 0` sobre un pedido pequeño.
+//
+// Antes de los precios de mayorista, el Worker aceptaba ese importe tal cual y
+// aquí se comprobaba que el informe lo marcara como descuadre. Ya no puede
+// pasar: `POST /api/orders` calcula el envío sobre el subtotal que él mismo
+// arma, porque con un descuento por medio el subtotal del navegador y el real
+// pueden caer a lados distintos del umbral. Lo que se comprueba ahora es que
+// esa manipulación no llega a la base — la auditoría de descuadres sigue en el
+// informe para los pedidos anteriores a este cambio.
 const sinCobrar = await pedir([{ productId: barato.id, cantidad: 1 }], 0, 'QA Sin cobro');
 await api(`/api/admin/orders/${sinCobrar.id}/aprobar`, { method: 'POST' });
 
 const conDescuadre = await consolidado();
 const fallido = pedidoDe(conDescuadre, sinCobrar.id);
-t(fallido.envioCorrecto === false, 'Un pedido pequeño sin domicilio se marca como descuadre');
 t(
-  fallido.diferenciaEnvio === -COSTO_ENVIO,
-  `Con el importe exacto que faltó: ${fallido.diferenciaEnvio}`,
+  fallido.envio === COSTO_ENVIO,
+  `El "envio: 0" del cliente se ignora y se cobra ${fallido.envio}`,
 );
+t(fallido.envioCorrecto === true, 'Así que el pedido nace ya cuadrado con la regla');
 t(
-  conDescuadre.domicilios.descuadres >= 1,
-  `El resumen los cuenta: ${conDescuadre.domicilios.descuadres}`,
+  fallido.diferenciaEnvio === 0,
+  `Sin diferencia que reclamar: ${fallido.diferenciaEnvio}`,
 );
 
 // Pedido por encima del umbral: el envío gratis es lo correcto.

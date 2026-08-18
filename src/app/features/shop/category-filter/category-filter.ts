@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { CatalogService } from '../../../core/services/catalog.service';
-import { CategoryId, SORT_LABELS, SortOption } from '../../../core/models/product.model';
+import { CategoryId } from '../../../core/models/product.model';
 
 @Component({
   selector: 'app-category-filter',
@@ -9,14 +9,12 @@ import { CategoryId, SORT_LABELS, SortOption } from '../../../core/models/produc
 })
 export class CategoryFilter {
   protected readonly catalog = inject(CatalogService);
-  protected readonly sortOptions = SORT_LABELS;
 
   protected select(id: CategoryId | 'todos'): void {
     this.catalog.selectCategory(id);
   }
 
-  protected onSortChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value as SortOption;
-    this.catalog.setSort(value);
+  protected onQuery(event: Event): void {
+    this.catalog.setQuery((event.target as HTMLInputElement).value);
   }
 }

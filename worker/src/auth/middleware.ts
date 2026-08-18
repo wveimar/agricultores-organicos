@@ -28,6 +28,33 @@ export async function requireAuth(request: Request, env: Env): Promise<JwtPayloa
 }
 
 /**
+ * Igual que `requireAuth`, pero devuelve `null` en vez de rechazar.
+ *
+ * Para la tienda, que se compra sin cuenta. Un token ausente o inválido no es
+ * un error —es una compra de invitado—, así que se sigue adelante sin sesión.
+ * Lo importante es que un token **manipulado** tampoco pase por bueno: si la
+ * firma no cuadra, `verifyJwt` lanza y aquí se traduce a "sin sesión", nunca a
+ * "sesión con los roles que venían escritos dentro".
+ */
+export async function optionalAuth(request: Request, env: Env): Promise<JwtPayload | null> {
+  const header = request.headers.get('authorization');
+  if (!header?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = header.slice('Bearer '.length).trim();
+  if (!token) {
+    return null;
+  }
+
+  try {
+    return await verifyJwt(token, env.JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * SUPER_ADMIN abre cualquier puerta; el resto necesita el rol exacto.
  * Es la misma regla que aplica el frontend, escrita una sola vez aquí, que es
  * donde de verdad se decide.

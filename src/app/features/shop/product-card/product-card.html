@@ -100,11 +100,33 @@
 
     <!-- mt-auto empuja el precio al pie: todas las tarjetas lo alinean igual -->
     <p class="mt-auto flex flex-wrap items-baseline gap-x-2 pt-4">
-      <span class="tabular text-lg text-ink">{{ product().price | cop }}</span>
-      @if (product().compareAtPrice; as before) {
+      <!--
+        Con tarifa de mayorista el precio va en `moss` en vez de `ink`: es la
+        única señal de color en la tarjeta, y distingue de un vistazo lo que
+        lleva descuento propio de lo que está a precio de lista. El tachado
+        de al lado es `listPrice` (precio de catálogo), distinto del
+        `compareAtPrice` de una oferta pública.
+      -->
+      <span
+        class="tabular text-lg"
+        [class]="product().listPrice ? 'font-semibold text-moss' : 'text-ink'"
+      >
+        {{ product().price | cop }}
+      </span>
+
+      @if (product().listPrice; as lista) {
+        <span class="tabular text-sm text-ink-muted line-through">{{ lista | cop }}</span>
+      } @else if (product().compareAtPrice; as before) {
         <span class="tabular text-sm text-ink-muted line-through">{{ before | cop }}</span>
       }
+
       <span class="text-sm text-ink-muted">/ {{ unitLabel() }}</span>
+
+      @if (product().wholesaleDiscount; as pct) {
+        <span class="text-overline rounded-full bg-sage-light px-2 py-0.5 font-semibold uppercase text-moss-deep">
+          −{{ pct }} % mayorista
+        </span>
+      }
     </p>
   </div>
 </article>

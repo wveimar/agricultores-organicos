@@ -45,6 +45,7 @@ export class AdminLayout {
       roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'],
     },
     { path: '/admin/reportes', label: 'Reportes', roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'] },
+    { path: '/admin/mayoristas', label: 'Mayoristas', roles: ['SUPER_ADMIN'] },
     { path: '/admin/usuarios', label: 'Usuarios', roles: ['SUPER_ADMIN'] },
   ];
 

@@ -6,6 +6,7 @@ import * as products from './routes/products';
 import * as orders from './routes/orders';
 import * as reports from './routes/reports';
 import * as users from './routes/users';
+import * as wholesale from './routes/wholesale';
 import * as passwordReset from './routes/password-reset';
 
 /**
@@ -72,8 +73,10 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return passwordReset.performReset(request, env);
   }
 
+  // Lleva `request` porque la sesión es opcional: quien entra como mayorista
+  // recibe su precio ya con descuento; el resto, el de lista.
   if (pathname === '/api/products' && method === 'GET') {
-    return products.listPublic(env, url);
+    return products.listPublic(request, env, url);
   }
 
   if (pathname === '/api/orders' && method === 'POST') {
@@ -177,6 +180,20 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     const userMatch = pathname.match(/^\/api\/admin\/users\/([\w-]+)$/);
     if (userMatch && method === 'PATCH') {
       return users.update(request, env, user, userMatch[1]);
+    }
+
+    // Tarifas de mayorista
+    const wholesaleListMatch = pathname.match(/^\/api\/admin\/wholesale\/([\w-]+)$/);
+    if (wholesaleListMatch && method === 'GET') {
+      return wholesale.list(env, user, wholesaleListMatch[1]);
+    }
+    if (wholesaleListMatch && method === 'PUT') {
+      return wholesale.setBulk(request, env, user, wholesaleListMatch[1]);
+    }
+
+    const wholesaleItemMatch = pathname.match(/^\/api\/admin\/wholesale\/([\w-]+)\/([\w-]+)$/);
+    if (wholesaleItemMatch && method === 'PUT') {
+      return wholesale.set(request, env, user, wholesaleItemMatch[1], wholesaleItemMatch[2]);
     }
 
     // Reportes

@@ -1,9 +1,28 @@
-export type UserRole = 'ADMIN_INVENTARIO' | 'GESTOR_PEDIDOS' | 'SUPER_ADMIN';
+/** Roles que abren secciones del panel. */
+export type StaffRole = 'ADMIN_INVENTARIO' | 'GESTOR_PEDIDOS' | 'SUPER_ADMIN';
+
+/**
+ * Niveles de mayorista. **No** dan acceso a ninguna sección del panel: lo
+ * único que cambian es el precio que se le cobra a esa cuenta en la tienda.
+ * Ordenados de menor a mayor nivel.
+ */
+export type WholesaleRole = 'MAYORISTA_N1' | 'MAYORISTA_N2' | 'MAYORISTA_N3';
+
+export type UserRole = StaffRole | WholesaleRole;
+
+export const WHOLESALE_ROLES: readonly WholesaleRole[] = [
+  'MAYORISTA_N1',
+  'MAYORISTA_N2',
+  'MAYORISTA_N3',
+];
 
 export const ROLE_LABELS: Readonly<Record<UserRole, string>> = {
   ADMIN_INVENTARIO: 'Administración de inventario',
   GESTOR_PEDIDOS: 'Gestión de pedidos',
   SUPER_ADMIN: 'Administración general',
+  MAYORISTA_N1: 'Mayorista Bronce',
+  MAYORISTA_N2: 'Mayorista Plata',
+  MAYORISTA_N3: 'Mayorista Oro',
 };
 
 /**
@@ -15,6 +34,26 @@ export const ROLE_LABELS: Readonly<Record<UserRole, string>> = {
  * que decide de verdad — esta solo dibuja.
  */
 export const ALL_ROLES = Object.keys(ROLE_LABELS) as readonly UserRole[];
+
+export function isWholesaleRole(role: UserRole): role is WholesaleRole {
+  return (WHOLESALE_ROLES as readonly string[]).includes(role);
+}
+
+/**
+ * El nivel de mayorista más alto de una cuenta, si tiene alguno.
+ *
+ * Se busca por pertenencia literal, sin la escalada de `hasRole`: un
+ * `SUPER_ADMIN` no es mayorista de nada. Confundirlo aquí le pondría el mejor
+ * descuento a la cuenta del administrador sin que nadie lo pidiera.
+ */
+export function topWholesaleRole(roles: readonly UserRole[]): WholesaleRole | null {
+  for (let i = WHOLESALE_ROLES.length - 1; i >= 0; i--) {
+    if (roles.includes(WHOLESALE_ROLES[i])) {
+      return WHOLESALE_ROLES[i];
+    }
+  }
+  return null;
+}
 
 export interface AuthUser {
   readonly id: string;

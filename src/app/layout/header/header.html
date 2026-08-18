@@ -43,6 +43,19 @@
 
       <!-- Acciones -->
       <div class="flex items-center gap-1">
+        <!--
+          Sello de mayorista. Solo aparece con sesión de ese tipo, y cuando
+          aparece los precios de toda la tienda ya son los de esa tarifa.
+        -->
+        @if (wholesaleLabel(); as nivel) {
+          <span
+            class="text-overline mr-2 hidden rounded-full bg-bone/15 px-3 py-1.5 font-semibold uppercase tracking-wide text-bone sm:inline-block"
+            [title]="'Los precios que ves son los de tu tarifa: ' + nivel"
+          >
+            {{ nivel }}
+          </span>
+        }
+
         <button
           type="button"
           class="hidden size-11 items-center justify-center rounded-full text-bone/85 transition-colors duration-200 hover:bg-bone/10 hover:text-bone lg:flex"

@@ -2,7 +2,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, catchError, map, tap, throwError } from 'rxjs';
 import { ApiSession, TokenStore } from './token-store';
-import { UserRole } from '../models/user.model';
+import { UserRole, WholesaleRole } from '../models/user.model';
 import {
   CategoryId,
   Product,
@@ -56,6 +56,16 @@ export interface ApiProduct {
   readonly imagen: string;
   readonly imagenHover: string | null;
   readonly imagenAlt: string;
+  /**
+   * Precio ya con el descuento del nivel de mayorista de la sesión. Solo llega
+   * en `/api/products` y solo si la cuenta tiene tarifa para ese producto: sin
+   * sesión, o siendo cliente normal, el campo no viene y se paga `precio`.
+   *
+   * Lo calcula el servidor. La tienda no recibe la tabla de descuentos, así
+   * que desde el navegador no se pueden ver los tratos de otros niveles.
+   */
+  readonly precioMayorista?: number;
+  readonly descuentoMayorista?: number;
   /** Solo en las respuestas de /api/admin/*. */
   readonly precioCosto?: number;
   readonly stockSeguridad?: number;
@@ -88,7 +98,12 @@ export function toProduct(p: ApiProduct): Product {
     name: p.nombre,
     tagline: p.tagline,
     categoryId: p.categoriaId as CategoryId,
-    price: p.precio,
+    // `price` es siempre lo que paga quien mira: con tarifa de mayorista, el
+    // precio ya descontado. Así el carrito y el checkout suman sin saber que
+    // los mayoristas existen, y `listPrice` queda solo para pintar el tachado.
+    price: p.precioMayorista ?? p.precio,
+    listPrice: p.precioMayorista !== undefined ? p.precio : undefined,
+    wholesaleDiscount: p.descuentoMayorista,
     compareAtPrice: p.precioAnterior ?? undefined,
     costPrice: p.precioCosto ?? 0,
     unit: p.unidad as ProductUnit,
@@ -179,6 +194,34 @@ export interface ApiCashSummary {
   readonly enviosCobrados: number;
   readonly totalRecaudado: number;
   readonly porMetodo: readonly { metodo: string; pedidos: number; total: number }[];
+}
+
+/** Una fila de la pantalla de tarifas: el producto y su descuento en un nivel. */
+export interface ApiWholesaleRow {
+  readonly productId: string;
+  readonly nombre: string;
+  readonly categoriaId: string;
+  readonly grupoAdmin: string;
+  readonly unidad: string;
+  readonly cantidadUnidad: number;
+  readonly precio: number;
+  readonly precioCosto: number;
+  readonly activo: number;
+  /** `null` = sin trato especial en este nivel. */
+  readonly porcentaje: number | null;
+  readonly precioMayorista: number;
+  readonly actualizadoEn: string | null;
+}
+
+export interface ApiWholesaleTariff {
+  readonly role: WholesaleRole;
+  readonly products: readonly ApiWholesaleRow[];
+  readonly resumen: {
+    readonly conDescuento: number;
+    readonly total: number;
+    /** Productos cuya tarifa queda por debajo del costo de la finca. */
+    readonly bajoCosto: number;
+  };
 }
 
 /** Una línea del consolidado: cuánto hay que cosechar de un producto. */
@@ -556,6 +599,52 @@ export class ApiClient {
         products: ApiSalesRow[];
         totals: { unidades: number; ingresos: number; costo: number; ganancia: number };
       }>('/api/admin/reports/sales')
+      .pipe(catchError(handleError));
+  }
+
+  // ─────────────────────────── Tarifas de mayorista ───────────────────────────
+
+  /** Catálogo completo con el descuento de ese nivel donde lo haya. */
+  wholesaleTariff(role: WholesaleRole): Observable<ApiWholesaleTariff> {
+    return this.http
+      .get<ApiWholesaleTariff>(`/api/admin/wholesale/${role}`)
+      .pipe(catchError(handleError));
+  }
+
+  /** Fija el descuento de un producto. `0` retira la tarifa. */
+  setWholesaleDiscount(
+    role: WholesaleRole,
+    productId: string,
+    porcentaje: number,
+  ): Observable<{
+    productId: string;
+    role: WholesaleRole;
+    porcentaje: number | null;
+    precioMayorista: number;
+    bajoCosto: boolean;
+  }> {
+    return this.http
+      .put<{
+        productId: string;
+        role: WholesaleRole;
+        porcentaje: number | null;
+        precioMayorista: number;
+        bajoCosto: boolean;
+      }>(`/api/admin/wholesale/${role}/${productId}`, { porcentaje })
+      .pipe(catchError(handleError));
+  }
+
+  /** Mismo descuento a varios productos, en una sola transacción. */
+  setWholesaleBulk(
+    role: WholesaleRole,
+    productIds: readonly string[],
+    porcentaje: number,
+  ): Observable<{ role: WholesaleRole; porcentaje: number | null; aplicados: number }> {
+    return this.http
+      .put<{ role: WholesaleRole; porcentaje: number | null; aplicados: number }>(
+        `/api/admin/wholesale/${role}`,
+        { productIds, porcentaje },
+      )
       .pipe(catchError(handleError));
   }
 

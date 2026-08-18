@@ -32,6 +32,12 @@ function makeProduct(): Product {
 
 class CatalogStub {
   readonly loading = signal(false);
+  /**
+   * `CartService` la observa para reenganchar sus líneas cuando el catálogo se
+   * recarga —cosa que pasa al iniciar sesión, porque los precios de mayorista
+   * dependen de quién mira—. Vacía basta: el stub resuelve por `productById`.
+   */
+  readonly all = signal<readonly Product[]>([]);
   productById(id: string): Product | undefined {
     return id === 'p-test' ? makeProduct() : undefined;
   }

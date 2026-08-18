@@ -1,7 +1,9 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { CATEGORIES } from '../data/mock-catalog';
 import { Category, CategoryId, Product, SortOption, isInStock } from '../models/product.model';
 import { ApiClient, ApiErrorBody, toProduct } from '../api/api-client';
+import { TokenStore } from '../api/token-store';
+import { topWholesaleRole } from '../models/user.model';
 
 /** Peso de cada etiqueta en el orden "Destacados". */
 const BADGE_WEIGHT: Record<string, number> = {
@@ -14,6 +16,7 @@ const BADGE_WEIGHT: Record<string, number> = {
 @Injectable({ providedIn: 'root' })
 export class CatalogService {
   private readonly api = inject(ApiClient);
+  private readonly tokens = inject(TokenStore);
 
   readonly categories: readonly Category[] = CATEGORIES;
 
@@ -44,8 +47,41 @@ export class CatalogService {
   readonly sort = signal<SortOption>('destacados');
   readonly query = signal('');
 
+  /**
+   * Nivel de mayorista de la sesión, o `null` para el cliente normal.
+   *
+   * Lo decide `topWholesaleRole` por pertenencia literal, no `tokens.can()`:
+   * `can()` deja pasar a `SUPER_ADMIN` por cualquier rol, que es lo correcto
+   * para permisos y sería un error caro aplicado a precios.
+   */
+  readonly wholesaleTier = computed(() => topWholesaleRole(this.tokens.roles()));
+
+  /** `true` cuando algún producto del catálogo llega con tarifa aplicada. */
+  readonly hasWholesalePricing = computed(() =>
+    this.products().some((product) => product.listPrice !== undefined),
+  );
+
   constructor() {
     this.load();
+
+    /**
+     * Los precios dependen de quién mira, así que un cambio de sesión invalida
+     * el catálogo entero. Sin esto, entrar como mayorista dejaría la vitrina
+     * con los precios de lista hasta recargar la página a mano —y el checkout
+     * cobraría con descuento, mostrando un total distinto al que se vio—.
+     *
+     * Se compara el id, no el objeto: `TokenStore` rehidrata desde
+     * `localStorage` y devolvería una instancia nueva con el mismo usuario.
+     */
+    let lastUserId = untracked(() => this.tokens.user()?.id ?? null);
+    effect(() => {
+      const userId = this.tokens.user()?.id ?? null;
+      if (userId === lastUserId) {
+        return;
+      }
+      lastUserId = userId;
+      untracked(() => this.load());
+    });
   }
 
   load(): void {
