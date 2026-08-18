@@ -61,30 +61,3 @@
   </div>
 </section>
 
-<!-- Newsletter -->
-<section class="container-shell py-20 lg:py-28">
-  <div [appReveal]="0" class="mx-auto max-w-xl text-center">
-    <h2 class="text-h2 text-ink">Te contamos qué se cosecha cada lunes</h2>
-    <p class="mt-4 text-ink-soft">
-      Un correo por semana con lo que entró, lo que se acabó y una receta para
-      aprovecharlo. Nada más.
-    </p>
-
-    <form class="mt-9 flex flex-col gap-3 sm:flex-row" (submit)="$event.preventDefault()">
-      <label for="correo" class="sr-only">Tu correo electrónico</label>
-      <input
-        id="correo"
-        type="email"
-        required
-        placeholder="tu@correo.com"
-        class="min-w-0 flex-1 rounded-full border border-sand bg-transparent px-6 py-4 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
-      />
-      <button
-        type="submit"
-        class="shrink-0 rounded-full bg-moss px-8 py-4 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep"
-      >
-        Suscribirme
-      </button>
-    </form>
-  </div>
-</section>
