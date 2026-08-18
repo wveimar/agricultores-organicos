@@ -39,6 +39,40 @@ export function isWholesaleRole(role: UserRole): role is WholesaleRole {
   return (WHOLESALE_ROLES as readonly string[]).includes(role);
 }
 
+/** Los que abren secciones del panel. Derivados, para no listarlos dos veces. */
+export const STAFF_ROLES = ALL_ROLES.filter(
+  (role): role is StaffRole => !isWholesaleRole(role),
+);
+
+/**
+ * Qué concede cada rol, en una línea.
+ *
+ * Va junto a la casilla al asignarlo. Las etiquetas por sí solas no distinguen
+ * lo que abre el panel de lo que solo cambia un precio, y en una lista de seis
+ * casillas iguales esa diferencia es un clic.
+ */
+export const ROLE_HINTS: Readonly<Record<UserRole, string>> = {
+  ADMIN_INVENTARIO: 'Precios, existencias y catálogo',
+  GESTOR_PEDIDOS: 'Aprobar pedidos, despachos y cierre de caja',
+  SUPER_ADMIN: 'Todo el panel, incluidas cuentas y tarifas',
+  MAYORISTA_N1: 'Precios del nivel Bronce en la tienda',
+  MAYORISTA_N2: 'Precios del nivel Plata en la tienda',
+  MAYORISTA_N3: 'Precios del nivel Oro en la tienda',
+};
+
+/**
+ * Una cuenta es de cliente mayorista cuando **solo** tiene niveles de
+ * mayorista: no entra al panel, únicamente compra más barato.
+ *
+ * Se comprueba con `every` y no con `some` a propósito. Una cuenta que además
+ * lleva `GESTOR_PEDIDOS` es personal de la cooperativa que encima tiene tarifa,
+ * y tratarla como "cliente" la escondería del filtro donde se revisa quién
+ * tiene acceso al panel — justo la lista que hay que poder auditar.
+ */
+export function isWholesaleOnly(roles: readonly UserRole[]): boolean {
+  return roles.length > 0 && roles.every(isWholesaleRole);
+}
+
 /**
  * El nivel de mayorista más alto de una cuenta, si tiene alguno.
  *

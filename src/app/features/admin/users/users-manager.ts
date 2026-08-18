@@ -3,10 +3,52 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { TokenStore } from '../../../core/api/token-store';
 import { ApiErrorBody, ApiUser } from '../../../core/api/api-client';
-import { ALL_ROLES, ROLE_LABELS, UserRole } from '../../../core/models/user.model';
+import {
+  ROLE_HINTS,
+  ROLE_LABELS,
+  STAFF_ROLES,
+  UserRole,
+  WHOLESALE_ROLES,
+  isWholesaleOnly,
+  isWholesaleRole,
+} from '../../../core/models/user.model';
 
 /** Mismo mínimo que exige el servidor. */
 const MIN_PASSWORD = 8;
+
+/**
+ * Los roles se ofrecen en dos bloques, no en una lista de seis casillas
+ * iguales.
+ *
+ * Conceder acceso al panel y ponerle tarifa de mayorista a un cliente son
+ * decisiones de naturaleza opuesta —una abre pantallas, la otra cambia lo que
+ * se cobra— y en una lista plana están a un clic de distancia. Separarlas es
+ * lo que evita marcar «Administración general» queriendo marcar «Mayorista
+ * Oro».
+ */
+const ROLE_GROUPS = [
+  {
+    key: 'panel' as const,
+    title: 'Acceso al panel',
+    hint: 'Personal de la cooperativa. Abre secciones de administración.',
+    roles: STAFF_ROLES,
+  },
+  {
+    key: 'mayorista' as const,
+    title: 'Tarifa de mayorista',
+    hint: 'Clientes. No abren ninguna sección: solo cambian el precio que pagan.',
+    roles: WHOLESALE_ROLES,
+  },
+];
+
+type UserFilter = 'todos' | 'panel' | 'mayoristas' | 'inactivos';
+
+const USER_FILTERS: ReadonlyArray<{ value: UserFilter; label: string }> = [
+  { value: 'todos', label: 'Todas' },
+  { value: 'panel', label: 'Con acceso al panel' },
+  { value: 'mayoristas', label: 'Clientes mayoristas' },
+  { value: 'inactivos', label: 'Desactivadas' },
+];
 
 @Component({
   selector: 'app-users-manager',
@@ -19,15 +61,79 @@ export class UsersManager {
   private readonly tokens = inject(TokenStore);
   private readonly fb = inject(FormBuilder);
 
-  protected readonly roles = ALL_ROLES;
+  protected readonly roleGroups = ROLE_GROUPS;
   protected readonly roleLabels = ROLE_LABELS;
+  protected readonly roleHints = ROLE_HINTS;
+  protected readonly filters = USER_FILTERS;
   protected readonly minPassword = MIN_PASSWORD;
 
   /** Id de la sesión actual: marca "tú" y bloquea acciones sobre uno mismo. */
   protected readonly currentUserId = computed(() => this.tokens.user()?.id ?? null);
 
+  protected readonly filter = signal<UserFilter>('todos');
+  protected readonly query = signal('');
+
   constructor() {
     this.adminApi.loadUsers();
+  }
+
+  // ────────────────────────── Filtrado del listado ──────────────────────────
+
+  /**
+   * Con los mayoristas dentro, esta lista deja de ser "el equipo" y pasa a
+   * mezclar dos poblaciones: quien administra y quien compra. El filtro es lo
+   * que permite volver a ver una sola — sobre todo «Con acceso al panel», que
+   * es la lista que hay que poder auditar de un vistazo.
+   */
+  protected readonly visibleUsers = computed<readonly ApiUser[]>(() => {
+    const filtro = this.filter();
+    const term = this.query().trim().toLowerCase();
+
+    return this.adminApi.users().filter((user) => {
+      if (filtro === 'mayoristas' && !isWholesaleOnly(user.roles)) {
+        return false;
+      }
+      if (filtro === 'panel' && isWholesaleOnly(user.roles)) {
+        return false;
+      }
+      if (filtro === 'inactivos' && user.activo === 1) {
+        return false;
+      }
+      if (!term) {
+        return true;
+      }
+      return (
+        user.nombre.toLowerCase().includes(term) || user.email.toLowerCase().includes(term)
+      );
+    });
+  });
+
+  protected readonly countsByFilter = computed<Record<UserFilter, number>>(() => {
+    const users = this.adminApi.users();
+    const mayoristas = users.filter((u) => isWholesaleOnly(u.roles)).length;
+    return {
+      todos: users.length,
+      panel: users.length - mayoristas,
+      mayoristas,
+      inactivos: users.filter((u) => u.activo !== 1).length,
+    };
+  });
+
+  protected setFilter(value: UserFilter): void {
+    this.filter.set(value);
+    // Un panel abierto sobre una fila que el filtro va a ocultar se quedaría
+    // editando algo que ya no se ve.
+    this.editingId.set(null);
+    this.resettingId.set(null);
+  }
+
+  protected isWholesaleOnly(user: ApiUser): boolean {
+    return isWholesaleOnly(user.roles);
+  }
+
+  /** Distingue el sello de tarifa del de acceso: son cosas distintas. */
+  protected isWholesaleRole(role: UserRole): boolean {
+    return isWholesaleRole(role);
   }
 
   // ───────────────────────────── Crear cuenta ─────────────────────────────
@@ -300,6 +406,44 @@ export class UsersManager {
 
   protected roleLabel(role: UserRole): string {
     return ROLE_LABELS[role];
+  }
+
+  /**
+   * Avisa cuando se está **concediendo** administración general.
+   *
+   * En la edición se compara contra lo que la cuenta ya tenía: repetir el aviso
+   * cada vez que se abre un SUPER_ADMIN existente lo convertiría en ruido que
+   * se ignora, y entonces no avisaría de nada el día que importa.
+   *
+   * No bloquea nada — es una decisión legítima. Solo obliga a leerla.
+   */
+  protected createGrantsSuperAdmin(): boolean {
+    return this.createForm.controls.roles.value.includes('SUPER_ADMIN');
+  }
+
+  protected editGrantsSuperAdmin(user: ApiUser): boolean {
+    return (
+      this.editForm.controls.roles.value.includes('SUPER_ADMIN') &&
+      !user.roles.includes('SUPER_ADMIN')
+    );
+  }
+
+  /** Resumen de lo marcado, para el pie de cada bloque de casillas. */
+  protected selectedSummary(roles: readonly UserRole[]): string {
+    if (roles.length === 0) {
+      return 'Sin roles: la cuenta no podrá entrar ni tendrá tarifa.';
+    }
+    const panel = roles.filter((r) => !isWholesaleRole(r));
+    const tarifa = roles.filter(isWholesaleRole);
+
+    const partes: string[] = [];
+    if (panel.length > 0) {
+      partes.push(`entra al panel (${panel.map((r) => ROLE_LABELS[r]).join(', ')})`);
+    }
+    if (tarifa.length > 0) {
+      partes.push(`compra con ${tarifa.map((r) => ROLE_LABELS[r]).join(', ')}`);
+    }
+    return `Esta cuenta ${partes.join(' y ')}.`;
   }
 
   protected showCreateError(field: 'nombre' | 'email' | 'password'): boolean {

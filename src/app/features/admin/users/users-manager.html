@@ -201,22 +201,54 @@
       }
     </div>
 
-    <fieldset class="mt-5">
-      <legend class="text-sm font-medium text-ink">Permisos</legend>
-      <div class="mt-3 flex flex-col gap-2">
-        @for (role of roles; track role) {
-          <label class="flex cursor-pointer items-start gap-3 rounded-md border border-sand px-4 py-3 transition-colors duration-200 hover:border-stone">
-            <input
-              type="checkbox"
-              class="mt-0.5 size-4 accent-moss"
-              [checked]="hasRole(role)"
-              (change)="toggleRole(role)"
-            />
-            <span class="text-sm text-ink">{{ roleLabel(role) }}</span>
-          </label>
-        }
-      </div>
-    </fieldset>
+    <!--
+      Dos bloques y no una lista de seis: dar acceso al panel y ponerle tarifa
+      a un cliente son decisiones distintas, y juntas se confunden.
+    -->
+    @for (group of roleGroups; track group.key) {
+      <fieldset class="mt-5">
+        <legend class="text-sm font-medium text-ink">{{ group.title }}</legend>
+        <p class="mt-0.5 text-xs text-ink-muted">{{ group.hint }}</p>
+
+        <div class="mt-3 flex flex-col gap-2">
+          @for (role of group.roles; track role) {
+            @let marcado = hasRole(role);
+            <label
+              class="flex cursor-pointer items-start gap-3 rounded-md border px-4 py-3 transition-colors duration-200"
+              [class]="
+                marcado
+                  ? (group.key === 'mayorista' ? 'border-clay bg-clay/5' : 'border-moss bg-sage-light/30')
+                  : 'border-sand hover:border-stone'
+              "
+            >
+              <input
+                type="checkbox"
+                class="mt-0.5 size-4"
+                [class]="group.key === 'mayorista' ? 'accent-clay' : 'accent-moss'"
+                [checked]="marcado"
+                (change)="toggleRole(role)"
+              />
+              <span class="min-w-0">
+                <span class="block text-sm text-ink">{{ roleLabel(role) }}</span>
+                <span class="block text-xs text-ink-muted">{{ roleHints[role] }}</span>
+              </span>
+            </label>
+          }
+        </div>
+      </fieldset>
+    }
+
+    <p class="mt-3 text-xs text-ink-soft">
+      {{ selectedSummary(createForm.controls.roles.value) }}
+    </p>
+
+    @if (createGrantsSuperAdmin()) {
+      <p class="mt-3 rounded-md border border-honey/50 bg-honey/8 px-4 py-3 text-sm text-ink" role="status">
+        <strong class="text-clay-deep">Administración general</strong> abre el panel
+        entero: cuentas, tarifas de mayorista y cierre de caja. Dáselo solo a quien
+        deba poder cambiar cualquier cosa.
+      </p>
+    }
 
     <button
       type="submit"
@@ -228,6 +260,54 @@
   </form>
 }
 
+<!-- Filtros: la lista mezcla personal de la cooperativa y clientes mayoristas -->
+<div class="mt-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+  <div class="flex flex-wrap gap-2" role="tablist" aria-label="Filtrar cuentas">
+    @for (f of filters; track f.value) {
+      @let activa = filter() === f.value;
+      <button
+        type="button"
+        role="tab"
+        [attr.aria-selected]="activa"
+        class="flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-all duration-200"
+        [class]="
+          activa
+            ? 'border-moss bg-moss text-bone'
+            : 'border-sand bg-bone text-ink-soft hover:border-stone'
+        "
+        (click)="setFilter(f.value)"
+      >
+        {{ f.label }}
+        <span
+          class="tabular rounded-full px-1.5 py-0.5 text-[11px] leading-none"
+          [class]="activa ? 'bg-bone/20 text-bone' : 'bg-linen text-ink-muted'"
+        >
+          {{ countsByFilter()[f.value] }}
+        </span>
+      </button>
+    }
+  </div>
+
+  <div class="relative">
+    <label for="buscar-cuenta" class="sr-only">Buscar cuenta</label>
+    <input
+      id="buscar-cuenta"
+      type="search"
+      placeholder="Buscar por nombre o correo…"
+      class="w-full rounded-full border border-sand bg-bone py-2.5 pl-10 pr-4 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss sm:w-64"
+      [value]="query()"
+      (input)="query.set($any($event.target).value)"
+    />
+    <svg
+      class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-muted"
+      viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" stroke-linecap="round" />
+    </svg>
+  </div>
+</div>
+
 <!-- Lista -->
 @if (adminApi.usersLoading() && adminApi.users().length === 0) {
   <div class="mt-6 rounded-lg border border-dashed border-sand py-20 text-center">
@@ -235,7 +315,7 @@
   </div>
 } @else {
   <ul class="mt-6 flex flex-col gap-3">
-    @for (user of adminApi.users(); track user.id) {
+    @for (user of visibleUsers(); track user.id) {
       @let esYo = user.id === currentUserId();
       @let activo = user.activo === 1;
 
@@ -257,12 +337,26 @@
                   Sin acceso
                 </span>
               }
+              @if (isWholesaleOnly(user)) {
+                <span class="text-overline rounded-full bg-clay/12 px-2 py-0.5 font-semibold uppercase text-clay-deep">
+                  Cliente
+                </span>
+              }
             </p>
             <p class="mt-0.5 truncate text-sm text-ink-muted">{{ user.email }}</p>
 
+            <!-- Los sellos de tarifa van en arcilla y los de panel en lino: de
+                 un vistazo se ve quién puede entrar y quién solo compra. -->
             <div class="mt-2 flex flex-wrap gap-1.5">
               @for (role of user.roles; track role) {
-                <span class="text-overline rounded-full bg-linen px-2.5 py-1 font-semibold uppercase text-ink-soft">
+                <span
+                  class="text-overline rounded-full px-2.5 py-1 font-semibold uppercase"
+                  [class]="
+                    isWholesaleRole(role)
+                      ? 'bg-clay/12 text-clay-deep'
+                      : (role === 'SUPER_ADMIN' ? 'bg-moss text-bone' : 'bg-linen text-ink-soft')
+                  "
+                >
                   {{ roleLabel(role) }}
                 </span>
               }
@@ -354,25 +448,50 @@
               </div>
             </div>
 
-            <fieldset class="mt-4">
-              <legend class="text-sm font-medium text-ink">Permisos</legend>
-              <div class="mt-2 flex flex-wrap gap-2">
-                @for (role of roles; track role) {
-                  <label
-                    class="flex cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm transition-colors duration-200"
-                    [class]="hasEditRole(role) ? 'border-moss bg-sage-light/50 text-moss-deep' : 'border-sand text-ink-soft hover:border-stone'"
-                  >
-                    <input
-                      type="checkbox"
-                      class="size-3.5 accent-moss"
-                      [checked]="hasEditRole(role)"
-                      (change)="toggleEditRole(role)"
-                    />
-                    {{ roleLabel(role) }}
-                  </label>
-                }
-              </div>
-            </fieldset>
+            @for (group of roleGroups; track group.key) {
+              <fieldset class="mt-4">
+                <legend class="text-sm font-medium text-ink">{{ group.title }}</legend>
+                <p class="mt-0.5 text-xs text-ink-muted">{{ group.hint }}</p>
+
+                <div class="mt-2 flex flex-wrap gap-2">
+                  @for (role of group.roles; track role) {
+                    @let marcado = hasEditRole(role);
+                    <label
+                      class="flex cursor-pointer items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm transition-colors duration-200"
+                      [class]="
+                        marcado
+                          ? (group.key === 'mayorista'
+                              ? 'border-clay bg-clay/8 text-clay-deep'
+                              : 'border-moss bg-sage-light/50 text-moss-deep')
+                          : 'border-sand text-ink-soft hover:border-stone'
+                      "
+                      [title]="roleHints[role]"
+                    >
+                      <input
+                        type="checkbox"
+                        class="size-3.5"
+                        [class]="group.key === 'mayorista' ? 'accent-clay' : 'accent-moss'"
+                        [checked]="marcado"
+                        (change)="toggleEditRole(role)"
+                      />
+                      {{ roleLabel(role) }}
+                    </label>
+                  }
+                </div>
+              </fieldset>
+            }
+
+            <p class="mt-3 text-xs text-ink-soft">
+              {{ selectedSummary(editForm.controls.roles.value) }}
+            </p>
+
+            @if (editGrantsSuperAdmin(user)) {
+              <p class="mt-4 rounded-md border border-honey/50 bg-honey/8 px-4 py-3 text-sm text-ink" role="status">
+                Le estás dando <strong class="text-clay-deep">administración general</strong>
+                a {{ user.nombre }}: el panel entero, incluidas las cuentas y las
+                tarifas de mayorista.
+              </p>
+            }
 
             @if (emailCambia(user)) {
               <p class="mt-4 rounded-md border border-honey/40 bg-honey/10 px-4 py-3 text-sm text-clay-deep" role="status">
@@ -445,10 +564,29 @@
           </form>
         }
       </li>
+    } @empty {
+      <li class="rounded-lg border border-dashed border-sand py-16 text-center">
+        <p class="text-sm text-ink-soft">
+          @if (query()) {
+            Ninguna cuenta coincide con «{{ query() }}».
+          } @else if (filter() === 'mayoristas') {
+            Todavía no hay clientes con tarifa de mayorista. Crea una cuenta y
+            asígnale un nivel para que compre con descuento.
+          } @else if (filter() === 'inactivos') {
+            No hay cuentas desactivadas.
+          } @else {
+            No hay cuentas que mostrar con este filtro.
+          }
+        </p>
+      </li>
     }
   </ul>
 
   <p class="tabular mt-4 text-sm text-ink-muted" aria-live="polite">
-    {{ adminApi.users().length }} {{ adminApi.users().length === 1 ? 'cuenta' : 'cuentas' }}
+    {{ visibleUsers().length }}
+    {{ visibleUsers().length === 1 ? 'cuenta' : 'cuentas' }}
+    @if (visibleUsers().length !== adminApi.users().length) {
+      de {{ adminApi.users().length }}
+    }
   </p>
 }
