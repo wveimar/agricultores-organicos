@@ -27,8 +27,15 @@ export class FeaturedProducts {
   /**
    * Cuatro como mucho: es lo que entra en una fila del ancho completo, y una
    * sección de "más vendidos" con veinte productos deja de destacar nada.
+   *
+   * Con un filtro puesto no se pinta ninguno. Quien busca «mango» o pulsa
+   * «Panadería» ya dijo qué quiere ver, y estos cuatro —que no responden al
+   * filtro— se colarían por encima de su respuesta empujándola fuera de la
+   * pantalla.
    */
-  protected readonly visibles = computed(() => this.featured().slice(0, 4));
+  protected readonly visibles = computed(() =>
+    this.catalog.isFiltering() ? [] : this.featured().slice(0, 4),
+  );
 
   protected readonly hayMas = computed(() => this.featured().length > 4);
 }

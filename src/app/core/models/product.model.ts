@@ -180,7 +180,9 @@ export type CategoryId =
   | 'listos'
   | 'granos'
   | 'despensa'
-  | 'canastas';
+  | 'canastas'
+  | 'panaderia'
+  | 'fermentos';
 
 export interface Category {
   readonly id: CategoryId | 'todos';
@@ -228,6 +230,10 @@ export const ADMIN_GROUP_OF: Readonly<Record<CategoryId, AdminGroup>> = {
   granos: 'agroindustriales',
   despensa: 'agroindustriales',
   canastas: 'agroindustriales',
+  // El pan se hornea, no se cosecha: entra por el mismo grupo que los lácteos
+  // y las mieles, que es donde compras razona sobre lo transformado.
+  panaderia: 'agroindustriales',
+  fermentos: 'agroindustriales',
 };
 
 export const ADMIN_GROUP_LABELS: ReadonlyArray<{ value: AdminGroup | 'todos'; label: string }> = [

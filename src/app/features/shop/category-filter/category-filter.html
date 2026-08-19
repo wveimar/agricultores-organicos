@@ -1,51 +1,36 @@
 <!--
-  Barra de filtros pegajosa bajo el header. El filtrado es client-side sobre un
+  Barra de navegación del catálogo. El filtrado es client-side sobre un
   `computed`: no navega ni recarga, solo recalcula la señal `visible`.
-  En móvil los chips se desplazan en horizontal con scroll-snap.
+
+  Se pega bajo el header (`top-16` = su altura ya encogida) y se suelta al
+  terminar la vitrina, porque su contenedor acaba ahí: acompaña mientras se
+  compra y desaparece al llegar a la parte editorial, donde filtrar no
+  significa nada.
+
+  Móvil: el buscador primero, ancho completo; los chips se desplazan en
+  horizontal con scroll-snap. Escritorio: ambos en la misma fila.
+
+  El bloque exterior va sin padding para que el fondo y el borde lleguen de
+  lado a lado de la ventana; el `container-shell` de dentro es el que alinea el
+  contenido con el resto de la página.
 -->
-<div class="sticky top-16 z-40 -mx-6 border-b border-sand/70 bg-bone/85 backdrop-blur-md lg:-mx-10">
-  <div class="container-shell flex flex-col gap-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-    <!-- Chips de categoría -->
-    <div
-      class="no-scrollbar -mx-6 flex snap-x snap-mandatory gap-2 overflow-x-auto px-6 lg:mx-0 lg:flex-wrap lg:px-0"
-      role="tablist"
-      aria-label="Filtrar por categoría"
-    >
-      @for (category of catalog.categories; track category.id) {
-        @let isActive = catalog.activeCategory() === category.id;
-
-        <button
-          type="button"
-          role="tab"
-          [attr.aria-selected]="isActive"
-          class="group flex shrink-0 snap-start items-center gap-2 rounded-full border px-4 py-2.5 text-sm transition-all duration-300 ease-[cubic-bezier(.22,1,.36,1)]"
-          [class]="
-            isActive
-              ? 'border-moss bg-moss text-bone'
-              : 'border-sand bg-transparent text-ink-soft hover:border-stone hover:bg-linen'
-          "
-          (click)="select(category.id)"
-        >
-          {{ category.name }}
-          <!-- El contador se atenúa en reposo y gana contraste al activarse -->
-          <span
-            class="tabular rounded-full px-1.5 py-0.5 text-[11px] leading-none transition-colors duration-300"
-            [class]="isActive ? 'bg-bone/20 text-bone' : 'bg-sand/60 text-ink-muted'"
-          >
-            {{ catalog.counts()[category.id] ?? 0 }}
-          </span>
-        </button>
-      }
-    </div>
-
-    <!-- Buscar -->
-    <div class="relative shrink-0">
-      <label for="buscar-tienda" class="sr-only">Buscar producto</label>
+<div
+  class="sticky top-16 z-40 border-b border-sand/70 bg-bone/90 backdrop-blur-md"
+>
+  <div
+    class="container-shell flex flex-col gap-3 py-3.5 lg:flex-row-reverse lg:items-center lg:justify-between lg:gap-6 lg:py-4"
+  >
+    <!-- Buscador -->
+    <div class="relative w-full lg:w-72 lg:shrink-0">
+      <label for="buscar-tienda" class="sr-only">Buscar producto o finca</label>
       <input
+        #buscador
         id="buscar-tienda"
         type="search"
         placeholder="Buscar producto o finca…"
-        class="w-full rounded-full border border-sand bg-transparent py-2.5 pl-10 pr-4 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss sm:w-64"
+        autocomplete="off"
+        aria-describedby="buscar-tienda-ayuda"
+        class="w-full rounded-full border border-sand bg-linen/60 py-2.5 pl-10 pr-4 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss focus:bg-bone lg:pr-14"
         [value]="catalog.query()"
         (input)="onQuery($event)"
       />
@@ -56,6 +41,53 @@
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" stroke-linecap="round" />
       </svg>
+
+      <!--
+        La pista del atajo solo en escritorio: en un teléfono no hay Ctrl y
+        ocuparía el sitio del texto que se está escribiendo.
+      -->
+      <kbd
+        class="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-sand bg-bone px-1.5 py-0.5 font-sans text-[10px] font-medium text-ink-muted lg:block"
+        aria-hidden="true"
+      >
+        Ctrl K
+      </kbd>
+      <p id="buscar-tienda-ayuda" class="sr-only">
+        Pulsa Control y K para buscar desde cualquier punto de la página.
+      </p>
+    </div>
+
+    <!-- Chips de categoría: scroll en móvil, wrap en escritorio -->
+    <div
+      class="no-scrollbar -mx-6 flex snap-x snap-mandatory gap-1.5 overflow-x-auto px-6 lg:mx-0 lg:flex-wrap lg:gap-2 lg:px-0"
+      role="tablist"
+      aria-label="Filtrar por categoría"
+    >
+      @for (category of catalog.visibleCategories(); track category.id) {
+        @let isActive = catalog.activeCategory() === category.id;
+
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="isActive"
+          class="group flex shrink-0 snap-start items-center gap-1.5 rounded-full border px-3 py-2 text-xs transition-all duration-300 ease-[cubic-bezier(.22,1,.36,1)] sm:px-4 sm:py-2.5 sm:text-sm lg:gap-2"
+          [class]="
+            isActive
+              ? 'border-moss bg-moss text-bone'
+              : 'border-sand bg-transparent text-ink-soft hover:border-stone hover:bg-linen'
+          "
+          (click)="select(category.id)"
+        >
+          {{ category.name }}
+          <!-- El contador se atenúa en reposo y gana contraste al activarse -->
+          <span
+            class="tabular rounded-full px-1 py-0.5 text-[10px] leading-none transition-colors duration-300 sm:px-1.5 sm:text-[11px]"
+            [class]="isActive ? 'bg-bone/20 text-bone' : 'bg-sand/60 text-ink-muted'"
+          >
+            {{ catalog.counts()[category.id] ?? 0 }}
+          </span>
+        </button>
+      }
     </div>
   </div>
 </div>

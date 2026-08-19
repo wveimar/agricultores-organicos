@@ -67,14 +67,18 @@
       <!-- Categoría -->
       <div>
         <label for="categoria" class="block text-sm font-semibold text-ink">Categoría</label>
-        <input
+        <select
           id="categoria"
-          type="text"
           formControlName="categoriaId"
-          class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+          (change)="onCategoriaChange($event)"
+          class="mt-2 w-full rounded-md border bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200"
           [class]="showError('categoriaId') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-          placeholder="Ej: hortalizas"
-        />
+        >
+          <option value="">Elige una categoría…</option>
+          @for (categoria of categorias; track categoria.id) {
+            <option [value]="categoria.id">{{ categoria.name }}</option>
+          }
+        </select>
         @if (showError('categoriaId')) {
           <p class="mt-2 text-sm text-berry">La categoría es requerida</p>
         }

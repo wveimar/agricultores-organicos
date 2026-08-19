@@ -1,8 +1,32 @@
 <app-hero />
 
+<!--
+  La vitrina entera bajo un mismo contenedor. La barra de filtros se pega
+  dentro de él, así que acompaña mientras se compra y se suelta sola al llegar
+  a la parte editorial, donde ya no hay nada que filtrar.
+
+  Sin `container-shell` aquí a propósito: la barra necesita llegar de borde a
+  borde, y cada hijo trae el suyo.
+-->
+<section class="pb-24">
+  <app-category-filter />
+
+  <!-- Más vendidos: se elige a mano desde el inventario, no se calcula -->
+  <app-featured-products />
+
+  <!--
+    El ancla del enlace «Saltar al catálogo» y de «Ver todo el huerto». El
+    margen de scroll descuenta el header y la barra de filtros, que en móvil
+    ocupa dos filas: sin él, el título de la rejilla queda debajo de ambos.
+  -->
+  <div id="tienda" class="container-shell scroll-mt-48 lg:scroll-mt-32">
+    <app-product-grid />
+  </div>
+</section>
+
 <!-- Banda de confianza: cuatro promesas cortas, sin iconos que distraigan -->
-<section class="border-b border-sand bg-linen">
-  <div class="container-shell grid gap-8 py-12 sm:grid-cols-2 lg:grid-cols-4 lg:py-14">
+<section class="border-t border-b border-sand bg-bone">
+  <div class="container-shell grid gap-8 py-16 sm:grid-cols-2 lg:grid-cols-4 lg:py-20">
     @for (item of guarantees; track item.title; let i = $index) {
       <div [appReveal]="i * 80">
         <h3 class="text-overline font-sans font-semibold uppercase text-clay">{{ item.title }}</h3>
@@ -10,15 +34,6 @@
       </div>
     }
   </div>
-</section>
-
-<!-- Más vendidos: se elige a mano desde el inventario, no se calcula -->
-<app-featured-products />
-
-<!-- Vitrina: filtros pegajosos + rejilla -->
-<section id="tienda" class="container-shell scroll-mt-16 pb-24">
-  <app-category-filter />
-  <app-product-grid />
 </section>
 
 <!-- Banda editorial -->

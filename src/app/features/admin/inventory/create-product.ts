@@ -14,11 +14,14 @@ import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
 import { ImageField } from './image-field/image-field';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import {
+  ADMIN_GROUP_OF,
   ALL_UNITS,
+  CategoryId,
   ProductUnit,
   UNIT_LABELS,
   unitPresentation,
 } from '../../../core/models/product.model';
+import { CATEGORIES } from '../../../core/data/mock-catalog';
 
 @Component({
   selector: 'app-create-product',
@@ -136,6 +139,31 @@ export class CreateProduct {
     const madre = id ? this.adminApi.productById(id) : undefined;
     if (madre && !this.form.controls.nombre.value.trim()) {
       this.copiarDeLaMadre(madre);
+    }
+  }
+
+  /**
+   * Categorías elegibles: las de la vitrina menos «Todo el huerto», que es un
+   * filtro y no un sitio donde archivar nada.
+   *
+   * Antes esto era un campo de texto libre con el ejemplo «hortalizas», que no
+   * es ninguna de ellas. Un producto guardado con una categoría inventada solo
+   * sale bajo «Todo el huerto» y desaparece de todos los chips — el fallo que
+   * tuvo que reparar la migración `0010_normalizar_categorias`.
+   */
+  protected readonly categorias = CATEGORIES.filter((c) => c.id !== 'todos');
+
+  /**
+   * El grupo del panel se deduce de la categoría: `ADMIN_GROUP_OF` es una
+   * función total sobre `CategoryId`, así que no hay pareja válida que elegir
+   * a mano. Se sincroniza en vez de bloquearse para no romper las fichas
+   * antiguas que ya traigan otra combinación.
+   */
+  protected onCategoriaChange(event: Event): void {
+    const id = (event.target as HTMLSelectElement).value as CategoryId;
+    const grupo = ADMIN_GROUP_OF[id];
+    if (grupo) {
+      this.form.controls.grupoAdmin.setValue(grupo);
     }
   }
 

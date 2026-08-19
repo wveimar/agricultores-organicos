@@ -59,6 +59,16 @@ export const CATEGORIES: readonly Category[] = [
     description: 'Molidos en piedra y empacados en lotes pequeños.',
   },
   {
+    id: 'fermentos',
+    name: 'Fermentos',
+    description: 'Kambuchas y fermentados vivos, embotellados sin pasteurizar.',
+  },
+  {
+    id: 'panaderia',
+    name: 'Panadería',
+    description: 'Horneado el mismo día con harinas molidas en el altiplano.',
+  },
+  {
     id: 'despensa',
     name: 'Despensa',
     description: 'Lo que sostiene la cocina durante todo el mes.',

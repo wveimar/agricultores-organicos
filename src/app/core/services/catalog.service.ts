@@ -214,6 +214,36 @@ export class CatalogService {
     return totals;
   });
 
+  /**
+   * Los chips que se pintan: «Todo el huerto» y las categorías que tienen algo.
+   *
+   * Una categoría vacía es un pasillo sin nada — se anuncia, se pulsa y no hay
+   * qué ver. Filtrarlas aquí también permite declarar una sección antes de
+   * tener el producto: «Panadería» ya existe en el código y aparece sola el día
+   * que se cree el primer pan en el panel, sin tocar nada.
+   *
+   * La activa se conserva aunque se quede en cero: que el chip donde estás
+   * parado desaparezca bajo el dedo es peor que un contador en 0.
+   */
+  readonly visibleCategories = computed<readonly Category[]>(() => {
+    // Mientras llega el catálogo no hay contadores, y filtrar por ellos dejaría
+    // la barra con un solo chip para estallar a nueve medio segundo después.
+    // Se pintan todas y se recorta una vez, cuando ya se sabe qué hay.
+    if (this.loading()) {
+      return this.categories;
+    }
+
+    const counts = this.counts();
+    const active = this.activeCategory();
+
+    return this.categories.filter(
+      (category) =>
+        category.id === 'todos' ||
+        category.id === active ||
+        (counts[category.id] ?? 0) > 0,
+    );
+  });
+
   /** Descripción de la categoría activa, usada como subtítulo de la rejilla. */
   readonly activeCategoryMeta = computed<Category>(
     () =>
@@ -222,6 +252,11 @@ export class CatalogService {
   );
 
   readonly hasResults = computed(() => this.visible().length > 0);
+
+  /** `true` cuando una categoría o una búsqueda están acotando la vitrina. */
+  readonly isFiltering = computed(
+    () => this.activeCategory() !== 'todos' || this.query().trim().length > 0,
+  );
 
   /**
    * Los que se destacan en la portada.
