@@ -188,12 +188,50 @@ export class CreateProduct {
   protected creatingProduct = false;
   protected createError: string | null = null;
 
+  /**
+   * Campos obligatorios en el orden en que se leen, con el id del elemento y
+   * cómo nombrarlos al reclamarlos.
+   *
+   * El formulario es más largo que la pantalla y el botón vive al final, así
+   * que un campo incompleto puede quedar a dos pantallas de distancia de donde
+   * se pulsa. Sin esta lista, el botón simplemente no hacía nada.
+   */
+  private static readonly CAMPOS = [
+    ['nombre', 'nombre', 'el nombre'],
+    ['categoriaId', 'categoria', 'la categoría'],
+    ['grupoAdmin', 'grupo', 'el grupo'],
+    ['precio', 'precio', 'el precio de venta'],
+    ['precioCosto', 'costo', 'el precio de costo'],
+    ['cantidadUnidad', 'cantidad', 'la cantidad'],
+    ['unidad', 'unidad', 'la unidad'],
+    ['origen', 'origen', 'el origen'],
+    ['imagen', 'imagen', 'la imagen principal'],
+    ['imagenAlt', 'imagen-alt', 'el texto alternativo'],
+  ] as const;
+
+  /** Qué falta por rellenar, en cristiano. `null` mientras no estorbe. */
+  protected faltante: string | null = null;
+
   protected createProduct(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
+
+      // Se nombra el primero que falla y se lleva el cursor hasta él. Marcar
+      // los campos en rojo no basta cuando ninguno está a la vista: quien
+      // pulsa «Crear producto» ve el botón sin respuesta y no tiene por dónde
+      // empezar a buscar.
+      const roto = CreateProduct.CAMPOS.find(([control]) => this.form.get(control)?.invalid);
+      this.faltante = roto ? `Falta ${roto[2]}.` : 'Hay algún dato sin rellenar.';
+
+      if (roto) {
+        const campo = document.getElementById(roto[1]);
+        campo?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        campo?.focus({ preventScroll: true });
+      }
       return;
     }
 
+    this.faltante = null;
     this.createError = null;
     this.creatingProduct = true;
 

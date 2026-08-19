@@ -121,9 +121,13 @@
             id="costo"
             type="number"
             formControlName="precioCosto"
-            class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+            class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+            [class]="showError('precioCosto') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
             min="0"
           />
+          @if (showError('precioCosto')) {
+            <p class="mt-2 text-sm text-berry">Requerido. Pon 0 si no lo llevas.</p>
+          }
         </div>
       </div>
         <!-- Presentación: cuánto se lleva el cliente por el precio marcado -->
@@ -303,6 +307,12 @@
       </div>
 
       <!-- Botones -->
+      @if (faltante) {
+        <p class="rounded-md border border-berry/30 bg-berry/5 px-4 py-3 text-sm text-berry" role="alert">
+          {{ faltante }}
+        </p>
+      }
+
       <div class="flex gap-3 justify-end pt-4">
         <a
           routerLink="/admin/inventario"
