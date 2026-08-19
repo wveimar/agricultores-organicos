@@ -3,6 +3,7 @@ import { Env } from './types';
 import { requireAuth } from './auth/middleware';
 import * as auth from './routes/auth';
 import * as products from './routes/products';
+import * as categories from './routes/categories';
 import * as orders from './routes/orders';
 import * as reports from './routes/reports';
 import * as users from './routes/users';
@@ -79,6 +80,12 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return products.listPublic(request, env, url);
   }
 
+  // Los chips de la vitrina. Sin sesión: es la estructura del catálogo, la
+  // misma para todo el mundo — los precios son lo que cambia según quién mire.
+  if (pathname === '/api/categories' && method === 'GET') {
+    return categories.listPublic(env);
+  }
+
   if (pathname === '/api/orders' && method === 'POST') {
     return orders.create(request, env);
   }
@@ -125,6 +132,22 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (productMatch && method === 'PUT') {
       return products.updateFull(request, env, user, productMatch[1]);
+    }
+
+    // Categorías del catálogo
+    if (pathname === '/api/admin/categories' && method === 'GET') {
+      return categories.listAdmin(env, user);
+    }
+    if (pathname === '/api/admin/categories' && method === 'POST') {
+      return categories.create(request, env, user);
+    }
+
+    const categoryMatch = pathname.match(/^\/api\/admin\/categories\/([\w-]+)$/);
+    if (categoryMatch && method === 'PUT') {
+      return categories.update(request, env, user, categoryMatch[1]);
+    }
+    if (categoryMatch && method === 'DELETE') {
+      return categories.remove(env, user, categoryMatch[1]);
     }
 
     // Pedidos

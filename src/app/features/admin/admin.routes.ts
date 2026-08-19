@@ -45,6 +45,13 @@ export const ADMIN_ROUTES: Routes = [
           import('./inventory/inventory-dashboard').then((m) => m.InventoryDashboard),
       },
       {
+        path: 'categorias',
+        canActivate: [roleGuard('ADMIN_INVENTARIO')],
+        title: 'Categorías · Panel',
+        loadComponent: () =>
+          import('./categories/categories-manager').then((m) => m.CategoriesManager),
+      },
+      {
         path: 'inventario/crear',
         canActivate: [roleGuard('ADMIN_INVENTARIO')],
         title: 'Crear producto · Panel',

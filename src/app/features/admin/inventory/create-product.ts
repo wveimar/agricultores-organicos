@@ -14,14 +14,11 @@ import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
 import { ImageField } from './image-field/image-field';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import {
-  ADMIN_GROUP_OF,
   ALL_UNITS,
-  CategoryId,
   ProductUnit,
   UNIT_LABELS,
   unitPresentation,
 } from '../../../core/models/product.model';
-import { CATEGORIES } from '../../../core/data/mock-catalog';
 
 @Component({
   selector: 'app-create-product',
@@ -91,6 +88,11 @@ export class CreateProduct {
     if (this.adminApi.products().length === 0) {
       this.adminApi.loadProducts();
     }
+    // El desplegable de categoría sale de la tabla: sin esto quedaría vacío al
+    // entrar directo por URL, y no habría dónde archivar el producto.
+    if (this.adminApi.categories().length === 0) {
+      this.adminApi.loadCategories();
+    }
 
     this.form.controls.parentId.setValue(this.parentParam);
 
@@ -143,25 +145,22 @@ export class CreateProduct {
   }
 
   /**
-   * Categorías elegibles: las de la vitrina menos «Todo el huerto», que es un
-   * filtro y no un sitio donde archivar nada.
+   * Categorías elegibles, leídas de la tabla `categories`.
    *
    * Antes esto era un campo de texto libre con el ejemplo «hortalizas», que no
-   * es ninguna de ellas. Un producto guardado con una categoría inventada solo
+   * era ninguna categoría real. Un producto guardado con una inventada solo
    * sale bajo «Todo el huerto» y desaparece de todos los chips — el fallo que
-   * tuvo que reparar la migración `0010_normalizar_categorias`.
+   * tuvo que reparar la migración `0010`, y que volvió a pasar con 'fermentos'.
    */
-  protected readonly categorias = CATEGORIES.filter((c) => c.id !== 'todos');
+  protected readonly categorias = this.adminApi.selectableCategories;
 
   /**
-   * El grupo del panel se deduce de la categoría: `ADMIN_GROUP_OF` es una
-   * función total sobre `CategoryId`, así que no hay pareja válida que elegir
-   * a mano. Se sincroniza en vez de bloquearse para no romper las fichas
-   * antiguas que ya traigan otra combinación.
+   * El grupo del panel se deduce de la categoría: cada fila trae el suyo, así
+   * que no hay pareja que elegir a mano. Se sincroniza en vez de bloquearse
+   * para no romper las fichas antiguas que ya traigan otra combinación.
    */
   protected onCategoriaChange(event: Event): void {
-    const id = (event.target as HTMLSelectElement).value as CategoryId;
-    const grupo = ADMIN_GROUP_OF[id];
+    const grupo = this.adminApi.categoryById((event.target as HTMLSelectElement).value)?.grupoAdmin;
     if (grupo) {
       this.form.controls.grupoAdmin.setValue(grupo);
     }

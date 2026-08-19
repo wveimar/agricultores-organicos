@@ -1,0 +1,339 @@
+<div class="min-h-screen bg-linen py-12 px-5">
+  <div class="mx-auto max-w-4xl">
+    <!-- Encabezado -->
+    <div class="mb-8">
+      <a
+        routerLink="/admin/inventario"
+        class="inline-flex items-center gap-2 text-sm text-ink-soft transition-colors hover:text-ink"
+      >
+        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M19 12H5M12 19l-7-7 7-7" />
+        </svg>
+        Volver al inventario
+      </a>
+      <h1 class="mt-4 text-h2 text-ink">Categorías</h1>
+      <p class="mt-2 max-w-2xl text-sm text-ink-soft">
+        Las secciones de la tienda. Son los chips que el cliente ve encima de la
+        vitrina y la lista con la que archivas cada producto.
+      </p>
+    </div>
+
+    @if (adminApi.categoriesError(); as error) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4">
+        <p class="text-sm font-semibold text-berry">No se pudieron cargar</p>
+        <p class="mt-1 text-sm text-ink-soft">{{ error }}</p>
+      </div>
+    }
+
+    @if (rowError(); as error) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4" role="alert">
+        <p class="text-sm text-ink-soft">{{ error }}</p>
+      </div>
+    }
+
+    <!-- Resumen + acción principal -->
+    <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <div class="flex gap-8">
+        <div>
+          <p class="tabular font-display text-h3 text-moss">{{ adminApi.categories().length }}</p>
+          <p class="text-sm text-ink-soft">categorías</p>
+        </div>
+        <div>
+          <p class="tabular font-display text-h3 text-ink">{{ totalProductos() }}</p>
+          <p class="text-sm text-ink-soft">productos archivados</p>
+        </div>
+        @if (sinUsar() > 0) {
+          <div>
+            <p class="tabular font-display text-h3 text-clay">{{ sinUsar() }}</p>
+            <p class="text-sm text-ink-soft">sin ningún producto</p>
+          </div>
+        }
+      </div>
+
+      @if (!creando()) {
+        <button
+          type="button"
+          class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep"
+          (click)="startCreate()"
+        >
+          Nueva categoría
+        </button>
+      }
+    </div>
+
+    <!-- Formulario de alta. Va arriba porque es donde aparecerá la fila nueva. -->
+    @if (creando()) {
+      <form
+        [formGroup]="form"
+        (ngSubmit)="save()"
+        class="mb-6 rounded-lg border border-moss/30 bg-bone p-6"
+      >
+        <p class="text-sm font-semibold text-ink">Nueva categoría</p>
+        <p class="mt-1 text-sm text-ink-soft">
+          El identificador se saca del nombre y ya no se puede cambiar: es por
+          donde apuntan los productos.
+        </p>
+
+        <ng-container [ngTemplateOutlet]="campos" />
+
+        <div class="mt-5 flex items-center gap-3">
+          <button
+            type="submit"
+            class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:opacity-50"
+            [disabled]="saving()"
+          >
+            {{ saving() ? 'Creando…' : 'Crear categoría' }}
+          </button>
+          <button
+            type="button"
+            class="text-sm text-ink-soft transition-colors duration-200 hover:text-ink"
+            (click)="cancel()"
+          >
+            Cancelar
+          </button>
+        </div>
+
+        @if (formError(); as error) {
+          <p class="mt-4 text-sm text-berry">{{ error }}</p>
+        }
+      </form>
+    }
+
+    <!-- Listado -->
+    @if (adminApi.categoriesLoading() && adminApi.categories().length === 0) {
+      <div class="rounded-lg border border-sand bg-bone p-8 text-center">
+        <p class="text-sm text-ink-soft">Cargando categorías…</p>
+      </div>
+    } @else {
+      <ul class="flex flex-col gap-3">
+        @for (categoria of adminApi.categories(); track categoria.id) {
+          @let editando = editingId() === categoria.id;
+          @let productos = categoria.productos ?? 0;
+          @let apagada = categoria.activo === 0;
+
+          <li
+            class="rounded-lg border bg-bone transition-colors duration-200"
+            [class]="apagada ? 'border-sand/60' : 'border-sand'"
+          >
+            @if (editando) {
+              <form [formGroup]="form" (ngSubmit)="save()" class="p-6">
+                <p class="text-sm font-semibold text-ink">Editar «{{ categoria.nombre }}»</p>
+                <p class="mt-1 text-sm text-ink-soft">
+                  Identificador <code class="text-ink">{{ categoria.id }}</code> — no se
+                  cambia; lo usan {{ productos }} producto(s) para saber dónde están.
+                </p>
+
+                <ng-container [ngTemplateOutlet]="campos" />
+
+                <div class="mt-5 flex items-center gap-3">
+                  <button
+                    type="submit"
+                    class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:opacity-50"
+                    [disabled]="saving()"
+                  >
+                    {{ saving() ? 'Guardando…' : 'Guardar' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="text-sm text-ink-soft transition-colors duration-200 hover:text-ink"
+                    (click)="cancel()"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+
+                @if (formError(); as error) {
+                  <p class="mt-4 text-sm text-berry">{{ error }}</p>
+                }
+              </form>
+            } @else {
+              <div class="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <p class="text-sm font-semibold" [class]="apagada ? 'text-ink-muted' : 'text-ink'">
+                      {{ categoria.nombre }}
+                    </p>
+                    <span class="text-overline rounded-full bg-linen px-2 py-0.5 font-semibold uppercase text-ink-muted">
+                      {{ grupoLabel(categoria.grupoAdmin) }}
+                    </span>
+                    @if (apagada) {
+                      <span class="text-overline rounded-full bg-clay/15 px-2 py-0.5 font-semibold uppercase text-clay-deep">
+                        No se ofrece
+                      </span>
+                    }
+                  </div>
+
+                  @if (categoria.descripcion) {
+                    <p class="mt-1 truncate text-sm text-ink-soft">{{ categoria.descripcion }}</p>
+                  } @else {
+                    <p class="mt-1 text-sm text-ink-muted">
+                      Sin descripción — es el subtítulo que se lee bajo el título de la rejilla.
+                    </p>
+                  }
+
+                  <p class="tabular mt-1.5 text-xs text-ink-muted">
+                    <code>{{ categoria.id }}</code> · orden {{ categoria.orden }} ·
+                    {{ productos }} producto(s)
+                  </p>
+                </div>
+
+                <!-- Confirmación en el sitio: borrar es lo único irreversible aquí -->
+                @if (confirmingId() === categoria.id) {
+                  <div class="flex items-center gap-3">
+                    <p class="text-sm text-ink-soft">¿Borrar «{{ categoria.nombre }}»?</p>
+                    <button
+                      type="button"
+                      class="rounded-full bg-berry px-4 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:opacity-90 disabled:opacity-50"
+                      [disabled]="busyId() === categoria.id"
+                      (click)="confirmDelete(categoria.id)"
+                    >
+                      Sí, borrar
+                    </button>
+                    <button
+                      type="button"
+                      class="text-sm text-ink-soft transition-colors duration-200 hover:text-ink"
+                      (click)="cancelDelete()"
+                    >
+                      No
+                    </button>
+                  </div>
+                } @else {
+                  <div class="flex items-center gap-2">
+                    <button
+                      type="button"
+                      class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+                      (click)="startEdit(categoria)"
+                    >
+                      Editar
+                    </button>
+
+                    <button
+                      type="button"
+                      class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-stone disabled:opacity-50"
+                      [disabled]="busyId() === categoria.id"
+                      [title]="
+                        apagada
+                          ? 'Volver a ofrecer esta sección en la tienda'
+                          : 'Dejar de ofrecerla sin perder sus productos'
+                      "
+                      (click)="toggleActive(categoria)"
+                    >
+                      {{ apagada ? 'Activar' : 'Desactivar' }}
+                    </button>
+
+                    <!--
+                      Borrar solo si está vacía. Con productos dentro los
+                      dejaría apuntando a un id inexistente: desaparecerían de
+                      todos los chips y solo se encontrarían buscando por
+                      nombre. Es el fallo que esta tabla vino a cerrar, así que
+                      aquí ni se ofrece — para eso está «Desactivar».
+                    -->
+                    <button
+                      type="button"
+                      class="rounded-full border border-sand px-4 py-2 text-sm transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-40"
+                      [class]="
+                        productos === 0
+                          ? 'text-ink-soft hover:border-berry hover:text-berry'
+                          : 'text-ink-muted'
+                      "
+                      [disabled]="productos > 0 || busyId() === categoria.id"
+                      [title]="
+                        productos > 0
+                          ? 'Tiene ' + productos + ' producto(s) dentro. Muévelos a otra categoría o desactívala.'
+                          : 'Borrar esta categoría'
+                      "
+                      (click)="askDelete(categoria.id)"
+                    >
+                      Borrar
+                    </button>
+                  </div>
+                }
+              </div>
+            }
+          </li>
+        } @empty {
+          <li class="rounded-lg border border-sand bg-bone p-8 text-center">
+            <p class="text-sm text-ink-soft">
+              No hay ninguna categoría todavía. Crea la primera para poder archivar productos.
+            </p>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+</div>
+
+<!--
+  Los campos son los mismos al crear y al editar, así que viven una sola vez.
+  El identificador no está aquí a propósito: al crear se deduce del nombre, y
+  al editar no se puede cambiar.
+-->
+<ng-template #campos>
+  <div class="mt-5 grid gap-4 sm:grid-cols-2">
+    <div class="sm:col-span-2">
+      <label for="cat-nombre" class="block text-sm font-semibold text-ink">Nombre</label>
+      <input
+        id="cat-nombre"
+        type="text"
+        formControlName="nombre"
+        class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+        [class]="showError('nombre') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+        placeholder="Ej: Panadería"
+      />
+      @if (showError('nombre')) {
+        <p class="mt-2 text-sm text-berry">El nombre es requerido (mín. 2 caracteres)</p>
+      }
+    </div>
+
+    <div class="sm:col-span-2">
+      <label for="cat-descripcion" class="block text-sm font-semibold text-ink">
+        Descripción <span class="font-normal text-ink-muted">(opcional)</span>
+      </label>
+      <input
+        id="cat-descripcion"
+        type="text"
+        formControlName="descripcion"
+        class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+        placeholder="Horneado el mismo día con harinas del altiplano."
+      />
+      <p class="mt-2 text-sm text-ink-soft">
+        Se lee bajo el título de la rejilla cuando el cliente elige esta sección.
+      </p>
+    </div>
+
+    <div>
+      <label for="cat-grupo" class="block text-sm font-semibold text-ink">Grupo de compras</label>
+      <select
+        id="cat-grupo"
+        formControlName="grupoAdmin"
+        class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+      >
+        @for (grupo of grupos; track grupo.value) {
+          <option [value]="grupo.value">{{ grupo.label }}</option>
+        }
+      </select>
+      <p class="mt-2 text-sm text-ink-soft">
+        Cómo se agrupa en el inventario. No lo ve el cliente.
+      </p>
+    </div>
+
+    <div>
+      <label for="cat-orden" class="block text-sm font-semibold text-ink">Orden</label>
+      <input
+        id="cat-orden"
+        type="number"
+        formControlName="orden"
+        min="0"
+        step="10"
+        class="tabular mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200"
+        [class]="showError('orden') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+      />
+      <p class="mt-2 text-sm text-ink-soft">
+        Posición del chip en la tienda. El menor va primero.
+      </p>
+      @if (showError('orden')) {
+        <p class="mt-2 text-sm text-berry">Tiene que ser 0 o más</p>
+      }
+    </div>
+  </div>
+</ng-template>

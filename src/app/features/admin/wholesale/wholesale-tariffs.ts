@@ -2,15 +2,13 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiErrorBody, ApiWholesaleRow } from '../../../core/api/api-client';
 import { ROLE_LABELS, WHOLESALE_ROLES, WholesaleRole } from '../../../core/models/user.model';
-import { CATEGORIES } from '../../../core/data/mock-catalog';
 import { ProductUnit, unitPresentation } from '../../../core/models/product.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { CategoryFilterComponent } from '../../../shared/components/category-filter/category-filter';
 
-/** Nombre legible de cada categoría, de la misma lista que pinta la vitrina. */
-const CATEGORY_LABEL: Readonly<Record<string, string>> = Object.fromEntries(
-  CATEGORIES.filter((c) => c.id !== 'todos').map((c) => [c.id, c.name]),
-);
+// El nombre legible de cada categoría sale ahora de `adminApi.categoryLabels`,
+// que lee la tabla `categories`. Aquí era una constante armada desde
+// `CATEGORIES` y se quedaba muda ante una categoría creada tras compilar.
 
 @Component({
   selector: 'app-wholesale-tariffs',
@@ -46,6 +44,7 @@ export class WholesaleTariffs {
 
   constructor() {
     this.adminApi.loadWholesaleTariff(this.tier());
+    this.adminApi.loadCategories();
   }
 
   protected selectTier(tier: WholesaleRole): void {
@@ -86,13 +85,16 @@ export class WholesaleTariffs {
       counts.set(row.categoriaId, (counts.get(row.categoriaId) ?? 0) + 1);
     }
 
+    // Cae al id crudo si falta: la tarifa puede alcanzar un producto cuya
+    // categoría ya no exista, y esconderlo dejaría un descuento sin revisar.
+    const etiqueta = this.adminApi.categoryLabels();
+    const nombre = (id: string) => etiqueta[id] ?? id;
+
     return [
       { value: 'todos', label: 'Todas', count: productos.length },
       ...[...counts.entries()]
-        .sort((a, b) =>
-          (CATEGORY_LABEL[a[0]] ?? a[0]).localeCompare(CATEGORY_LABEL[b[0]] ?? b[0], 'es'),
-        )
-        .map(([id, count]) => ({ value: id, label: CATEGORY_LABEL[id] ?? id, count })),
+        .sort((a, b) => nombre(a[0]).localeCompare(nombre(b[0]), 'es'))
+        .map(([id, count]) => ({ value: id, label: nombre(id), count })),
     ];
   });
 

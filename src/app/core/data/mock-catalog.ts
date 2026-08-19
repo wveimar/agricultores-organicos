@@ -9,11 +9,13 @@ import { photo, wide } from './catalog-images';
  *
  * El panel administrativo y la tienda pública leen de Cloudflare D1 a través
  * del Worker (`ApiClient`, ver `core/api/`). Este archivo sigue existiendo
- * como la **fuente única** de los datos de ejemplo: `CATEGORIES` alimenta la
- * copy estática de las categorías en `CatalogService`, y `PRODUCTS` lo importa
- * `worker/tools/generate-seed.mjs` para generar `worker/seed.sql`. Cambia el
- * precio o el stock de un producto aquí y corre `npm run db:seed:build &&
- * npm run db:seed` para que la base de datos local lo refleje.
+ * como la **fuente única** de los datos de ejemplo: `worker/tools/generate-seed.mjs`
+ * importa `PRODUCTS` para generar `worker/seed.sql`. Cambia el precio o el stock
+ * de un producto aquí y corre `npm run db:seed:build && npm run db:seed` para
+ * que la base de datos local lo refleje.
+ *
+ * Las categorías ya no están aquí: viven en la tabla `categories` y las siembra
+ * la migración 0013.
  */
 
 /** Hero: puesto de mercado desbordado de fruta y verdura. */
@@ -22,63 +24,11 @@ export const HERO_IMAGE = wide('mercadoColorido');
 /** Banda editorial "de la finca a tu mesa": puesto de zanahorias con hoja. */
 export const STORY_IMAGE = wide('puestoZanahorias', 1400, 1.6);
 
-export const CATEGORIES: readonly Category[] = [
-  {
-    id: 'todos',
-    name: 'Todo el huerto',
-    description: 'Cosechado esta semana por familias campesinas.',
-  },
-  {
-    id: 'verduras',
-    name: 'Verduras y raíces',
-    description: 'Recolectadas al amanecer del domingo, en tu casa esa misma tarde.',
-  },
-  {
-    id: 'frutas',
-    name: 'Frutas frescas',
-    description: 'Maduradas en el árbol, nunca en cámara.',
-  },
-  {
-    id: 'lacteos',
-    name: 'Leche de cabra',
-    description: 'De un hato pequeño en el altiplano, ordeñado a mano.',
-  },
-  {
-    id: 'mieles',
-    name: 'Mieles y apicultura',
-    description: 'Miel, polen y propóleo de colmenares propios, sin pasteurizar.',
-  },
-  {
-    id: 'listos',
-    name: 'Listos para comer',
-    description: 'Preparados cada mañana con la cosecha del día.',
-  },
-  {
-    id: 'granos',
-    name: 'Granos y semillas',
-    description: 'Molidos en piedra y empacados en lotes pequeños.',
-  },
-  {
-    id: 'fermentos',
-    name: 'Fermentos',
-    description: 'Kambuchas y fermentados vivos, embotellados sin pasteurizar.',
-  },
-  {
-    id: 'panaderia',
-    name: 'Panadería',
-    description: 'Horneado el mismo día con harinas molidas en el altiplano.',
-  },
-  {
-    id: 'despensa',
-    name: 'Despensa',
-    description: 'Lo que sostiene la cocina durante todo el mes.',
-  },
-  {
-    id: 'canastas',
-    name: 'Canastas',
-    description: 'La compra semanal resuelta en una sola caja.',
-  },
-];
+// `CATEGORIES` vivía aquí: la lista de secciones de la vitrina. Se mudó a la
+// tabla `categories` (migración 0013), que es la que siembra esos mismos diez
+// valores y la que el panel edita. Mantener aquí una copia sería una segunda
+// fuente destinada a separarse de la primera en cuanto alguien creara una
+// categoría desde la interfaz.
 
 export const PRODUCTS: readonly Product[] = [
   // ─────────────────────────── Verduras y raíces ───────────────────────────

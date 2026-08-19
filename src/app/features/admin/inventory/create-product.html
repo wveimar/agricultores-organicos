@@ -75,8 +75,8 @@
           [class]="showError('categoriaId') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
         >
           <option value="">Elige una categoría…</option>
-          @for (categoria of categorias; track categoria.id) {
-            <option [value]="categoria.id">{{ categoria.name }}</option>
+          @for (categoria of categorias(); track categoria.id) {
+            <option [value]="categoria.id">{{ categoria.nombre }}</option>
           }
         </select>
         @if (showError('categoriaId')) {

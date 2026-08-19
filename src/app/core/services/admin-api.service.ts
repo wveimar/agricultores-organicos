@@ -2,6 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
 import {
   ApiCashSummary,
+  ApiCategory,
   ApiClient,
   ApiClosing,
   ApiClosingOrder,
@@ -49,6 +50,83 @@ function recomputeSummary(products: readonly ApiWholesaleRow[]): ApiWholesaleTar
 @Injectable({ providedIn: 'root' })
 export class AdminApiService {
   private readonly api = inject(ApiClient);
+
+  // ──────────────────────────────── Categorías ────────────────────────────────
+
+  readonly categories = signal<readonly ApiCategory[]>([]);
+  readonly categoriesLoading = signal(false);
+  readonly categoriesError = signal<string | null>(null);
+
+  /**
+   * Todas, incluidas las desactivadas: esta es la pantalla desde donde se
+   * vuelven a encender, así que esconderlas las dejaría inalcanzables.
+   */
+  loadCategories(): void {
+    this.categoriesLoading.set(true);
+    this.categoriesError.set(null);
+
+    this.api.adminCategories().subscribe({
+      next: (rows) => {
+        this.categories.set(rows);
+        this.categoriesLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.categoriesError.set(error.message);
+        this.categoriesLoading.set(false);
+      },
+    });
+  }
+
+  /** Las que se pueden elegir al archivar un producto: solo las activas. */
+  readonly selectableCategories = computed(() =>
+    this.categories().filter((c) => c.activo === 1),
+  );
+
+  categoryById(id: string): ApiCategory | undefined {
+    return this.categories().find((c) => c.id === id);
+  }
+
+  /**
+   * `id → nombre legible`, para reportes y tarifas.
+   *
+   * Cada pantalla se armaba el suyo desde la constante `CATEGORIES`; ahora sale
+   * de la tabla, así que una categoría creada hoy ya no aparece en un informe
+   * como `panaderia-fina` en bruto. Quien lo use debe seguir cayendo al id con
+   * `?? id`: el informe puede traer una categoría borrada después de la venta.
+   */
+  readonly categoryLabels = computed<Readonly<Record<string, string>>>(() =>
+    Object.fromEntries(this.categories().map((c) => [c.id, c.nombre])),
+  );
+
+  createCategory(input: Parameters<ApiClient['createCategory']>[0]): Observable<ApiCategory> {
+    return this.api.createCategory(input).pipe(
+      tap((created) => this.categories.set([...this.categories(), created])),
+    );
+  }
+
+  updateCategory(
+    id: string,
+    patch: Parameters<ApiClient['updateCategory']>[1],
+  ): Observable<ApiCategory> {
+    return this.api.updateCategory(id, patch).pipe(
+      tap((updated) =>
+        // Se conserva `productos`: el recuento lo calcula el listado y la
+        // respuesta del PUT no lo trae. Sin esto, editar un nombre dejaría la
+        // fila diciendo que está vacía y el botón de borrar se activaría.
+        this.categories.set(
+          this.categories().map((c) =>
+            c.id === id ? { ...updated, productos: c.productos } : c,
+          ),
+        ),
+      ),
+    );
+  }
+
+  deleteCategory(id: string): Observable<void> {
+    return this.api.deleteCategory(id).pipe(
+      tap(() => this.categories.set(this.categories().filter((c) => c.id !== id))),
+    );
+  }
 
   // ──────────────────────────────── Inventario ────────────────────────────────
 

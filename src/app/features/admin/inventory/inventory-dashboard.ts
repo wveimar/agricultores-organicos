@@ -6,25 +6,13 @@ import { CategoryFilterService } from '../../../core/services/category-filter.se
 import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
 import {
   ADMIN_GROUP_LABELS,
-  ADMIN_GROUP_OF,
   AdminGroup,
   ProductUnit,
   pluralizeVariantLabel,
   unitPresentation,
 } from '../../../core/models/product.model';
-import { CATEGORIES } from '../../../core/data/mock-catalog';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { CategoryFilterComponent } from '../../../shared/components/category-filter/category-filter';
-
-/**
- * Categorías finas que caen bajo "Agroindustriales" — lácteos, mieles,
- * listos, granos, despensa, canastas. Salen de `CATEGORIES`, la misma lista
- * que pinta los chips de la vitrina, para no mantener las etiquetas por
- * duplicado en dos sitios.
- */
-const AGROINDUSTRIAL_CATEGORIES = CATEGORIES.filter(
-  (c) => c.id !== 'todos' && ADMIN_GROUP_OF[c.id] === 'agroindustriales',
-);
 
 type StockLevel = 'agotado' | 'critico' | 'ok';
 
@@ -69,13 +57,23 @@ export class InventoryDashboard {
    */
   protected readonly showFineFilter = computed(() => this.activeGroup() === 'agroindustriales');
 
+  /**
+   * Categorías finas bajo "Agroindustriales" — lácteos, mieles, fermentos…
+   *
+   * Salen de la tabla `categories` y no de una constante: el grupo lo trae
+   * cada fila, así que una categoría creada hoy desde el panel aparece aquí
+   * sin que nadie recompile.
+   */
   protected readonly fineOptions = computed(() => [
     { value: 'todos', label: 'Todas', count: this.categoryFilter.adminCounts()['agroindustriales'] ?? 0 },
-    ...AGROINDUSTRIAL_CATEGORIES.map((c) => ({
-      value: c.id,
-      label: c.name,
-      count: this.categoryFilter.adminCounts()[c.id] ?? 0,
-    })),
+    ...this.adminApi
+      .categories()
+      .filter((c) => c.grupoAdmin === 'agroindustriales')
+      .map((c) => ({
+        value: c.id,
+        label: c.nombre,
+        count: this.categoryFilter.adminCounts()[c.id] ?? 0,
+      })),
   ]);
   /** Cuando está activo, la tabla solo muestra lo que hay que reponer. */
   protected readonly onlyAlerts = signal(false);
@@ -110,6 +108,7 @@ export class InventoryDashboard {
 
   constructor() {
     this.adminApi.loadProducts();
+    this.adminApi.loadCategories();
   }
 
   protected readonly rows = computed<readonly ApiProduct[]>(() => {

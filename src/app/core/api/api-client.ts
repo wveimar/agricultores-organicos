@@ -34,6 +34,20 @@ export interface Shortfall {
   readonly available: number;
 }
 
+/** Fila de `categories`. Los chips de la vitrina y el desplegable del panel. */
+export interface ApiCategory {
+  readonly id: string;
+  readonly nombre: string;
+  readonly descripcion: string;
+  readonly grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
+  /** Posición del chip. Menor va antes. */
+  readonly orden: number;
+  readonly activo: 0 | 1;
+  readonly actualizadoEn: string;
+  /** Cuántos productos cuelgan de ella. Solo en `/api/admin/categories`. */
+  readonly productos?: number;
+}
+
 export interface ApiProduct {
   readonly id: string;
   readonly slug: string;
@@ -421,6 +435,59 @@ export class ApiClient {
     return this.http
       .patch<{ user: ApiUser }>(`/api/admin/users/${id}`, patch)
       .pipe(map((res) => res.user), catchError(handleError));
+  }
+
+  // ───────────────────────────── Categorías ─────────────────────────────
+
+  /** Los chips de la vitrina. Solo las activas. */
+  categories(): Observable<readonly ApiCategory[]> {
+    return this.http
+      .get<{ categories: ApiCategory[] }>('/api/categories')
+      .pipe(map((res) => res.categories), catchError(handleError));
+  }
+
+  /** Todas, con cuántos productos cuelgan de cada una. */
+  adminCategories(): Observable<readonly ApiCategory[]> {
+    return this.http
+      .get<{ categories: ApiCategory[] }>('/api/admin/categories')
+      .pipe(map((res) => res.categories), catchError(handleError));
+  }
+
+  createCategory(input: {
+    nombre: string;
+    /** Se deduce del nombre si no se manda. */
+    id?: string;
+    descripcion?: string;
+    grupoAdmin?: 'frutas' | 'verduras' | 'agroindustriales';
+    orden?: number;
+    activo?: 0 | 1;
+  }): Observable<ApiCategory> {
+    return this.http
+      .post<{ category: ApiCategory }>('/api/admin/categories', input)
+      .pipe(map((res) => res.category), catchError(handleError));
+  }
+
+  /** El `id` no se puede cambiar: es por donde apuntan los productos. */
+  updateCategory(
+    id: string,
+    patch: Partial<{
+      nombre: string;
+      descripcion: string;
+      grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
+      orden: number;
+      activo: 0 | 1;
+    }>,
+  ): Observable<ApiCategory> {
+    return this.http
+      .put<{ category: ApiCategory }>(`/api/admin/categories/${id}`, patch)
+      .pipe(map((res) => res.category), catchError(handleError));
+  }
+
+  /** Falla con `categoria-en-uso` si todavía quedan productos dentro. */
+  deleteCategory(id: string): Observable<void> {
+    return this.http
+      .delete<{ ok: true }>(`/api/admin/categories/${id}`)
+      .pipe(map(() => undefined), catchError(handleError));
   }
 
   // ────────────────────────────── Catálogo ──────────────────────────────

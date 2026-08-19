@@ -6,14 +6,12 @@ import {
   ApiConsolidationProduct,
 } from '../../../core/api/api-client';
 import { ADMIN_GROUP_LABELS, ProductUnit, UNIT_LABELS } from '../../../core/models/product.model';
-import { CATEGORIES } from '../../../core/data/mock-catalog';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { CategoryFilterComponent } from '../../../shared/components/category-filter/category-filter';
 
-/** Nombre legible de cada `categoria_id` fina, tomado de la misma lista que pinta la vitrina. */
-const CATEGORY_LABEL: Readonly<Record<string, string>> = Object.fromEntries(
-  CATEGORIES.filter((c) => c.id !== 'todos').map((c) => [c.id, c.name]),
-);
+// El nombre legible de cada `categoria_id` sale ahora de `adminApi.categoryLabels`,
+// que lee la tabla `categories`. Aquí era una constante armada desde `CATEGORIES`
+// y se quedaba muda ante cualquier categoría creada después de compilar.
 
 /** Etiqueta de cada grupo, para los encabezados del consolidado. */
 const GROUP_LABEL: Readonly<Record<string, string>> = Object.fromEntries(
@@ -71,6 +69,7 @@ export class ConsolidationReport {
 
   constructor() {
     this.adminApi.loadConsolidation();
+    this.adminApi.loadCategories();
   }
 
   protected readonly data = this.adminApi.consolidation;
@@ -89,13 +88,18 @@ export class ConsolidationReport {
       counts.set(producto.categoriaId, (counts.get(producto.categoriaId) ?? 0) + 1);
     }
 
+    // Cae al id crudo si falta: un informe puede traer una categoría borrada
+    // después de la venta, y ese producto no debe desaparecer del consolidado.
+    const etiqueta = this.adminApi.categoryLabels();
+    const nombre = (id: string) => etiqueta[id] ?? id;
+
     return [
       { value: 'todos', label: 'Todas', count: productos.length },
       ...[...counts.entries()]
-        .sort((a, b) => (CATEGORY_LABEL[a[0]] ?? a[0]).localeCompare(CATEGORY_LABEL[b[0]] ?? b[0], 'es'))
+        .sort((a, b) => nombre(a[0]).localeCompare(nombre(b[0]), 'es'))
         .map(([categoriaId, count]) => ({
           value: categoriaId,
-          label: CATEGORY_LABEL[categoriaId] ?? categoriaId,
+          label: nombre(categoriaId),
           count,
         })),
     ];

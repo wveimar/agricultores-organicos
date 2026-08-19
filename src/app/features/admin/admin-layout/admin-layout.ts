@@ -33,6 +33,9 @@ export class AdminLayout {
       roles: ['ADMIN_INVENTARIO'],
       badge: this.adminApi.alertCount,
     },
+    // Va pegada al inventario: es la lista con la que se archiva cada producto,
+    // y quien la toca es la misma persona.
+    { path: '/admin/categorias', label: 'Categorías', roles: ['ADMIN_INVENTARIO'] },
     {
       path: '/admin/pedidos',
       label: 'Pedidos',

@@ -165,30 +165,32 @@ export function summarizeVariants(variants: readonly Product[]): VariantSummary 
 }
 
 /**
- * Unión **cerrada** a propósito: la vitrina filtra comparando
- * `product.categoryId !== category` contra `CATEGORIES`, así que un producto
- * sembrado con una categoría que no esté aquí solo aparece en "Todo el huerto"
- * y desaparece bajo cualquier chip. Añadir una sección son tres pasos —esta
- * unión, `CATEGORIES` y `ADMIN_GROUP_OF`— y saltarse alguno no da error de
- * compilación, solo productos que nadie encuentra.
+ * Identificador de categoría. Ya no es una unión cerrada.
+ *
+ * Fue una hasta que las categorías pasaron a la tabla `categories` (migración
+ * 0013): una fila creada desde el panel no puede aparecer en un tipo compilado,
+ * así que la lista válida la decide la base de datos y `CatalogService` la
+ * carga junto al catálogo.
+ *
+ * Lo que la unión intentaba proteger —que nadie archive un producto en una
+ * categoría inexistente— ahora lo protege el propio dato: el campo del panel es
+ * un desplegable poblado desde la tabla, y borrar una categoría con productos
+ * dentro lo rechaza el Worker. Lo que la unión nunca llegó a proteger, por
+ * cierto: 'fermentos' se coló igual, con cuatro kambuchas invisibles detrás.
  */
-export type CategoryId =
-  | 'verduras'
-  | 'frutas'
-  | 'lacteos'
-  | 'mieles'
-  | 'listos'
-  | 'granos'
-  | 'despensa'
-  | 'canastas'
-  | 'panaderia'
-  | 'fermentos';
+export type CategoryId = string;
 
 export interface Category {
   readonly id: CategoryId | 'todos';
   readonly name: string;
   /** Se usa como subtítulo cuando la categoría está activa. */
   readonly description: string;
+  /**
+   * Agrupación macro del panel de compras. Viaja con la categoría porque
+   * `ADMIN_GROUP_OF` era un mapa compilado y no podía cubrir filas nuevas.
+   * Opcional: 'todos' es un filtro de la vitrina, no una estantería.
+   */
+  readonly adminGroup?: AdminGroup;
 }
 
 /** Disponibilidad derivada de `stock` frente a `safetyStock`. */
@@ -221,20 +223,10 @@ export function marginPercentOf(product: Product): number {
  */
 export type AdminGroup = 'frutas' | 'verduras' | 'agroindustriales';
 
-export const ADMIN_GROUP_OF: Readonly<Record<CategoryId, AdminGroup>> = {
-  frutas: 'frutas',
-  verduras: 'verduras',
-  lacteos: 'agroindustriales',
-  mieles: 'agroindustriales',
-  listos: 'agroindustriales',
-  granos: 'agroindustriales',
-  despensa: 'agroindustriales',
-  canastas: 'agroindustriales',
-  // El pan se hornea, no se cosecha: entra por el mismo grupo que los lácteos
-  // y las mieles, que es donde compras razona sobre lo transformado.
-  panaderia: 'agroindustriales',
-  fermentos: 'agroindustriales',
-};
+// `ADMIN_GROUP_OF` vivía aquí: un `Record<CategoryId, AdminGroup>` que había
+// que ampliar a mano con cada categoría nueva. Ahora el grupo es la columna
+// `grupo_admin` de la tabla `categories` y llega en `Category.adminGroup`, que
+// es lo único que puede cubrir una categoría creada desde el panel.
 
 export const ADMIN_GROUP_LABELS: ReadonlyArray<{ value: AdminGroup | 'todos'; label: string }> = [
   { value: 'todos', label: 'Todo el inventario' },

@@ -1,7 +1,6 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
-import { CATEGORIES } from '../data/mock-catalog';
 import { Category, CategoryId, Product, SortOption, isInStock } from '../models/product.model';
-import { ApiClient, ApiErrorBody, toProduct } from '../api/api-client';
+import { ApiCategory, ApiClient, ApiErrorBody, toProduct } from '../api/api-client';
 import { TokenStore } from '../api/token-store';
 import { topWholesaleRole } from '../models/user.model';
 
@@ -18,7 +17,29 @@ export class CatalogService {
   private readonly api = inject(ApiClient);
   private readonly tokens = inject(TokenStore);
 
-  readonly categories: readonly Category[] = CATEGORIES;
+  /**
+   * «Todo el huerto» no es una fila: es el filtro que significa "no filtres".
+   * Va delante de lo que traiga la base.
+   */
+  private static readonly TODOS: Category = {
+    id: 'todos',
+    name: 'Todo el huerto',
+    description: 'Cosechado esta semana por familias campesinas.',
+  };
+
+  private readonly loadedCategories = signal<readonly Category[]>([]);
+
+  /**
+   * Las categorías del catálogo, leídas de `GET /api/categories`.
+   *
+   * Vivían en una constante de TypeScript; ahora son filas que el panel edita.
+   * Mientras llegan solo está «Todo el huerto», que es lo correcto: no se
+   * inventa una lista que podría no coincidir con la de la base.
+   */
+  readonly categories = computed<readonly Category[]>(() => [
+    CatalogService.TODOS,
+    ...this.loadedCategories(),
+  ]);
 
   /**
    * Catálogo real, leído de `GET /api/products` al arrancar el servicio.
@@ -84,9 +105,32 @@ export class CatalogService {
     });
   }
 
+  /** Traduce una fila de la tabla a lo que consume la vitrina. */
+  private static toCategory(row: ApiCategory): Category {
+    return {
+      id: row.id,
+      name: row.nombre,
+      description: row.descripcion,
+      adminGroup: row.grupoAdmin,
+    };
+  }
+
+  /**
+   * Carga las categorías. Va aparte del catálogo a propósito: si la tabla
+   * fallara, la tienda sigue vendiendo con «Todo el huerto» y el buscador — sin
+   * chips es peor, pero sin productos no hay tienda.
+   */
+  private loadCategories(): void {
+    this.api.categories().subscribe({
+      next: (rows) => this.loadedCategories.set(rows.map(CatalogService.toCategory)),
+      error: () => this.loadedCategories.set([]),
+    });
+  }
+
   load(): void {
     this.loading.set(true);
     this.loadError.set(null);
+    this.loadCategories();
 
     this.api.products().subscribe({
       next: (list) => {
@@ -230,13 +274,13 @@ export class CatalogService {
     // la barra con un solo chip para estallar a nueve medio segundo después.
     // Se pintan todas y se recorta una vez, cuando ya se sabe qué hay.
     if (this.loading()) {
-      return this.categories;
+      return this.categories();
     }
 
     const counts = this.counts();
     const active = this.activeCategory();
 
-    return this.categories.filter(
+    return this.categories().filter(
       (category) =>
         category.id === 'todos' ||
         category.id === active ||
@@ -247,8 +291,8 @@ export class CatalogService {
   /** Descripción de la categoría activa, usada como subtítulo de la rejilla. */
   readonly activeCategoryMeta = computed<Category>(
     () =>
-      this.categories.find((category) => category.id === this.activeCategory()) ??
-      this.categories[0],
+      this.categories().find((category) => category.id === this.activeCategory()) ??
+      CatalogService.TODOS,
   );
 
   readonly hasResults = computed(() => this.visible().length > 0);
