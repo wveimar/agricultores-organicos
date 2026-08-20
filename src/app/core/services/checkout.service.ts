@@ -19,7 +19,7 @@ export const WHATSAPP_NUMBER = '573016066121';
 export const BANK_DETAILS = {
   bank: 'Bancolombia',
   accountType: 'Cuenta de ahorros',
-  accountNumber: '412-000188-42',
+  accountNumber: '64715834837',
   holder: 'Cooperativa Agricultores Orgánicos',
   nit: 'NIT 901.482.117-3',
 } as const;
