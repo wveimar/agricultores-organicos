@@ -20,8 +20,8 @@ export const BANK_DETAILS = {
   bank: 'Bancolombia',
   accountType: 'Cuenta de ahorros',
   accountNumber: '64715834837',
-  holder: 'Cooperativa Agricultores Orgánicos',
-  nit: 'NIT 901.482.117-3',
+  holder: 'wveimar Mamian Ramirez',
+  cc: 'cc 70-907-972',
 } as const;
 
 export type CheckoutStep = 'formulario' | 'exito';
