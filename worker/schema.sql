@@ -39,7 +39,11 @@ CREATE TABLE users (
 -- indexar por rol y que la base rechace un rol inexistente.
 CREATE TABLE user_roles (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role    TEXT NOT NULL CHECK (role IN ('ADMIN_INVENTARIO', 'GESTOR_PEDIDOS', 'SUPER_ADMIN')),
+  role    TEXT NOT NULL CHECK (role IN (
+    'ADMIN_INVENTARIO', 'GESTOR_PEDIDOS', 'SUPER_ADMIN',
+    'MAYORISTA_N1', 'MAYORISTA_N2', 'MAYORISTA_N3',
+    'DOMICILIARIO'
+  )),
   PRIMARY KEY (user_id, role)
 );
 
@@ -169,7 +173,7 @@ CREATE TABLE orders (
   cliente_direccion  TEXT    NOT NULL,
 
   estado             TEXT    NOT NULL DEFAULT 'pendiente'
-                             CHECK (estado IN ('verificacion', 'pendiente', 'aprobado', 'enviado', 'cancelado')),
+                             CHECK (estado IN ('verificacion', 'pendiente', 'aprobado', 'enviado', 'cancelado', 'pago')),
 
   -- 1 cuando el stock ya se descontó al crear el pedido (compras web).
   -- Es lo que impide el doble descuento al aprobarlo después.
@@ -206,7 +210,17 @@ CREATE TABLE orders (
   motivo_cancelacion TEXT,
 
   closing_id         TEXT    REFERENCES cash_closings(id) ON DELETE SET NULL,
-  creado_en          TEXT    NOT NULL DEFAULT (datetime('now'))
+  creado_en          TEXT    NOT NULL DEFAULT (datetime('now')),
+
+  -- Cómo se paga. 'transferencia' es el default: es la única forma que existió
+  -- hasta que se agregó pago contra entrega.
+  metodo_pago        TEXT    NOT NULL DEFAULT 'transferencia'
+                             CHECK (metodo_pago IN ('transferencia', 'contraentrega')),
+
+  -- Si el efectivo cobrado por el domiciliario ya está en la caja de la
+  -- finca. Solo importa para 'contraentrega' — ver la migración 0015 para el
+  -- porqué de que sea un paso separado de 'pago'.
+  efectivo_liquidado INTEGER NOT NULL DEFAULT 0 CHECK (efectivo_liquidado IN (0, 1))
 );
 
 -- El panel lista por estado y por jornada abierta; ambos índices evitan
@@ -248,7 +262,10 @@ CREATE INDEX idx_items_product ON order_items (product_id);
 CREATE TABLE order_status_log (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   order_id      TEXT    NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  estado        TEXT    NOT NULL CHECK (estado IN ('verificacion', 'pendiente', 'aprobado', 'enviado', 'cancelado')),
+  estado        TEXT    NOT NULL CHECK (estado IN (
+    'verificacion', 'pendiente', 'aprobado', 'enviado', 'cancelado', 'editado',
+    'pago', 'liquidado', 'rechazado'
+  )),
   -- NULL en la creación del pedido: ese paso lo dispara el propio cliente,
   -- sin sesión de administrador detrás.
   actor_id      TEXT    REFERENCES users(id) ON DELETE SET NULL,

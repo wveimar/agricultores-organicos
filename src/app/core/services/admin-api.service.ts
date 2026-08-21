@@ -6,7 +6,9 @@ import {
   ApiClient,
   ApiClosing,
   ApiClosingOrder,
+  ApiCodPending,
   ApiConsolidation,
+  ApiDelivery,
   ApiErrorBody,
   ApiOrder,
   ApiOrderStatusLogEntry,
@@ -473,6 +475,61 @@ export class AdminApiService {
     return this.api.orderHistory(id);
   }
 
+  /** El domiciliario (o un admin de respaldo) marca que cobró un pedido contra entrega. */
+  markOrderPaid(id: string): Observable<ApiOrder> {
+    return this.api.markOrderPaid(id).pipe(
+      tap((updated) => {
+        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+      }),
+    );
+  }
+
+  /** Confirma que el efectivo de un pedido contra entrega ya está en la finca. */
+  settleOrderCash(id: string): Observable<ApiOrder> {
+    return this.api.settleOrderCash(id).pipe(
+      tap((updated) => {
+        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+        // El resumen de caja acaba de cambiar de significado: este pedido
+        // pasa a contar como recaudado, y sale de la lista de pendientes.
+        this.loadCashSummary();
+        if (this.codPending().length > 0) {
+          this.loadCodPending();
+        }
+      }),
+    );
+  }
+
+  /**
+   * El cliente rechazó el pedido en la puerta. Igual que cancelOrder(): puede
+   * devolver stock, así que refresca el inventario cuando corresponde.
+   */
+  rejectDelivery(id: string, motivo?: string): Observable<{ order: ApiOrder; unidadesDevueltas: number }> {
+    return this.api.rejectDelivery(id, motivo).pipe(
+      tap(({ order, unidadesDevueltas }) => {
+        this.orders.update((list) => list.map((o) => (o.id === id ? order : o)));
+        if (unidadesDevueltas > 0 && this.products().length > 0) {
+          this.loadProducts();
+        }
+      }),
+    );
+  }
+
+  /** Pedidos contra entrega listos para cobrar, para la vista del domiciliario. */
+  readonly deliveries = signal<readonly ApiDelivery[]>([]);
+  readonly deliveriesLoading = signal(false);
+  readonly deliveryCount = computed(() => this.deliveries().length);
+
+  loadDeliveries(): void {
+    this.deliveriesLoading.set(true);
+    this.api.deliveries().subscribe({
+      next: (list) => {
+        this.deliveries.set(list);
+        this.deliveriesLoading.set(false);
+      },
+      error: () => this.deliveriesLoading.set(false),
+    });
+  }
+
   /**
    * Guarda la lista de líneas editada. Si el pedido tenía stock reservado, el
    * Worker ya ajustó el inventario en la misma transacción: se refresca el
@@ -640,5 +697,12 @@ export class AdminApiService {
         this.loadOrders();
       }),
     );
+  }
+
+  /** Efectivo contra entrega cobrado, esperando que un admin confirme que llegó a la finca. */
+  readonly codPending = signal<readonly ApiCodPending[]>([]);
+
+  loadCodPending(): void {
+    this.api.codPending().subscribe({ next: (list) => this.codPending.set(list) });
   }
 }

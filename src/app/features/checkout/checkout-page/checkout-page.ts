@@ -66,6 +66,13 @@ export class CheckoutPage {
   protected readonly copied = signal(false);
   protected readonly placing = signal(false);
 
+  /**
+   * Forma de pago. Signal y no un control del formulario reactivo: siempre
+   * tiene un valor válido (nunca está "vacío" ni necesita validador), así que
+   * un `FormControl` solo añadiría ceremonia sin ganar nada.
+   */
+  protected readonly metodoPago = signal<'transferencia' | 'contraentrega'>('contraentrega');
+
   /** Se muestra solo tras un intento de envío con el formulario incompleto,
    *  o cuando el servidor rechaza el pedido por un motivo que no es stock. */
   protected readonly formError = signal<string | null>(null);
@@ -202,7 +209,7 @@ export class CheckoutPage {
     this.placing.set(true);
     const { name, phone, address } = this.form.getRawValue();
 
-    this.checkout.placeOrder({ name, phone, address }).subscribe({
+    this.checkout.placeOrder({ name, phone, address, metodoPago: this.metodoPago() }).subscribe({
       next: () => {
         this.placing.set(false);
         // El botón está al final del formulario: sin esto, la pantalla de

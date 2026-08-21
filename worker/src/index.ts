@@ -187,6 +187,25 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return orders.cancel(request, env, user, cancelMatch[1]);
     }
 
+    if (pathname === '/api/admin/entregas' && method === 'GET') {
+      return orders.deliveries(env, user);
+    }
+
+    const payMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/pagar$/);
+    if (payMatch && method === 'POST') {
+      return orders.markPaid(env, user, payMatch[1]);
+    }
+
+    const settleMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/liquidar$/);
+    if (settleMatch && method === 'POST') {
+      return orders.settleCash(env, user, settleMatch[1]);
+    }
+
+    const rejectMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/rechazar-entrega$/);
+    if (rejectMatch && method === 'POST') {
+      return orders.rejectDelivery(request, env, user, rejectMatch[1]);
+    }
+
     const orderMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)$/);
     if (orderMatch && method === 'DELETE') {
       return orders.remove(env, user, orderMatch[1]);
@@ -245,6 +264,9 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (pathname === '/api/admin/reports/cash/close' && method === 'POST') {
       return reports.closeCash(env, user);
+    }
+    if (pathname === '/api/admin/reports/cod-pendiente' && method === 'GET') {
+      return reports.codPending(env, user);
     }
     if (pathname === '/api/admin/reports/closings' && method === 'GET') {
       return reports.closings(env, user);

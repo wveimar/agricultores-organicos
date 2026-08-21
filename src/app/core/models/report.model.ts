@@ -13,12 +13,13 @@
 export type AbcClass = 'A' | 'B' | 'C';
 
 /**
- * Método de recaudo. Hoy solo existe consignación bancaria porque el checkout
- * es manual, pero se modela como lista para que añadir efectivo o datáfono no
- * obligue a cambiar la forma del cierre.
+ * Método de recaudo. El cierre de caja agrupa por este valor de verdad (no es
+ * una etiqueta fija): `porMetodo` en `cashSummary()` viene de un `GROUP BY
+ * metodo_pago` real desde que existe pago contra entrega.
  */
-export type PaymentMethod = 'consignacion';
+export type PaymentMethod = 'transferencia' | 'contraentrega';
 
 export const PAYMENT_METHOD_LABELS: Readonly<Record<PaymentMethod, string>> = {
-  consignacion: 'Consignación bancaria',
+  transferencia: 'Transferencia bancaria',
+  contraentrega: 'Pago contra entrega',
 };

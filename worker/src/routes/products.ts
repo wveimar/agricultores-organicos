@@ -753,7 +753,11 @@ export async function recalcAbc(env: Env, user: JwtPayload): Promise<Response> {
               SUM(oi.precio_unitario * oi.cantidad) AS ingreso
          FROM order_items oi
          JOIN orders o ON o.id = oi.order_id
-        WHERE o.estado IN ('aprobado', 'enviado')
+        -- 'pago' entra sin condicionar a si ya se liquidó el efectivo: esto
+        -- clasifica ventas por ingreso (qué tanto vende cada producto), no
+        -- contabiliza caja — un pedido cobrado en la puerta ya es una venta
+        -- real aunque el efectivo no haya llegado todavía a la finca.
+        WHERE o.estado IN ('aprobado', 'enviado', 'pago')
         GROUP BY oi.product_id
      ),
      acumulado AS (

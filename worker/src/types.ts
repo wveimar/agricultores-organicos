@@ -48,7 +48,7 @@ export const WHOLESALE_ROLES: readonly WholesaleRole[] = [
   'MAYORISTA_N3',
 ];
 
-export type StaffRole = 'ADMIN_INVENTARIO' | 'GESTOR_PEDIDOS' | 'SUPER_ADMIN';
+export type StaffRole = 'ADMIN_INVENTARIO' | 'GESTOR_PEDIDOS' | 'SUPER_ADMIN' | 'DOMICILIARIO';
 
 export type UserRole = StaffRole | WholesaleRole;
 
@@ -56,6 +56,7 @@ export const ALL_ROLES: readonly UserRole[] = [
   'ADMIN_INVENTARIO',
   'GESTOR_PEDIDOS',
   'SUPER_ADMIN',
+  'DOMICILIARIO',
   ...WHOLESALE_ROLES,
 ];
 

@@ -88,9 +88,17 @@ export class CheckoutService {
    * pedido se confirma igual y queda pendiente de que lo adjunte o lo envíe
    * por WhatsApp.
    */
-  placeOrder(customer: { name: string; phone: string; address: string }): Observable<Order> {
+  placeOrder(customer: {
+    name: string;
+    phone: string;
+    address: string;
+    metodoPago: 'transferencia' | 'contraentrega';
+  }): Observable<Order> {
     const cartLines = this.cart.items();
-    const proof = this.proof();
+    // Un comprobante no significa nada en contra entrega: no hay nada que
+    // verificar contra el banco. Se ignora aunque quedara alguno cargado de
+    // un cambio de método a mitad del formulario.
+    const proof = customer.metodoPago === 'transferencia' ? this.proof() : null;
     const totals = this.totals();
 
     const lines: OrderLine[] = cartLines.map((line) => ({
@@ -109,6 +117,7 @@ export class CheckoutService {
         clienteDireccion: customer.address,
         envio: totals.shipping,
         items: cartLines.map((line) => ({ productId: line.product.id, cantidad: line.quantity })),
+        metodoPago: customer.metodoPago,
         ...(proof ? { comprobanteNombre: proof.fileName, comprobanteUrl: proof.dataUrl } : {}),
       })
       .pipe(
@@ -124,6 +133,7 @@ export class CheckoutService {
             customerAddress: customer.address,
             placedAt: apiOrder.creadoEn,
             status: apiOrder.estado,
+            metodoPago: customer.metodoPago,
             lines,
             stockReserved: true,
             totals,
@@ -166,9 +176,11 @@ export class CheckoutService {
       totals ? `Envío: ${totals.shipping === 0 ? 'Gratis' : money(totals.shipping)}` : '',
       totals ? `*Total: ${money(totals.total)}*` : '',
       '',
-      order.paymentProof
-        ? `Ya cargué el comprobante de consignación en la web (${order.paymentProof.fileName}).`
-        : 'Te envío el comprobante de consignación por este chat.',
+      order.metodoPago === 'contraentrega'
+        ? 'Pago en efectivo cuando me lo entreguen.'
+        : order.paymentProof
+          ? `Ya cargué el comprobante de consignación en la web (${order.paymentProof.fileName}).`
+          : 'Te envío el comprobante de consignación por este chat.',
       'Quedo atento a la confirmación. ¡Gracias!',
     ]
       .filter((part) => part !== '')

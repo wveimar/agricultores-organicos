@@ -211,7 +211,9 @@ export interface ApiOrderItem {
 }
 
 export interface ApiOrderStatusLogEntry {
-  readonly estado: 'verificacion' | 'pendiente' | 'aprobado' | 'enviado' | 'cancelado' | 'editado';
+  readonly estado:
+    | 'verificacion' | 'pendiente' | 'aprobado' | 'enviado' | 'cancelado' | 'editado'
+    | 'pago' | 'liquidado' | 'rechazado';
   readonly actorId: string | null;
   /** Nombre del cliente en la creación; nombre del admin en el resto de pasos. */
   readonly actorNombre: string | null;
@@ -224,7 +226,7 @@ export interface ApiOrder {
   readonly clienteNombre: string;
   readonly clienteTelefono: string;
   readonly clienteDireccion: string;
-  readonly estado: 'verificacion' | 'pendiente' | 'aprobado' | 'enviado';
+  readonly estado: 'verificacion' | 'pendiente' | 'aprobado' | 'enviado' | 'cancelado' | 'pago';
   readonly stockReservado: number;
   readonly subtotal: number;
   readonly envio: number;
@@ -237,9 +239,28 @@ export interface ApiOrder {
    */
   readonly tieneComprobante?: number | null;
   readonly aprobadoEn?: string | null;
+  readonly metodoPago: 'transferencia' | 'contraentrega';
+  /** Solo importa para contra entrega — ver la migración 0015. */
+  readonly efectivoLiquidado: number;
   readonly closingId: string | null;
   readonly creadoEn: string;
   readonly items: readonly ApiOrderItem[];
+}
+
+/** Un pedido contra entrega listo para cobrar, tal como lo ve un domiciliario. */
+export interface ApiDelivery {
+  readonly id: string;
+  readonly referencia: string;
+  readonly clienteNombre: string;
+  readonly clienteTelefono: string;
+  readonly clienteDireccion: string;
+  readonly total: number;
+  readonly creadoEn: string;
+  readonly items: readonly {
+    readonly productoNombre: string;
+    readonly precioUnitario: number;
+    readonly cantidad: number;
+  }[];
 }
 
 export interface ApiSalesRow {
@@ -408,6 +429,17 @@ export interface ApiClosing {
   readonly ganancia: number;
   readonly enviosCobrados: number;
   readonly totalRecaudado: number;
+}
+
+/** Efectivo contra entrega ya cobrado por un domiciliario, pendiente de liquidar. */
+export interface ApiCodPending {
+  readonly id: string;
+  readonly referencia: string;
+  readonly clienteNombre: string;
+  readonly total: number;
+  /** Quién y cuándo lo cobró. `null` si el pedido es de antes de este flujo. */
+  readonly cobradoPor: string | null;
+  readonly cobradoEn: string | null;
 }
 
 /**
@@ -691,6 +723,8 @@ export class ApiClient {
     comprobanteNombre?: string;
     /** Data URL del comprobante ya comprimido (ver `shared/utils/image-file.ts`). */
     comprobanteUrl?: string;
+    /** Se omite en transferencia: 'transferencia' es el default del servidor. */
+    metodoPago?: 'transferencia' | 'contraentrega';
   }): Observable<ApiOrder> {
     return this.http
       .post<{ order: ApiOrder }>('/api/orders', input)
@@ -738,6 +772,40 @@ export class ApiClient {
     return this.http
       .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/enviar`, {})
       .pipe(map((res) => res.order), catchError(handleError));
+  }
+
+  /** El domiciliario (o un admin de respaldo) marca que cobró un pedido contra entrega. */
+  markOrderPaid(id: string): Observable<ApiOrder> {
+    return this.http
+      .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/pagar`, {})
+      .pipe(map((res) => res.order), catchError(handleError));
+  }
+
+  /** Un admin confirma que el efectivo cobrado ya está físicamente en la finca. */
+  settleOrderCash(id: string): Observable<ApiOrder> {
+    return this.http
+      .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/liquidar`, {})
+      .pipe(map((res) => res.order), catchError(handleError));
+  }
+
+  /** El cliente rechazó el pedido en la puerta: devuelve el stock, como cancelar. */
+  rejectDelivery(
+    id: string,
+    motivo?: string,
+  ): Observable<{ order: ApiOrder; unidadesDevueltas: number }> {
+    return this.http
+      .post<{ order: ApiOrder; unidadesDevueltas: number }>(
+        `/api/admin/orders/${id}/rechazar-entrega`,
+        { motivo },
+      )
+      .pipe(catchError(handleError));
+  }
+
+  /** Pedidos contra entrega 'enviado', para la vista del domiciliario. Sin costo ni margen. */
+  deliveries(): Observable<readonly ApiDelivery[]> {
+    return this.http
+      .get<{ entregas: ApiDelivery[] }>('/api/admin/entregas')
+      .pipe(map((res) => res.entregas), catchError(handleError));
   }
 
   /**
@@ -878,6 +946,13 @@ export class ApiClient {
     return this.http
       .get<{ orders: ApiClosingOrder[] }>(`/api/admin/reports/closings/${id}/pedidos`)
       .pipe(map((res) => res.orders), catchError(handleError));
+  }
+
+  /** Efectivo contra entrega ya cobrado, esperando que un admin lo liquide. */
+  codPending(): Observable<readonly ApiCodPending[]> {
+    return this.http
+      .get<{ pendientes: ApiCodPending[] }>('/api/admin/reports/cod-pendiente')
+      .pipe(map((res) => res.pendientes), catchError(handleError));
   }
 }
 

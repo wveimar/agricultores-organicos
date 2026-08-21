@@ -94,8 +94,8 @@
       }
     </ul>
     <p class="mt-4 border-t border-sand pt-3 text-xs text-ink-muted">
-      El checkout es manual por transferencia, así que todo el recaudo entra por
-      consignación. No hay pasarela de pago.
+      Un pedido contra entrega solo cuenta aquí cuando ya está liquidado — ver
+      la sección de abajo mientras tanto.
     </p>
   </div>
 
@@ -159,6 +159,47 @@
     }
   </div>
 </div>
+
+<!-- ──────────── Efectivo contra entrega pendiente de liquidar ──────────── -->
+@if (adminApi.codPending().length > 0) {
+  <section class="mt-8 rounded-lg border border-honey/50 bg-honey/10 p-6">
+    <h2 class="text-h3 text-ink">Efectivo contra entrega por liquidar</h2>
+    <p class="mt-1 text-sm text-ink-soft">
+      Ya lo cobró un domiciliario. No cuenta en el recaudo de arriba hasta que
+      confirmes que el dinero llegó a la finca.
+    </p>
+
+    <ul class="mt-4 flex flex-col divide-y divide-honey/30">
+      @for (pendiente of adminApi.codPending(); track pendiente.id) {
+        <li class="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-ink">
+              {{ pendiente.referencia }} · {{ pendiente.clienteNombre }}
+            </p>
+            <p class="text-xs text-ink-muted">
+              @if (pendiente.cobradoPor) {
+                Cobrado por {{ pendiente.cobradoPor }}
+              } @else {
+                Sin registro de quién lo cobró
+              }
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
+            <p class="tabular text-sm font-semibold text-ink">{{ pendiente.total | cop }}</p>
+            <button
+              type="button"
+              class="rounded-full bg-moss px-4 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
+              [disabled]="settlingId() === pendiente.id"
+              (click)="settleCod(pendiente)"
+            >
+              {{ settlingId() === pendiente.id ? 'Liquidando…' : 'Marcar liquidado' }}
+            </button>
+          </div>
+        </li>
+      }
+    </ul>
+  </section>
+}
 
 <!-- ─────────────────────── Top 3 más vendidos ─────────────────────── -->
 @if (topProducts().length > 0) {

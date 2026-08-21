@@ -87,6 +87,13 @@ export const ADMIN_ROUTES: Routes = [
           import('./reports/consolidation-report').then((m) => m.ConsolidationReport),
       },
       {
+        path: 'entregas',
+        canActivate: [roleGuard('DOMICILIARIO')],
+        title: 'Entregas · Panel',
+        loadComponent: () =>
+          import('./deliveries/delivery-orders').then((m) => m.DeliveryOrders),
+      },
+      {
         path: 'mayoristas',
         // Solo SUPER_ADMIN: a quién se le cobra menos y cuánto es una decisión
         // comercial, no de inventario. El servidor aplica la misma regla.

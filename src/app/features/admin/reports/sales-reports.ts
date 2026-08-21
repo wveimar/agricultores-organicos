@@ -3,6 +3,7 @@ import { AdminApiService } from '../../../core/services/admin-api.service';
 import {
   ApiClosing,
   ApiClosingOrder,
+  ApiCodPending,
   ApiErrorBody,
   ApiSalesRow,
 } from '../../../core/api/api-client';
@@ -68,6 +69,23 @@ export class SalesReports {
     this.adminApi.loadSalesReport();
     this.adminApi.loadCashSummary();
     this.adminApi.loadClosings();
+    this.adminApi.loadCodPending();
+  }
+
+  protected readonly settlingId = signal<string | null>(null);
+
+  /**
+   * Confirma que el efectivo de un pedido contra entrega ya llegó a la finca.
+   * Sin modal de confirmación aparte —a diferencia de cerrar caja— porque no
+   * archiva nada ni es irreversible en el mismo sentido: solo cambia una
+   * bandera de un pedido concreto.
+   */
+  protected settleCod(pendiente: ApiCodPending): void {
+    this.settlingId.set(pendiente.id);
+    this.adminApi.settleOrderCash(pendiente.id).subscribe({
+      next: () => this.settlingId.set(null),
+      error: () => this.settlingId.set(null),
+    });
   }
 
   protected readonly visibleSales = computed<readonly ApiSalesRow[]>(() => {

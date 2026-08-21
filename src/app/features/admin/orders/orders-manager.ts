@@ -18,6 +18,7 @@ import {
 import {
   ORDER_LOG_LABELS,
   ORDER_STATUS_LABELS,
+  OrderLogEvent,
   OrderStatus,
   isCancelable,
   isEditable,
@@ -36,15 +37,20 @@ interface DraftLine {
   readonly isNew: boolean;
 }
 
-const STATUS_STYLES: Readonly<Record<OrderStatus | 'editado', string>> = {
+const STATUS_STYLES: Readonly<Record<OrderLogEvent, string>> = {
   verificacion: 'bg-clay/15 text-clay-deep',
   pendiente: 'bg-honey/20 text-clay-deep',
   aprobado: 'bg-sage-light text-moss-deep',
   enviado: 'bg-linen text-ink-soft',
   cancelado: 'bg-berry/12 text-berry',
-  // Marca de auditoría, no un estado: tono neutro, distinto de los otros
-  // cinco, para que no se lea como si el pedido hubiera cambiado de fase.
+  // Solo existe en contra entrega: el domiciliario ya cobró. Mismo tono que
+  // 'aprobado' — es dinero cerrado, aunque todavía no esté liquidado en caja.
+  pago: 'bg-sage-light text-moss-deep',
+  // Marcas de auditoría, no estados: tono neutro, distinto de los demás, para
+  // que no se lean como si el pedido hubiera cambiado de fase.
   editado: 'bg-sage/20 text-moss-deep',
+  liquidado: 'bg-sage/20 text-moss-deep',
+  rechazado: 'bg-berry/12 text-berry',
 };
 
 const FILTERS: ReadonlyArray<{ value: OrderStatus | 'todos'; label: string }> = [
@@ -53,6 +59,7 @@ const FILTERS: ReadonlyArray<{ value: OrderStatus | 'todos'; label: string }> = 
   { value: 'pendiente', label: 'Pendientes' },
   { value: 'aprobado', label: 'Aprobados' },
   { value: 'enviado', label: 'Enviados' },
+  { value: 'pago', label: 'Pagados (contra entrega)' },
   { value: 'cancelado', label: 'Cancelados' },
 ];
 
@@ -121,7 +128,10 @@ export class OrdersManager {
       pendiente: 1,
       aprobado: 2,
       enviado: 3,
-      cancelado: 4,
+      // Ya se cobró, pero puede seguir esperando que un admin lo liquide —
+      // por eso va antes de 'cancelado', que ya no espera nada.
+      pago: 4,
+      cancelado: 5,
     };
     return filtered
       .slice()
@@ -267,6 +277,91 @@ export class OrdersManager {
     });
   }
 
+  /** Respaldo admin: normalmente lo marca el domiciliario desde /admin/entregas. */
+  protected markPaid(order: ApiOrder): void {
+    this.workingId.set(order.id);
+
+    this.adminApi.markOrderPaid(order.id).subscribe({
+      next: () => {
+        this.workingId.set(null);
+        this.feedback.set(`${order.referencia} marcado como pagado.`);
+        if (this.expandedId() === order.id) {
+          this.loadHistory(order.id);
+        }
+      },
+      error: (error: ApiErrorBody) => {
+        this.workingId.set(null);
+        this.feedback.set(error.message);
+      },
+    });
+  }
+
+  protected settleCash(order: ApiOrder): void {
+    this.workingId.set(order.id);
+
+    this.adminApi.settleOrderCash(order.id).subscribe({
+      next: () => {
+        this.workingId.set(null);
+        this.feedback.set(`${order.referencia}: efectivo entregado a caja.`);
+        if (this.expandedId() === order.id) {
+          this.loadHistory(order.id);
+        }
+      },
+      error: (error: ApiErrorBody) => {
+        this.workingId.set(null);
+        this.feedback.set(error.message);
+      },
+    });
+  }
+
+  // ───────────────────────── Rechazar entrega contra entrega ─────────────────────────
+
+  /** Pedido cuyo rechazo en la puerta está pendiente de confirmar. */
+  protected readonly rejectingId = signal<string | null>(null);
+  protected readonly rejectReason = signal('');
+
+  protected canRejectDelivery(order: ApiOrder): boolean {
+    return order.estado === 'enviado' && order.metodoPago === 'contraentrega';
+  }
+
+  protected askRejectDelivery(order: ApiOrder): void {
+    this.rejectingId.set(order.id);
+    this.rejectReason.set('');
+    this.cancelingId.set(null);
+    this.blocked.set(null);
+    this.feedback.set(null);
+  }
+
+  protected dismissRejectDelivery(): void {
+    this.rejectingId.set(null);
+    this.rejectReason.set('');
+  }
+
+  protected onRejectReason(event: Event): void {
+    this.rejectReason.set((event.target as HTMLInputElement).value);
+  }
+
+  protected confirmRejectDelivery(order: ApiOrder): void {
+    this.workingId.set(order.id);
+    this.rejectingId.set(null);
+
+    this.adminApi.rejectDelivery(order.id, this.rejectReason() || undefined).subscribe({
+      next: ({ unidadesDevueltas }) => {
+        this.workingId.set(null);
+        this.feedback.set(
+          `${order.referencia}: entrega rechazada. ${unidadesDevueltas} unidades de vuelta al inventario.`,
+        );
+        if (this.expandedId() === order.id) {
+          this.loadHistory(order.id);
+        }
+      },
+      error: (error: ApiErrorBody) => {
+        this.workingId.set(null);
+        this.feedback.set(error.message);
+      },
+    });
+  }
+
   protected shortfallsFor(orderId: string): readonly Shortfall[] | null {
     const current = this.blocked();
     return current?.orderId === orderId ? current.shortfalls : null;
@@ -292,6 +387,7 @@ export class OrdersManager {
   protected askCancel(order: ApiOrder): void {
     this.cancelingId.set(order.id);
     this.cancelReason.set('');
+    this.rejectingId.set(null);
     this.blocked.set(null);
     this.feedback.set(null);
     this.cancelEdit();

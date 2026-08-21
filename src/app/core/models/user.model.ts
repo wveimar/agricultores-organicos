@@ -1,5 +1,5 @@
 /** Roles que abren secciones del panel. */
-export type StaffRole = 'ADMIN_INVENTARIO' | 'GESTOR_PEDIDOS' | 'SUPER_ADMIN';
+export type StaffRole = 'ADMIN_INVENTARIO' | 'GESTOR_PEDIDOS' | 'SUPER_ADMIN' | 'DOMICILIARIO';
 
 /**
  * Niveles de mayorista. **No** dan acceso a ninguna sección del panel: lo
@@ -20,6 +20,7 @@ export const ROLE_LABELS: Readonly<Record<UserRole, string>> = {
   ADMIN_INVENTARIO: 'Administración de inventario',
   GESTOR_PEDIDOS: 'Gestión de pedidos',
   SUPER_ADMIN: 'Administración general',
+  DOMICILIARIO: 'Domiciliario',
   MAYORISTA_N1: 'Mayorista Bronce',
   MAYORISTA_N2: 'Mayorista Plata',
   MAYORISTA_N3: 'Mayorista Oro',
@@ -55,6 +56,7 @@ export const ROLE_HINTS: Readonly<Record<UserRole, string>> = {
   ADMIN_INVENTARIO: 'Precios, existencias y catálogo',
   GESTOR_PEDIDOS: 'Aprobar pedidos, despachos y cierre de caja',
   SUPER_ADMIN: 'Todo el panel, incluidas cuentas y tarifas',
+  DOMICILIARIO: 'Cobrar pedidos contra entrega desde el celular',
   MAYORISTA_N1: 'Precios del nivel Bronce en la tienda',
   MAYORISTA_N2: 'Precios del nivel Plata en la tienda',
   MAYORISTA_N3: 'Precios del nivel Oro en la tienda',

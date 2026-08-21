@@ -12,7 +12,10 @@ export type OrderStatus =
   | 'pendiente'
   | 'aprobado'
   | 'enviado'
-  | 'cancelado';
+  | 'cancelado'
+  /** Solo en pedidos contra entrega: el domiciliario ya cobró. No es lo mismo
+   *  que el efectivo ya esté en la caja de la finca — ver `efectivoLiquidado`. */
+  | 'pago';
 
 export const ORDER_STATUS_LABELS: Readonly<Record<OrderStatus, string>> = {
   verificacion: 'Pendiente de verificación',
@@ -20,6 +23,7 @@ export const ORDER_STATUS_LABELS: Readonly<Record<OrderStatus, string>> = {
   aprobado: 'Aprobado',
   enviado: 'Enviado',
   cancelado: 'Cancelado',
+  pago: 'Pagado (contra entrega)',
 };
 
 /**
@@ -56,11 +60,17 @@ export function isEditable(status: OrderStatus): boolean {
  * cambiaron sus líneas. Ver la migración 0009 para el porqué de que viva en
  * `order_status_log` y no en `orders.estado`.
  */
-export type OrderLogEvent = OrderStatus | 'editado';
+export type OrderLogEvent = OrderStatus | 'editado' | 'liquidado' | 'rechazado';
 
 export const ORDER_LOG_LABELS: Readonly<Record<OrderLogEvent, string>> = {
   ...ORDER_STATUS_LABELS,
   editado: 'Productos editados',
+  // Marca de auditoría, como 'editado': el pedido ya estaba en 'pago', esto
+  // solo documenta que el efectivo llegó físicamente a la finca.
+  liquidado: 'Efectivo entregado a caja',
+  // También de auditoría: `orders.estado` queda en 'cancelado' (reutilizado),
+  // esto distingue "rechazado en la puerta" de una cancelación temprana.
+  rechazado: 'Entrega rechazada',
 };
 
 /** Comprobante de consignación subido por el cliente. */
@@ -125,6 +135,9 @@ export interface Order {
    */
   readonly stockReserved?: boolean;
   readonly paymentProof?: PaymentProof;
+
+  /** Siempre presente: todo pedido nace con un método, no solo los contra entrega. */
+  readonly metodoPago: 'transferencia' | 'contraentrega';
 
   /**
    * Cierre de caja que archivó este pedido. Tenerlo apuntando al cierre (en

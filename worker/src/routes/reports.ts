@@ -29,6 +29,29 @@ export const SHIPPING_COST = 5_000;
  */
 const COLOMBIA_OFFSET = '-5 hours';
 
+/**
+ * Qué cuenta como "dinero ya recaudado, listo para el cierre de caja".
+ *
+ * Transferencia: el dinero ya está en el banco desde que se aprobó el pedido,
+ * así que 'aprobado'/'enviado' alcanza — es la regla de siempre. Contra
+ * entrega: el domiciliario puede tener el efectivo en el bolsillo sin que
+ * haya llegado a la finca todavía, así que no cuenta hasta 'pago' **y**
+ * liquidado — dos condiciones, no una (ver la migración 0015 para el porqué
+ * de que sean dos pasos separados).
+ *
+ * Aparece en sales(), cashSummary() y closeCash() (esta última dos veces: lo
+ * que se suma para el recibo y lo que se archiva con closing_id). Las cuatro
+ * copias tienen que decir exactamente lo mismo: si el archivado de
+ * closeCash() se queda con una versión distinta a la de sus propios totales,
+ * un pedido liquidado se contaría en el recibo de un cierre pero nunca
+ * recibiría closing_id, y volvería a contarse en cada cierre siguiente para
+ * siempre. Todas las consultas que la usan alían `orders` como `o`.
+ */
+const RECAUDADO_WHERE = `(
+         (o.metodo_pago = 'transferencia' AND o.estado IN ('aprobado', 'enviado'))
+         OR (o.metodo_pago = 'contraentrega' AND o.estado = 'pago' AND o.efectivo_liquidado = 1)
+       ) AND o.closing_id IS NULL`;
+
 /** `YYYY-MM-DD` y nada más: lo que entra va directo a `datetime()` de SQLite. */
 function optionalDate(value: string | null, field: string): string | null {
   if (value === null || value === '') {
@@ -67,8 +90,7 @@ export async function sales(env: Env, user: JwtPayload): Promise<Response> {
               COUNT(DISTINCT oi.order_id)                AS pedidos
          FROM order_items oi
          JOIN orders o ON o.id = oi.order_id
-        WHERE o.estado IN ('aprobado', 'enviado')
-          AND o.closing_id IS NULL
+        WHERE ${RECAUDADO_WHERE}
         GROUP BY oi.product_id
      ),
      acumulado AS (
@@ -145,16 +167,16 @@ export async function cashSummary(env: Env, user: JwtPayload): Promise<Response>
     `SELECT COUNT(DISTINCT o.id)                                  AS pedidos,
             COALESCE(SUM(o.envio), 0)                             AS enviosCobrados,
             COALESCE((SELECT SUM(i.cantidad)
-                        FROM order_items i JOIN orders x ON x.id = i.order_id
-                       WHERE x.estado IN ('aprobado','enviado') AND x.closing_id IS NULL), 0) AS unidades,
+                        FROM order_items i JOIN orders o ON o.id = i.order_id
+                       WHERE ${RECAUDADO_WHERE}), 0) AS unidades,
             COALESCE((SELECT SUM(i.precio_unitario * i.cantidad)
-                        FROM order_items i JOIN orders x ON x.id = i.order_id
-                       WHERE x.estado IN ('aprobado','enviado') AND x.closing_id IS NULL), 0) AS ventaProducto,
+                        FROM order_items i JOIN orders o ON o.id = i.order_id
+                       WHERE ${RECAUDADO_WHERE}), 0) AS ventaProducto,
             COALESCE((SELECT SUM(i.costo_unitario * i.cantidad)
-                        FROM order_items i JOIN orders x ON x.id = i.order_id
-                       WHERE x.estado IN ('aprobado','enviado') AND x.closing_id IS NULL), 0) AS costoProducto
+                        FROM order_items i JOIN orders o ON o.id = i.order_id
+                       WHERE ${RECAUDADO_WHERE}), 0) AS costoProducto
        FROM orders o
-      WHERE o.estado IN ('aprobado','enviado') AND o.closing_id IS NULL`,
+      WHERE ${RECAUDADO_WHERE}`,
   ).first<{
     pedidos: number;
     enviosCobrados: number;
@@ -171,20 +193,51 @@ export async function cashSummary(env: Env, user: JwtPayload): Promise<Response>
     costoProducto: 0,
   };
 
+  // Desglose real por método, con el mismo filtro que el resto del resumen:
+  // un pedido contra entrega sin liquidar no aparece aquí tampoco, por la
+  // misma razón que no aparece en el total.
+  const { results: porMetodo } = await env.DB.prepare(
+    `SELECT o.metodo_pago AS metodo, COUNT(DISTINCT o.id) AS pedidos, COALESCE(SUM(o.total), 0) AS total
+       FROM orders o
+      WHERE ${RECAUDADO_WHERE}
+      GROUP BY o.metodo_pago`,
+  ).all<{ metodo: string; pedidos: number; total: number }>();
+
   return json({
     ...data,
     ganancia: data.ventaProducto - data.costoProducto,
     totalRecaudado: data.ventaProducto + data.enviosCobrados,
-    // Solo existe consignación: el checkout es manual. Se devuelve como lista
-    // para que sumar efectivo o datáfono no cambie la forma de la respuesta.
-    porMetodo: [
-      {
-        metodo: 'consignacion',
-        pedidos: data.pedidos,
-        total: data.ventaProducto + data.enviosCobrados,
-      },
-    ],
+    porMetodo,
   });
+}
+
+/**
+ * GET /api/admin/reports/cod-pendiente — efectivo contra entrega ya cobrado
+ * por un domiciliario, esperando que un admin confirme que llegó a la finca.
+ *
+ * Separado de cashSummary() a propósito: ese resumen son números agregados,
+ * esto es una lista de pedidos concretos con acción propia (liquidar() en
+ * orders.ts). "Quién cobró" no está denormalizado en `orders` — sale de
+ * `order_status_log` con el mismo índice que ya usa el resto del panel para
+ * la traza (`idx_status_log_order`), de sobra para el volumen de esta tienda.
+ */
+export async function codPending(env: Env, user: JwtPayload): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const { results } = await env.DB.prepare(
+    `SELECT o.id, o.referencia, o.cliente_nombre AS clienteNombre, o.total,
+            (SELECT actor_nombre FROM order_status_log
+              WHERE order_id = o.id AND estado = 'pago'
+              ORDER BY creado_en DESC LIMIT 1) AS cobradoPor,
+            (SELECT creado_en FROM order_status_log
+              WHERE order_id = o.id AND estado = 'pago'
+              ORDER BY creado_en DESC LIMIT 1) AS cobradoEn
+       FROM orders o
+      WHERE o.estado = 'pago' AND o.metodo_pago = 'contraentrega' AND o.efectivo_liquidado = 0
+      ORDER BY cobradoEn ASC`,
+  ).all();
+
+  return json({ pendientes: results });
 }
 
 /**
@@ -202,7 +255,7 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
     `SELECT COUNT(DISTINCT o.id)              AS pedidos,
             COALESCE(SUM(o.envio), 0)         AS enviosCobrados
        FROM orders o
-      WHERE o.estado IN ('aprobado','enviado') AND o.closing_id IS NULL`,
+      WHERE ${RECAUDADO_WHERE}`,
   ).first<{ pedidos: number; enviosCobrados: number }>();
 
   if (!totals || totals.pedidos === 0) {
@@ -218,7 +271,7 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
             COALESCE(SUM(i.costo_unitario  * i.cantidad), 0)   AS costoProducto
        FROM order_items i
        JOIN orders o ON o.id = i.order_id
-      WHERE o.estado IN ('aprobado','enviado') AND o.closing_id IS NULL`,
+      WHERE ${RECAUDADO_WHERE}`,
   ).first<{ unidades: number; ventaProducto: number; costoProducto: number }>();
 
   const unidades = productTotals?.unidades ?? 0;
@@ -262,9 +315,13 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
     // Se conserva `comprobante_nombre`: la traza de que hubo comprobante y de
     // cómo se llamaba no ocupa nada, y es lo que permite distinguir después
     // "nunca lo mandó" de "lo mandó y se purgó al cerrar".
+    // AS o: mismo predicado RECAUDADO_WHERE que las dos consultas de arriba,
+    // sin alias las tres se irían silenciosamente en direcciones distintas
+    // en cuanto una de ellas cambiara — ver el comentario largo junto a la
+    // constante para la consecuencia exacta de que esto se desincronice.
     env.DB.prepare(
-      `UPDATE orders SET closing_id = ?1, comprobante_url = NULL
-        WHERE estado IN ('aprobado','enviado') AND closing_id IS NULL`,
+      `UPDATE orders AS o SET closing_id = ?1, comprobante_url = NULL
+        WHERE ${RECAUDADO_WHERE}`,
     ).bind(closingId),
   ]);
 

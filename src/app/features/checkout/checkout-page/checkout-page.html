@@ -116,62 +116,114 @@
             </div>
           </section>
 
-          <!-- Datos bancarios -->
+          <!-- Forma de pago -->
           <section class="mt-12">
-            <h2 class="text-h3 text-ink">Consigna el total</h2>
-            <p class="mt-2 text-sm text-ink-soft">
-              Transfiere el valor exacto a esta cuenta y guarda el soporte.
-            </p>
+            <h2 class="text-h3 text-ink">Forma de pago</h2>
 
-            <div class="mt-5 overflow-hidden rounded-lg border border-sand bg-linen/60">
-              <dl class="divide-y divide-sand">
-                <div class="flex items-center justify-between gap-4 px-5 py-4">
-                  <dt class="text-sm text-ink-soft">Banco</dt>
-                  <dd class="text-sm font-medium text-ink">{{ bank.bank }}</dd>
-                </div>
-                <div class="flex items-center justify-between gap-4 px-5 py-4">
-                  <dt class="text-sm text-ink-soft">Tipo de cuenta</dt>
-                  <dd class="text-sm font-medium text-ink">{{ bank.accountType }}</dd>
-                </div>
-                <div class="flex items-center justify-between gap-4 px-5 py-4">
-                  <dt class="text-sm text-ink-soft">Número</dt>
-                  <dd class="flex items-center gap-3">
-                    <span class="tabular text-sm font-medium text-ink">{{ bank.accountNumber }}</span>
-                    <button
-                      type="button"
-                      class="text-overline rounded-full border border-sand px-3 py-1.5 font-semibold uppercase text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
-                      (click)="copyAccount()"
-                    >
-                      {{ copied() ? 'Copiado' : 'Copiar' }}
-                    </button>
-                  </dd>
-                </div>
-                <div class="flex items-center justify-between gap-4 px-5 py-4">
-                  <dt class="text-sm text-ink-soft">Titular</dt>
-                  <dd class="text-right text-sm font-medium text-ink">
-                    {{ bank.holder }}
-                    <span class="block text-xs font-normal text-ink-muted">{{ bank.cc }}</span>
-                  </dd>
-                </div>
-              </dl>
+            <div class="mt-5 grid gap-3 sm:grid-cols-2">
+              <label
+                class="flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors duration-200"
+                [class]="metodoPago() === 'contraentrega' ? 'border-moss bg-sage-light/40' : 'border-sand hover:border-stone'"
+              >
+                <input
+                  type="radio"
+                  name="metodoPago"
+                  class="mt-0.5"
+                  [checked]="metodoPago() === 'contraentrega'"
+                  (change)="metodoPago.set('contraentrega')"
+                />
+                <span>
+                  <span class="block text-sm font-semibold text-ink">Pago contra entrega</span>
+                  <span class="block text-xs text-ink-soft">Pagas en efectivo cuando te lo llevemos.</span>
+                </span>
+              </label>
+
+              <label
+                class="flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors duration-200"
+                [class]="metodoPago() === 'transferencia' ? 'border-moss bg-sage-light/40' : 'border-sand hover:border-stone'"
+              >
+                <input
+                  type="radio"
+                  name="metodoPago"
+                  class="mt-0.5"
+                  [checked]="metodoPago() === 'transferencia'"
+                  (change)="metodoPago.set('transferencia')"
+                />
+                <span>
+                  <span class="block text-sm font-semibold text-ink">Transferencia</span>
+                  <span class="block text-xs text-ink-soft">Consignas y nos envías el comprobante.</span>
+                </span>
+              </label>
             </div>
           </section>
 
-          <!-- Comprobante -->
-          <section class="mt-12">
-            <h2 class="text-h3 text-ink">
-              Sube el comprobante
-              <span class="text-sm font-normal text-ink-muted">(opcional)</span>
-            </h2>
-            <p class="mt-2 text-sm text-ink-soft">
-              Si ya tienes la foto de la transferencia a la mano, súbela para agilizar la
-              verificación. Si no, también puedes enviárnosla luego por WhatsApp.
-            </p>
+          @if (metodoPago() === 'transferencia') {
+            <!-- Datos bancarios -->
+            <section class="mt-12">
+              <h2 class="text-h3 text-ink">Consigna el total</h2>
+              <p class="mt-2 text-sm text-ink-soft">
+                Transfiere el valor exacto a esta cuenta y guarda el soporte.
+              </p>
 
-            <div class="mt-5">
-              <app-proof-uploader (proofChange)="onProofChange($event)" />
-            </div>
-          </section>
+              <div class="mt-5 overflow-hidden rounded-lg border border-sand bg-linen/60">
+                <dl class="divide-y divide-sand">
+                  <div class="flex items-center justify-between gap-4 px-5 py-4">
+                    <dt class="text-sm text-ink-soft">Banco</dt>
+                    <dd class="text-sm font-medium text-ink">{{ bank.bank }}</dd>
+                  </div>
+                  <div class="flex items-center justify-between gap-4 px-5 py-4">
+                    <dt class="text-sm text-ink-soft">Tipo de cuenta</dt>
+                    <dd class="text-sm font-medium text-ink">{{ bank.accountType }}</dd>
+                  </div>
+                  <div class="flex items-center justify-between gap-4 px-5 py-4">
+                    <dt class="text-sm text-ink-soft">Número</dt>
+                    <dd class="flex items-center gap-3">
+                      <span class="tabular text-sm font-medium text-ink">{{ bank.accountNumber }}</span>
+                      <button
+                        type="button"
+                        class="text-overline rounded-full border border-sand px-3 py-1.5 font-semibold uppercase text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+                        (click)="copyAccount()"
+                      >
+                        {{ copied() ? 'Copiado' : 'Copiar' }}
+                      </button>
+                    </dd>
+                  </div>
+                  <div class="flex items-center justify-between gap-4 px-5 py-4">
+                    <dt class="text-sm text-ink-soft">Titular</dt>
+                    <dd class="text-right text-sm font-medium text-ink">
+                      {{ bank.holder }}
+                      <span class="block text-xs font-normal text-ink-muted">{{ bank.cc }}</span>
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </section>
+
+            <!-- Comprobante -->
+            <section class="mt-12">
+              <h2 class="text-h3 text-ink">
+                Sube el comprobante
+                <span class="text-sm font-normal text-ink-muted">(opcional)</span>
+              </h2>
+              <p class="mt-2 text-sm text-ink-soft">
+                Si ya tienes la foto de la transferencia a la mano, súbela para agilizar la
+                verificación. Si no, también puedes enviárnosla luego por WhatsApp.
+              </p>
+
+              <div class="mt-5">
+                <app-proof-uploader (proofChange)="onProofChange($event)" />
+              </div>
+            </section>
+          } @else {
+            <!-- Contra entrega: nada que pagar por adelantado ni comprobante que subir. -->
+            <section class="mt-12 rounded-lg border border-sand bg-linen/40 p-5">
+              <h2 class="text-h3 text-ink">Pagas al recibir</h2>
+              <p class="mt-2 text-sm text-ink-soft">
+                No necesitas transferir nada ahora. Ten el efectivo listo para cuando
+                te entreguemos el pedido — el domiciliario te dará el recibo ahí mismo.
+              </p>
+            </section>
+          }
 
           <!-- Faltan datos obligatorios -->
           <!--
@@ -315,8 +367,13 @@
             </div>
 
             <p class="mt-5 border-t border-sand pt-4 text-xs text-ink-muted">
-              Demo sin pasarela de pago: el cobro es manual por transferencia y la
-              verificación la hace una persona.
+              @if (metodoPago() === 'transferencia') {
+                Demo sin pasarela de pago: el cobro es manual por transferencia y la
+                verificación la hace una persona.
+              } @else {
+                Demo sin pasarela de pago: el cobro es en efectivo al momento de la
+                entrega.
+              }
             </p>
           </div>
         </aside>

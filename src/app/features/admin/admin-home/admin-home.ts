@@ -20,6 +20,7 @@ export class AdminHome {
 
   protected readonly canInventory = computed(() => this.tokens.can('ADMIN_INVENTARIO'));
   protected readonly canOrders = computed(() => this.tokens.can('GESTOR_PEDIDOS'));
+  protected readonly canDeliver = computed(() => this.tokens.can('DOMICILIARIO'));
 
   /** Primer nombre, para que el saludo no suene a carta formal. */
   protected readonly firstName = computed(
@@ -37,6 +38,9 @@ export class AdminHome {
     }
     if (this.canOrders()) {
       this.adminApi.loadOrders();
+    }
+    if (this.canDeliver()) {
+      this.adminApi.loadDeliveries();
     }
   }
 }

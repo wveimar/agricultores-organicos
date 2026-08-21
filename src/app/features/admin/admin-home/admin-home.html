@@ -72,6 +72,34 @@
     </a>
   }
 
+  @if (canDeliver()) {
+    <a
+      routerLink="/admin/entregas"
+      class="group rounded-lg border bg-bone p-6 transition-colors duration-200 hover:border-moss"
+      [class]="adminApi.deliveryCount() > 0 ? 'border-honey' : 'border-sand'"
+    >
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h2 class="text-h3 text-ink">Entregas</h2>
+          <p class="mt-1 text-sm text-ink-soft">Pedidos contra entrega listos para cobrar.</p>
+        </div>
+        <span class="text-ink-muted transition-transform duration-300 group-hover:translate-x-1">→</span>
+      </div>
+
+      <dl class="mt-6 grid grid-cols-2 gap-4 border-t border-sand pt-4">
+        <div>
+          <dt class="text-xs text-ink-muted">Por cobrar</dt>
+          <dd
+            class="tabular mt-1 font-display text-h3"
+            [class]="adminApi.deliveryCount() > 0 ? 'text-clay-deep' : 'text-ink'"
+          >
+            {{ adminApi.deliveryCount() }}
+          </dd>
+        </div>
+      </dl>
+    </a>
+  }
+
   @if (canInventory() || canOrders()) {
     <a
       routerLink="/admin/reportes"
@@ -89,7 +117,7 @@
     </a>
   }
 
-  @if (!canInventory() && !canOrders()) {
+  @if (!canInventory() && !canOrders() && !canDeliver()) {
     <div class="rounded-lg border border-dashed border-sand p-8 text-center lg:col-span-2">
       <p class="text-h3 text-ink">Tu cuenta no tiene módulos asignados</p>
       <p class="mt-2 text-sm text-ink-soft">Pide acceso a administración general.</p>

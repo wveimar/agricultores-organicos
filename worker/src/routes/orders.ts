@@ -37,6 +37,12 @@ interface CreateOrderBody {
   envio?: unknown;
   comprobanteNombre?: unknown;
   comprobanteUrl?: unknown;
+  metodoPago?: unknown;
+}
+
+/** `'transferencia'` si no viene o viene basura: es el único método que existió hasta ahora. */
+function readMetodoPago(value: unknown): 'transferencia' | 'contraentrega' {
+  return value === 'contraentrega' ? 'contraentrega' : 'transferencia';
 }
 
 interface StockRow {
@@ -240,6 +246,12 @@ export async function create(request: Request, env: Env): Promise<Response> {
   // recibe un 400 claro y no queda ningún pedido a medias.
   const comprobanteUrl = validateDataUrl(body.comprobanteUrl);
 
+  // Reserva de stock y estado inicial no dependen del método de pago: la
+  // reserva evita sobreventa sin importar cómo se vaya a cobrar, y
+  // 'verificacion' ya significa "pedido web, pendiente de revisión humana",
+  // no "pendiente de comprobante" — el comprobante siempre fue opcional.
+  const metodoPago = readMetodoPago(body.metodoPago);
+
   const statements: D1PreparedStatement[] = [
     // La referencia se calcula dentro de la propia transacción: leerla antes y
     // escribirla después dejaría una ventana para asignar el mismo número dos
@@ -248,11 +260,11 @@ export async function create(request: Request, env: Env): Promise<Response> {
       `INSERT INTO orders (
          id, referencia, user_id, cliente_nombre, cliente_telefono, cliente_direccion,
          estado, stock_reservado, subtotal, envio, total,
-         comprobante_nombre, comprobante_url
+         comprobante_nombre, comprobante_url, metodo_pago
        ) VALUES (
          ?1,
          'ORD-' || (SELECT COALESCE(MAX(CAST(substr(referencia, 5) AS INTEGER)), 1000) + 1 FROM orders),
-         ?2, ?3, ?4, ?5, 'verificacion', 1, ?6, ?7, ?8, ?9, ?10
+         ?2, ?3, ?4, ?5, 'verificacion', 1, ?6, ?7, ?8, ?9, ?10, ?11
        )`,
     ).bind(
       orderId,
@@ -272,6 +284,7 @@ export async function create(request: Request, env: Env): Promise<Response> {
       // dos, o no queda ninguno. Nunca se selecciona en los listados; se lee
       // solo desde GET /api/admin/orders/:id/comprobante.
       comprobanteUrl,
+      metodoPago,
     ),
     // Traza de la primera transición, en el mismo batch: si el pedido no llega
     // a crearse, tampoco debe quedar un registro de que "nació".
@@ -504,6 +517,202 @@ export async function ship(env: Env, user: JwtPayload, orderId: string): Promise
   }
 
   return json({ order: await loadOrder(env, orderId) });
+}
+
+/**
+ * POST /api/admin/orders/:id/pagar — el domiciliario marca que cobró un
+ * pedido contra entrega.
+ *
+ * Mismo patrón que ship(): una sola columna cambia, sin token de idempotencia
+ * — no toca stock ni dinero, así que un doble-submit concurrente (mal
+ * internet, doble-tap) hace que el segundo UPDATE afecte 0 filas sin efecto
+ * secundario. Ver la migración 0015 para el porqué de que esto NO sea todavía
+ * "dinero recaudado": ese efectivo sigue en el bolsillo del domiciliario hasta
+ * que un admin lo liquide (ver liquidar() más abajo).
+ */
+export async function markPaid(env: Env, user: JwtPayload, orderId: string): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS', 'DOMICILIARIO');
+
+  const [updateResult] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE orders SET estado = 'pago'
+        WHERE id = ?1 AND estado = 'enviado' AND metodo_pago = 'contraentrega'`,
+    ).bind(orderId),
+    env.DB.prepare(
+      `INSERT INTO order_status_log (order_id, estado, actor_id, actor_nombre)
+       SELECT ?1, 'pago', ?2, ?3
+        WHERE (SELECT estado FROM orders WHERE id = ?1) = 'pago'`,
+    ).bind(orderId, user.sub, user.nombre),
+  ]);
+
+  if (updateResult.meta.changes === 0) {
+    // Distingue la carrera perdida (alguien más ya lo cobró) del caso general,
+    // porque a quien la pierde no le sirve reintentar: el efectivo ya lo tiene
+    // en la mano y tiene que reportarlo, no volver a tocar el botón.
+    const actual = await env.DB.prepare(`SELECT estado, metodo_pago FROM orders WHERE id = ?1`)
+      .bind(orderId)
+      .first<{ estado: string; metodo_pago: string }>();
+
+    if (actual?.estado === 'pago') {
+      throw ApiError.conflict(
+        'ya-pagado',
+        'Este pedido ya fue marcado como pagado por otra persona. Si ya cobraste, avisa para revisar el efectivo.',
+      );
+    }
+    throw ApiError.conflict(
+      'estado-invalido',
+      actual?.metodo_pago !== 'contraentrega'
+        ? 'Este pedido no es contra entrega.'
+        : 'Solo se puede marcar como pagado un pedido enviado.',
+    );
+  }
+
+  return json({ order: await loadOrder(env, orderId) });
+}
+
+/**
+ * POST /api/admin/orders/:id/liquidar — un admin confirma que el efectivo
+ * cobrado por el domiciliario ya está físicamente en la finca.
+ *
+ * Paso separado de markPaid() a propósito: el domiciliario no se autocertifica
+ * — quien confirma que el dinero llegó no puede ser quien lo trae encima. Sin
+ * token: no muta stock, solo un flag + traza, mismo argumento que markPaid().
+ */
+export async function settleCash(env: Env, user: JwtPayload, orderId: string): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const [updateResult] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE orders SET efectivo_liquidado = 1
+        WHERE id = ?1 AND estado = 'pago' AND metodo_pago = 'contraentrega' AND efectivo_liquidado = 0`,
+    ).bind(orderId),
+    env.DB.prepare(
+      `INSERT INTO order_status_log (order_id, estado, actor_id, actor_nombre)
+       SELECT ?1, 'liquidado', ?2, ?3
+        WHERE (SELECT efectivo_liquidado FROM orders WHERE id = ?1) = 1`,
+    ).bind(orderId, user.sub, user.nombre),
+  ]);
+
+  if (updateResult.meta.changes === 0) {
+    throw ApiError.conflict(
+      'estado-invalido',
+      'Solo se puede liquidar un pedido contra entrega ya pagado y sin liquidar.',
+    );
+  }
+
+  return json({ order: await loadOrder(env, orderId) });
+}
+
+/**
+ * POST /api/admin/orders/:id/rechazar-entrega — el cliente rechazó el pedido
+ * en la puerta.
+ *
+ * Único camino de reversión para un pedido 'enviado' — cancel() lo bloquea a
+ * propósito. Es el espejo de cancel() y comparte su mecánica: sí muta stock,
+ * así que sí necesita token de idempotencia (reutiliza las columnas de
+ * cancelación, no hace falta agregar otras — el significado es el mismo:
+ * quién/cuándo/por qué se canceló, con o sin token).
+ *
+ * `orders.estado` termina en 'cancelado' —no un estado nuevo— para que toda la
+ * UI que ya filtra por 'cancelado' siga funcionando. La distinción "rechazado
+ * en la puerta" vive solo en la traza: se registra 'rechazado', no
+ * 'cancelado', el mismo truco que usa 'editado' para no mentir en
+ * `orders.estado`.
+ */
+export async function rejectDelivery(
+  request: Request,
+  env: Env,
+  user: JwtPayload,
+  orderId: string,
+): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const body = await readJson<{ motivo?: unknown }>(request).catch(() => ({ motivo: undefined }));
+  const motivo =
+    typeof body.motivo === 'string' && body.motivo.trim() !== ''
+      ? body.motivo.trim().slice(0, 300)
+      : null;
+
+  const order = await env.DB.prepare(
+    `SELECT id, estado, metodo_pago FROM orders WHERE id = ?1`,
+  )
+    .bind(orderId)
+    .first<{ id: string; estado: string; metodo_pago: string }>();
+
+  if (!order) {
+    throw ApiError.notFound('Ese pedido no existe.');
+  }
+  if (order.estado !== 'enviado' || order.metodo_pago !== 'contraentrega') {
+    throw ApiError.conflict(
+      'estado-invalido',
+      order.metodo_pago !== 'contraentrega'
+        ? 'Solo un pedido contra entrega se puede rechazar en la puerta.'
+        : `Un pedido "${order.estado}" no se puede rechazar en la puerta.`,
+    );
+  }
+
+  const { results: items } = await env.DB.prepare(
+    `SELECT product_id, cantidad FROM order_items WHERE order_id = ?1`,
+  )
+    .bind(orderId)
+    .all<{ product_id: string; cantidad: number }>();
+
+  const token = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(
+      `UPDATE orders
+          SET estado = 'cancelado', cancelado_por = ?2, cancelado_en = ?3,
+              cancelacion_token = ?4, motivo_cancelacion = ?5
+        WHERE id = ?1
+          AND cancelacion_token IS NULL
+          AND estado = 'enviado'`,
+    ).bind(orderId, user.sub, now, token, motivo),
+    // 'rechazado' y no 'cancelado': documenta que este pedido llegó a salir y
+    // se rechazó en la puerta, distinto de una cancelación temprana — la
+    // métrica de tasa de rechazo COD depende de esta distinción.
+    env.DB.prepare(
+      `INSERT INTO order_status_log (order_id, estado, actor_id, actor_nombre)
+       SELECT ?1, 'rechazado', ?2, ?3
+        WHERE (SELECT cancelacion_token FROM orders WHERE id = ?1) = ?4`,
+    ).bind(orderId, user.sub, user.nombre, token),
+  ];
+
+  // A diferencia de cancel(), aquí siempre se devuelve stock: un pedido
+  // 'enviado' siempre tiene `stock_reservado = 1` (se descontó al aprobarlo,
+  // o antes, al crearse) — no hay caso donde no haya nada que devolver.
+  const movimientos = expandir(
+    new Map(items.map((item) => [item.product_id, item.cantidad])),
+    await recetasDelPedido(env, orderId),
+  );
+
+  for (const [productId, cantidad] of movimientos) {
+    statements.push(
+      env.DB.prepare(
+        `UPDATE products
+            SET stock_actual = stock_actual + ?2, actualizado_en = ?4
+          WHERE id = ?1
+            AND (SELECT cancelacion_token FROM orders WHERE id = ?3) = ?5`,
+      ).bind(productId, cantidad, orderId, now, token),
+    );
+  }
+
+  let batchResults: D1Result[];
+  try {
+    batchResults = await env.DB.batch(statements);
+  } catch (error) {
+    throw translateConstraint(error);
+  }
+
+  if (batchResults[0].meta.changes === 0) {
+    throw ApiError.conflict('estado-invalido', 'Otro usuario ya resolvió este pedido.');
+  }
+
+  return json({
+    order: await loadOrder(env, orderId),
+    unidadesDevueltas: items.reduce((suma, item) => suma + item.cantidad, 0),
+  });
 }
 
 /**
@@ -1066,6 +1275,7 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
             -- cuando el admin abre el pedido concreto que quiere revisar.
             (comprobante_url IS NOT NULL) AS tieneComprobante,
             aprobado_en AS aprobadoEn,
+            metodo_pago AS metodoPago, efectivo_liquidado AS efectivoLiquidado,
             closing_id AS closingId, creado_en AS creadoEn
        FROM orders ${where}
       ORDER BY creado_en DESC
@@ -1111,6 +1321,58 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
     orders: orders.map((order) => ({
       ...order,
       items: byOrder.get((order as { id: string }).id) ?? [],
+    })),
+  });
+}
+
+/**
+ * GET /api/admin/entregas — pedidos contra entrega listos para cobrar.
+ *
+ * Deliberadamente NO reutiliza list(): esa consulta trae `costoUnitario` sin
+ * filtrar por rol, y un domiciliario no tiene por qué ver costo ni margen.
+ * En vez de condicionar campos dentro de un handler que ya asume confianza de
+ * GESTOR_PEDIDOS, esta es una consulta propia que nunca selecciona esa
+ * columna — mismo espíritu que separar components.ts de products.ts.
+ */
+export async function deliveries(env: Env, user: JwtPayload): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS', 'DOMICILIARIO');
+
+  const { results: orders } = await env.DB.prepare(
+    `SELECT id, referencia, cliente_nombre AS clienteNombre,
+            cliente_telefono AS clienteTelefono, cliente_direccion AS clienteDireccion,
+            total, creado_en AS creadoEn
+       FROM orders
+      WHERE estado = 'enviado' AND metodo_pago = 'contraentrega'
+      ORDER BY creado_en ASC`,
+  ).all<{ id: string }>();
+
+  if (orders.length === 0) {
+    return json({ entregas: [] });
+  }
+
+  const ids = orders.map((order) => order.id);
+  const placeholders = ids.map((_, index) => `?${index + 1}`).join(', ');
+
+  const { results: items } = await env.DB.prepare(
+    `SELECT order_id AS orderId, producto_nombre AS productoNombre,
+            precio_unitario AS precioUnitario, cantidad
+       FROM order_items
+      WHERE order_id IN (${placeholders})`,
+  )
+    .bind(...ids)
+    .all<{ orderId: string }>();
+
+  const byOrder = new Map<string, unknown[]>();
+  for (const item of items) {
+    const bucket = byOrder.get(item.orderId) ?? [];
+    bucket.push(item);
+    byOrder.set(item.orderId, bucket);
+  }
+
+  return json({
+    entregas: orders.map((order) => ({
+      ...order,
+      items: byOrder.get(order.id) ?? [],
     })),
   });
 }
@@ -1207,7 +1469,9 @@ async function loadOrder(env: Env, orderId: string): Promise<unknown> {
               cliente_direccion AS clienteDireccion, estado, stock_reservado AS stockReservado,
               subtotal, envio, total, comprobante_nombre AS comprobanteNombre,
               (comprobante_url IS NOT NULL) AS tieneComprobante,
-              aprobado_en AS aprobadoEn, closing_id AS closingId, creado_en AS creadoEn
+              aprobado_en AS aprobadoEn,
+              metodo_pago AS metodoPago, efectivo_liquidado AS efectivoLiquidado,
+              closing_id AS closingId, creado_en AS creadoEn
          FROM orders WHERE id = ?1`,
     ).bind(orderId),
     env.DB.prepare(

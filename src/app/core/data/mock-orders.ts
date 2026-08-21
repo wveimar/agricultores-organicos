@@ -21,6 +21,8 @@ export const ORDERS: readonly Order[] = [
     customerAddress: 'Calle 127 # 15-40, Bogotá',
     placedAt: '2026-08-09T08:14:00.000Z',
     status: 'pendiente',
+    // Todos los pedidos de este seed son de antes de que existiera contra entrega.
+    metodoPago: 'transferencia',
     lines: [
       { productId: 'p-24', productName: 'Canasta Semanal Familiar', unitPrice: 89_000, unitCost: 66_800, quantity: 1 },
       { productId: 'p-22', productName: 'Café de Origen · Tueste Medio', unitPrice: 32_000, unitCost: 19_800, quantity: 2 },
@@ -34,6 +36,7 @@ export const ORDERS: readonly Order[] = [
     customerAddress: 'Carrera 43A # 12-30, Medellín',
     placedAt: '2026-08-09T09:02:00.000Z',
     status: 'pendiente',
+    metodoPago: 'transferencia',
     lines: [
       { productId: 'p-09', productName: 'Fresa de Temporada', unitPrice: 12_900, unitCost: 9_700, quantity: 3 },
       { productId: 'p-23', productName: 'Miel de Abeja Cruda', unitPrice: 28_500, unitCost: 17_700, quantity: 1 },
@@ -48,6 +51,7 @@ export const ORDERS: readonly Order[] = [
     customerAddress: 'Carrera 9 # 68-30, Bogotá',
     placedAt: '2026-08-09T10:35:00.000Z',
     status: 'pendiente',
+    metodoPago: 'transferencia',
     lines: [
       // Supera el stock disponible (6): sirve para probar el bloqueo.
       { productId: 'p-05', productName: 'Aguacate Hass', unitPrice: 4_900, unitCost: 3_800, quantity: 12 },
@@ -62,6 +66,7 @@ export const ORDERS: readonly Order[] = [
     customerAddress: 'Avenida 6N # 23-18, Cali',
     placedAt: '2026-08-08T16:20:00.000Z',
     status: 'aprobado',
+    metodoPago: 'transferencia',
     approvedBy: 'Diana Cardona',
     approvedAt: '2026-08-08T17:05:00.000Z',
     lines: [
@@ -76,6 +81,7 @@ export const ORDERS: readonly Order[] = [
     customerAddress: 'Km 3 vía Arcabuco, Villa de Leyva',
     placedAt: '2026-08-08T11:48:00.000Z',
     status: 'enviado',
+    metodoPago: 'transferencia',
     approvedBy: 'Diana Cardona',
     approvedAt: '2026-08-08T12:30:00.000Z',
     lines: [
@@ -91,6 +97,7 @@ export const ORDERS: readonly Order[] = [
     customerAddress: 'Calle 36 # 27-15, Bucaramanga',
     placedAt: '2026-08-09T11:12:00.000Z',
     status: 'pendiente',
+    metodoPago: 'transferencia',
     lines: [
       { productId: 'p-15', productName: 'Ensalada Arcoíris', unitPrice: 16_900, unitCost: 9_300, quantity: 2 },
       { productId: 'p-18', productName: 'Smoothie de Fresa y Chía', unitPrice: 11_200, unitCost: 6_200, quantity: 2 },
