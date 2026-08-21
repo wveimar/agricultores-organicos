@@ -313,3 +313,19 @@ export function unitPresentation(quantity: number, unit: ProductUnit): string {
   const etiqueta = UNIT_LABELS[unit] ?? { singular: unit, plural: unit };
   return quantity === 1 ? etiqueta.singular : `${quantity} ${etiqueta.plural}`;
 }
+
+/**
+ * Cuánto de un componente entra en UNA canasta: «2 × 500 gr», «1 unidad».
+ *
+ * Se enseñan las dos cifras y no su producto —«1 kg»— porque son cosas
+ * distintas: dos bolsas de medio kilo no es lo mismo que una de un kilo, y
+ * quien recibe la canasta abre lo que le llega, no el total.
+ *
+ * Vive aquí y no en cada componente porque lo pintan cuatro pantallas —la
+ * tarjeta, el detalle de la canasta, el resumen del checkout y la confirmación
+ * de compra— y la regla de arriba tiene que ser la misma en todas.
+ */
+export function componentPortion(component: ProductComponent): string {
+  const presentacion = unitPresentation(component.unitQuantity, component.unit);
+  return component.quantity === 1 ? presentacion : `${component.quantity} × ${presentacion}`;
+}

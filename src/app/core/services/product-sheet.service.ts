@@ -2,7 +2,12 @@ import { Injectable, computed, signal } from '@angular/core';
 import { Product } from '../models/product.model';
 
 /**
- * Qué producto tiene abierto el modal de variantes.
+ * Qué producto tiene abierta su hoja de detalle.
+ *
+ * La hoja sirve para dos cosas que comparten el mismo gesto —tocar una tarjeta
+ * y decidir antes de añadir—: elegir entre las variantes de una madre, o ver
+ * qué lleva dentro una canasta. Cuál de las dos se pinta lo decide el propio
+ * producto (`contains` o variantes en el catálogo), no quien la abre.
  *
  * ── Por qué un servicio y no un modal dentro de cada tarjeta ──
  *
@@ -17,15 +22,15 @@ import { Product } from '../models/product.model';
  * la capa flotante se pinta una sola vez en `public-shell`, fuera de todo.
  */
 @Injectable({ providedIn: 'root' })
-export class VariantPicker {
-  /** La madre cuyas variantes se están eligiendo, o `null` si está cerrado. */
+export class ProductSheet {
+  /** El producto que se está mirando, o `null` si la hoja está cerrada. */
   private readonly current = signal<Product | null>(null);
 
-  readonly parent = this.current.asReadonly();
+  readonly product = this.current.asReadonly();
   readonly isOpen = computed(() => this.current() !== null);
 
-  open(parent: Product): void {
-    this.current.set(parent);
+  open(product: Product): void {
+    this.current.set(product);
   }
 
   close(): void {

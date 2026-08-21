@@ -19,7 +19,8 @@
       }
     </div>
 
-    <div class="grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 lg:gap-x-10 xl:grid-cols-4">
+    <!-- Misma rejilla que el catálogo: las dos usan la misma tarjeta. -->
+    <div class="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-6 sm:gap-y-12 md:grid-cols-3 lg:gap-x-10 xl:grid-cols-4">
       @for (product of visibles(); track product.id) {
         <app-product-card [product]="product" />
       }

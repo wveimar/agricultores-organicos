@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { CheckoutService } from '../../../core/services/checkout.service';
 import { Order, orderUnits } from '../../../core/models/order.model';
-import { ProductComponent, unitPresentation } from '../../../core/models/product.model';
+import { componentPortion } from '../../../core/models/product.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
 @Component({
@@ -23,8 +23,5 @@ export class OrderSuccess {
   }
 
   /** «2 × 500 gr»: cuánto de un componente lleva UNA canasta de esta línea. */
-  protected porcion(parte: ProductComponent): string {
-    const presentacion = unitPresentation(parte.unitQuantity, parte.unit);
-    return parte.quantity === 1 ? presentacion : `${parte.quantity} × ${presentacion}`;
-  }
+  protected readonly porcion = componentPortion;
 }

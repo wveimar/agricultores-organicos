@@ -1,11 +1,19 @@
 <!--
-  Tarjeta de producto. En hover (solo escritorio): cross-fade a la segunda foto,
-  escala suave y el botón "Añadir" emerge desde abajo. En táctil el botón está
-  siempre visible, porque ahí el hover no existe. Ver doc/plan.md §6.
+  Tarjeta de producto. Dos tratamientos, no uno adaptado:
+
+  - Hasta `sm` (rejilla de 2 columnas, ~150 px por tarjeta): foto cuadrada,
+    texto compacto y un botón redondo fijo sobre la esquina de la imagen.
+  - Desde `sm` (≥ 224 px por tarjeta): ratio 4:5, ficha completa y el botón
+    rectangular con texto. En hover —solo escritorio (`lg:`)— emerge desde
+    abajo; en tablet táctil se queda visible, porque ahí el hover no existe.
+
+  El corte va en `sm` y no en `md` porque a 640 px las tarjetas miden 290 px,
+  las más anchas de todo el rango: comprimirlas ahí sería al revés. Ver
+  doc/plan.md §6.
 -->
 <article class="group relative flex flex-1 flex-col">
-  <!-- Marco de la imagen: ratio 4:5 fijo, así la rejilla nunca se descuadra -->
-  <div class="relative aspect-4/5 overflow-hidden rounded-md bg-linen">
+  <!-- Marco de la imagen: ratio fijo por breakpoint, así la rejilla nunca se descuadra -->
+  <div class="relative aspect-square overflow-hidden rounded-md bg-linen sm:aspect-4/5">
     <img
       [src]="product().image"
       [alt]="product().imageAlt"
@@ -27,22 +35,31 @@
       />
     }
 
-    <!-- Etiqueta -->
-    @if (badgeLabel(); as label) {
-      <span
-        class="text-overline absolute left-3 top-3 rounded-full px-3 py-1.5 font-semibold uppercase"
-        [class]="badgeClass()"
-      >
-        {{ label }}
-      </span>
-    }
+    <!--
+      Etiquetas. Las dos comparten una fila en vez de ir a esquinas opuestas:
+      en una tarjeta de 150 px, «Últimas unidades» y «−30 %» se solapaban. Aquí
+      la de categoría trunca antes que pisar al descuento.
+    -->
+    @if (badgeLabel() || discountPercent()) {
+      <div class="absolute inset-x-2 top-2 flex items-start gap-1 sm:inset-x-3 sm:top-3">
+        @if (badgeLabel(); as label) {
+          <span
+            class="text-overline min-w-0 truncate rounded-full px-2 py-1 font-semibold uppercase sm:px-3 sm:py-1.5"
+            [class]="badgeClass()"
+          >
+            {{ label }}
+          </span>
+        }
 
-    @if (discountPercent(); as percent) {
-      <span
-        class="tabular text-overline absolute right-3 top-3 rounded-full bg-bone/95 px-3 py-1.5 font-semibold uppercase text-clay-deep"
-      >
-        −{{ percent }}%
-      </span>
+        @if (discountPercent(); as percent) {
+          <!-- `ml-auto` lo ancla a la derecha aunque sea el único de la fila -->
+          <span
+            class="tabular text-overline ml-auto shrink-0 rounded-full bg-bone/95 px-2 py-1 font-semibold uppercase text-clay-deep sm:px-3 sm:py-1.5"
+          >
+            −{{ percent }}%
+          </span>
+        }
+      </div>
     }
 
     <!-- Velo de agotado -->
@@ -54,19 +71,43 @@
       </div>
     }
 
-    <!-- Botón flotante: oculto hasta el hover solo en escritorio (lg:) -->
     @if (available()) {
+      <!--
+        Móvil: botón redondo, siempre visible. 44 px es el mínimo táctil de
+        WCAG AAA; por debajo se falla la pulsación con el móvil en una mano.
+        Con unidades ya en el carrito se rellena y muestra el número: es el
+        único sitio donde cabe ese dato, porque aquí el botón no lleva texto.
+      -->
+      <button
+        type="button"
+        class="absolute bottom-2 right-2 flex size-11 items-center justify-center rounded-full shadow-sm backdrop-blur-sm transition-colors duration-200 sm:hidden"
+        [class]="inCart() > 0 ? 'bg-moss text-bone' : 'bg-bone/95 text-moss-deep'"
+        [attr.aria-label]="addAriaLabel()"
+        [attr.aria-haspopup]="variants() ? 'dialog' : null"
+        (click)="add()"
+      >
+        @if (inCart() > 0) {
+          <span class="tabular text-sm font-semibold">{{ inCart() }}</span>
+        } @else if (variants()) {
+          <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 1.8 14.5 5 8 8.2 1.5 5z" />
+            <path d="m1.5 8 6.5 3.2L14.5 8M1.5 11l6.5 3.2L14.5 11" stroke-linecap="round" />
+          </svg>
+        } @else {
+          <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+        }
+      </button>
+
+      <!-- Escritorio y tablet: botón con texto. Oculto hasta el hover solo en `lg:` -->
       <div
-        class="absolute inset-x-3 bottom-3 transition-all duration-300 ease-[cubic-bezier(.22,1,.36,1)] lg:translate-y-3 lg:opacity-0 lg:group-focus-within:translate-y-0 lg:group-focus-within:opacity-100 lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
+        class="absolute inset-x-3 bottom-3 hidden transition-all duration-300 ease-[cubic-bezier(.22,1,.36,1)] sm:block lg:translate-y-3 lg:opacity-0 lg:group-focus-within:translate-y-0 lg:group-focus-within:opacity-100 lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
       >
         <button
           type="button"
           class="flex w-full items-center justify-center gap-2 rounded-full bg-bone/95 px-5 py-3 text-sm font-semibold text-moss-deep backdrop-blur-sm transition-colors duration-200 hover:bg-moss hover:text-bone"
-          [attr.aria-label]="
-            variants()
-              ? 'Elegir ' + variantWord() + ' de ' + product().name
-              : 'Añadir ' + product().name + ' al carrito'
-          "
+          [attr.aria-label]="addAriaLabel()"
           [attr.aria-haspopup]="variants() ? 'dialog' : null"
           (click)="add()"
         >
@@ -92,32 +133,44 @@
     truncados/shrink-0) para que el pie quede libre y el precio nunca envuelva:
     así todas las tarjetas de una fila alinean el precio a la misma altura.
   -->
-  <div class="flex flex-1 flex-col pt-4">
-    <div class="flex items-center justify-between gap-3">
+  <div class="flex flex-1 flex-col pt-2 sm:pt-4">
+    <div class="flex items-center justify-between gap-2 sm:gap-3">
       <p class="text-overline truncate font-semibold uppercase text-ink-muted">
         {{ product().origin }}
       </p>
 
-      <p class="flex shrink-0 items-center gap-1 text-sm text-ink-soft">
-        <svg class="size-3.5 text-honey" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <p class="flex shrink-0 items-center gap-1 text-xs text-ink-soft sm:text-sm">
+        <svg class="size-3 text-honey sm:size-3.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
           <path d="M8 1.6l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.4l-3.8 2 .7-4.3-3.1-3 4.3-.6z" />
         </svg>
         <span class="tabular">{{ product().rating }}</span>
-        <span class="tabular text-ink-muted">({{ product().reviewCount }})</span>
+        <!-- El recuento se cae en móvil: le robaba a `origen` la mitad de su ancho -->
+        <span class="tabular hidden text-ink-muted sm:inline">({{ product().reviewCount }})</span>
       </p>
     </div>
 
-    <h3 class="mt-2 text-h3 text-ink">{{ product().name }}</h3>
+    <!--
+      `line-clamp-2` solo en móvil: a 150 px un nombre largo se iba a tres o
+      cuatro líneas y descuadraba la altura de la fila. Desde `sm` hay ancho de
+      sobra y no hace falta recortar nada.
+    -->
+    <h3 class="mt-1.5 line-clamp-2 text-sm text-ink sm:mt-2 sm:line-clamp-none sm:text-h3">
+      {{ product().name }}
+    </h3>
 
-    <p class="mt-1.5 line-clamp-2 text-sm text-ink-soft">{{ product().tagline }}</p>
+    <p class="mt-1.5 line-clamp-2 hidden text-sm text-ink-soft sm:block">{{ product().tagline }}</p>
 
     <!--
       Contenido de la canasta. Va en la tarjeta y no escondido tras un clic:
       quien compra una canasta la elige por lo que lleva dentro, así que
       obligarle a abrir algo para verlo es esconder el argumento de venta.
+
+      En móvil la lista entera mide más que la propia foto, así que ahí se
+      resume en el recuento —ver `contentsLabel()`—: se pierde el detalle, pero
+      no la señal de que esto es una canasta y no un producto suelto.
     -->
     @if (product().contains; as contenido) {
-      <ul class="mt-3 flex flex-col gap-1 border-l-2 border-sage/50 pl-3">
+      <ul class="mt-3 hidden flex-col gap-1 border-l-2 border-sage/50 pl-3 sm:flex">
         @for (parte of contenido; track parte.name) {
           <li class="flex items-baseline justify-between gap-2 text-sm text-ink-soft">
             <span class="truncate">{{ parte.name }}</span>
@@ -127,8 +180,42 @@
       </ul>
     }
 
+    <!--
+      Solo en móvil, y solo aquí: en escritorio la lista de arriba ya está a la
+      vista entera, así que un «ver qué incluye» al lado sobraría. El `py-2` no
+      se ve —el chip sigue midiendo lo mismo— pero lleva la zona pulsable a
+      ~36 px, que es lo que hace falta para acertarle con el pulgar.
+    -->
+    @if (contentsLabel(); as resumen) {
+      <div class="mt-1 sm:hidden">
+        <button
+          type="button"
+          class="flex items-center gap-1.5 py-2"
+          [attr.aria-label]="'Ver qué incluye ' + product().name"
+          aria-haspopup="dialog"
+          (click)="verContenido()"
+        >
+          <span class="text-overline rounded-full bg-sage-light px-2 py-1 font-semibold uppercase text-moss-deep">
+            {{ resumen }}
+          </span>
+          <svg
+            class="size-3.5 shrink-0 text-moss"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m6 3.5 4.5 4.5L6 12.5" />
+          </svg>
+        </button>
+      </div>
+    }
+
     <!-- mt-auto empuja el precio al pie: todas las tarjetas lo alinean igual -->
-    <p class="mt-auto flex flex-wrap items-baseline gap-x-2 pt-4">
+    <p class="mt-auto flex flex-wrap items-baseline gap-x-1.5 pt-2 sm:gap-x-2 sm:pt-4">
       <!--
         Con tarifa de mayorista el precio va en `moss` en vez de `ink`: es la
         única señal de color en la tarjeta, y distingue de un vistazo lo que
@@ -137,10 +224,18 @@
         `compareAtPrice` de una oferta pública.
       -->
       @if (priceFrom()) {
-        <span class="text-sm text-ink-muted">Desde</span>
+        <span class="text-xs text-ink-muted sm:text-sm">Desde</span>
       }
 
-      <span class="tabular text-lg" [class]="wholesale() ? 'font-semibold text-moss' : 'text-ink'">
+      <!--
+        El precio no baja de 16 px ni en la tarjeta más estrecha: es el dato
+        que decide la compra, y encogerlo con el resto lo enterraría entre
+        etiquetas del mismo tamaño.
+      -->
+      <span
+        class="tabular text-base sm:text-lg"
+        [class]="wholesale() ? 'font-semibold text-moss' : 'text-ink'"
+      >
         {{ price() | cop }}
       </span>
 
@@ -151,9 +246,9 @@
       -->
       @if (!variants()) {
         @if (product().listPrice; as lista) {
-          <span class="tabular text-sm text-ink-muted line-through">{{ lista | cop }}</span>
+          <span class="tabular text-xs text-ink-muted line-through sm:text-sm">{{ lista | cop }}</span>
         } @else if (product().compareAtPrice; as before) {
-          <span class="tabular text-sm text-ink-muted line-through">{{ before | cop }}</span>
+          <span class="tabular text-xs text-ink-muted line-through sm:text-sm">{{ before | cop }}</span>
         }
       }
 
@@ -164,7 +259,7 @@
         a una de las tres.
       -->
       @if (!variants() || !priceFrom()) {
-        <span class="text-sm text-ink-muted">/ {{ unitLabel() }}</span>
+        <span class="text-xs text-ink-muted sm:text-sm">/ {{ unitLabel() }}</span>
       }
 
       @if (variants()) {

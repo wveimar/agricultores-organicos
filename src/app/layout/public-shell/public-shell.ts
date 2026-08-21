@@ -3,7 +3,7 @@ import { RouterOutlet } from '@angular/router';
 import { Header } from '../header/header';
 import { Footer } from '../footer/footer';
 import { CartDrawer } from '../../shared/cart-drawer/cart-drawer';
-import { ProductVariantsModal } from '../../shared/product-variants-modal/product-variants-modal';
+import { ProductSheetModal } from '../../shared/product-sheet-modal/product-sheet-modal';
 
 /**
  * Envoltorio de la tienda pública: header, footer y carrito.
@@ -14,7 +14,7 @@ import { ProductVariantsModal } from '../../shared/product-variants-modal/produc
  */
 @Component({
   selector: 'app-public-shell',
-  imports: [RouterOutlet, Header, Footer, CartDrawer, ProductVariantsModal],
+  imports: [RouterOutlet, Header, Footer, CartDrawer, ProductSheetModal],
   templateUrl: './public-shell.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

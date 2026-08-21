@@ -15,7 +15,7 @@ import {
 } from '../../../core/services/checkout.service';
 import { ApiErrorBody, Shortfall } from '../../../core/api/api-client';
 import { PaymentProof } from '../../../core/models/order.model';
-import { ProductComponent, unitPresentation } from '../../../core/models/product.model';
+import { componentPortion } from '../../../core/models/product.model';
 import {
   formatDay,
   isCutoffNear,
@@ -133,10 +133,7 @@ export class CheckoutPage {
   }
 
   /** «2 × 500 gr»: cuánto de un componente lleva UNA canasta de esta línea. */
-  protected porcion(parte: ProductComponent): string {
-    const presentacion = unitPresentation(parte.unitQuantity, parte.unit);
-    return parte.quantity === 1 ? presentacion : `${parte.quantity} × ${presentacion}`;
-  }
+  protected readonly porcion = componentPortion;
 
   private refDe(control: CampoDatos): ElementRef<HTMLInputElement> | undefined {
     switch (control) {

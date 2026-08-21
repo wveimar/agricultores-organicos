@@ -1,11 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { CartService } from '../../../core/services/cart.service';
 import { CatalogService } from '../../../core/services/catalog.service';
-import { VariantPicker } from '../../../core/services/variant-picker.service';
+import { ProductSheet } from '../../../core/services/product-sheet.service';
 import {
   BADGE_LABELS,
   Product,
-  ProductComponent,
+  componentPortion,
   isInStock,
   pluralizeVariantLabel,
   summarizeVariants,
@@ -40,7 +40,7 @@ export class ProductCard {
 
   private readonly cart = inject(CartService);
   private readonly catalog = inject(CatalogService);
-  private readonly picker = inject(VariantPicker);
+  private readonly sheet = inject(ProductSheet);
 
   /**
    * Resumen de las variantes, o `null` si este producto se vende solo.
@@ -68,16 +68,29 @@ export class ProductCard {
     unitPresentation(this.product().quantity, this.product().unit),
   );
 
+  /** «2 × 500 gr». La regla vive en el modelo: la pintan cuatro pantallas. */
+  protected readonly porcion = componentPortion;
+
   /**
-   * Cuánto de un componente entra en la canasta: «2 × 500 gr», «1 unidad».
+   * «5 productos»: en móvil sustituye a la lista completa de la canasta.
    *
-   * Se enseñan las dos cifras y no su producto —«1 kg»— porque son cosas
-   * distintas: dos bolsas de medio kilo no es lo mismo que una de un kilo, y
-   * quien recibe la canasta abre lo que le llega, no el total.
+   * La lista entera son ~120 px de alto, que en una tarjeta de 150 px de ancho
+   * es más que la foto. Pero ocultarla sin más dejaría la canasta idéntica a un
+   * producto suelto, y lo que se compra de una canasta es justo lo que lleva
+   * dentro. El recuento conserva esa señal por una línea, y al ser un botón
+   * abre la hoja con el detalle: en móvil es la única forma de verlo.
    */
-  protected porcion(parte: ProductComponent): string {
-    const presentacion = unitPresentation(parte.unitQuantity, parte.unit);
-    return parte.quantity === 1 ? presentacion : `${parte.quantity} × ${presentacion}`;
+  protected readonly contentsLabel = computed(() => {
+    const contenido = this.product().contains;
+    if (!contenido || contenido.length === 0) {
+      return null;
+    }
+    return `${contenido.length} ${contenido.length === 1 ? 'producto' : 'productos'}`;
+  });
+
+  /** Abre la hoja con la receta. Solo se ofrece en móvil: ver la plantilla. */
+  protected verContenido(): void {
+    this.sheet.open(this.product());
   }
   protected readonly badgeLabel = computed(() => {
     const badge = this.product().badge;
@@ -160,6 +173,26 @@ export class ProductCard {
   });
 
   /**
+   * Nombre accesible del botón, para las dos versiones —el rectangular de
+   * escritorio y el redondo de móvil—.
+   *
+   * `actionLabel()` no sirve aquí: en una rejilla de veinte tarjetas, veinte
+   * botones llamados «Añadir» son indistinguibles al navegar por lista de
+   * enlaces. Este siempre nombra el producto. En móvil, además, el botón es
+   * solo un icono, así que esto es lo único que lo describe.
+   */
+  protected readonly addAriaLabel = computed(() => {
+    const base = this.variants()
+      ? `Elegir ${this.variantWord()} de ${this.product().name}`
+      : `Añadir ${this.product().name} al carrito`;
+
+    if (this.inCart() === 0) {
+      return base;
+    }
+    return `${base} · ${this.inCart()} en ${this.variants() ? 'la canasta' : 'el carrito'}`;
+  });
+
+  /**
    * Un producto con variantes no se puede añadir de un clic: no se sabría cuál
    * de los tres tarros descontar. El botón abre el modal, y el que añade de
    * verdad es él, con el id de la variante concreta. El Worker rechaza la
@@ -167,7 +200,7 @@ export class ProductCard {
    */
   protected add(): void {
     if (this.variants()) {
-      this.picker.open(this.product());
+      this.sheet.open(this.product());
       return;
     }
     this.cart.add(this.product());

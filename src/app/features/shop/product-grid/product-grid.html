@@ -13,11 +13,18 @@
 </div>
 
 @if (catalog.loading() && catalog.visible().length === 0) {
-  <!-- Primera carga contra el servidor: nada que mostrar todavía. -->
-  <div class="grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 lg:gap-x-10 xl:grid-cols-4">
+  <!--
+    Primera carga contra el servidor: nada que mostrar todavía.
+
+    La rejilla y el ratio de la foto son los mismos que los de la tarjeta real
+    —incluido el `aspect-square` de móvil—. Si no lo fueran, al llegar los
+    datos la página daría un salto: el hueco reservado mediría distinto que lo
+    que acaba ocupándolo.
+  -->
+  <div class="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-6 sm:gap-y-12 md:grid-cols-3 lg:gap-x-10 xl:grid-cols-4">
     @for (i of [1, 2, 3, 4, 5, 6, 7, 8]; track i) {
-      <div class="flex flex-col gap-3">
-        <div class="aspect-4/5 animate-pulse rounded-md bg-linen"></div>
+      <div class="flex flex-col gap-2 sm:gap-3">
+        <div class="aspect-square animate-pulse rounded-md bg-linen sm:aspect-4/5"></div>
         <div class="h-4 w-2/3 animate-pulse rounded bg-linen"></div>
         <div class="h-3 w-1/3 animate-pulse rounded bg-linen"></div>
       </div>
@@ -37,10 +44,13 @@
   </div>
 } @else if (catalog.hasResults()) {
   <!--
-    1 → 2 → 3 → 4 columnas. El `track product.id` permite a Angular reutilizar
-    los nodos al cambiar de filtro, así el repintado no parpadea.
+    2 → 3 → 4 columnas. Arranca en dos y no en una: a una sola columna la
+    tarjeta ocupaba el ancho entero y no cabía ni una completa en pantalla,
+    así que había que desplazar para ver cada producto. El `track product.id`
+    permite a Angular reutilizar los nodos al cambiar de filtro, así el
+    repintado no parpadea.
   -->
-  <div class="grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3 lg:gap-x-10 xl:grid-cols-4">
+  <div class="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-6 sm:gap-y-12 md:grid-cols-3 lg:gap-x-10 xl:grid-cols-4">
     @for (product of catalog.visible(); track product.id; let i = $index) {
       <app-product-card [product]="product" [index]="i" />
     }
