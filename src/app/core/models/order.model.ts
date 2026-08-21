@@ -77,6 +77,8 @@ export interface PaymentProof {
   readonly uploadedAt: string;
 }
 
+import { ProductComponent } from './product.model';
+
 /**
  * Línea de pedido. Guarda `unitPrice` y `productName` en vez de resolverlos
  * contra el catálogo al pintar: un pedido es un documento histórico y debe
@@ -93,6 +95,13 @@ export interface OrderLine {
    */
   readonly unitCost: number;
   readonly quantity: number;
+  /**
+   * Qué lleva dentro, si es una canasta. Se copia del `Product` del carrito al
+   * confirmar la compra, igual que el resto de la línea: la pantalla de éxito
+   * no vuelve a preguntarle nada al servidor, arma todo con lo que ya sabía el
+   * navegador.
+   */
+  readonly contains?: readonly ProductComponent[];
 }
 
 export interface Order {

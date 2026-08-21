@@ -11,6 +11,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
 import { ImageField } from './image-field/image-field';
+import { RecipeEditor } from './recipe-editor/recipe-editor';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import {
   ALL_UNITS,
@@ -21,7 +22,7 @@ import {
 
 @Component({
   selector: 'app-edit-product',
-  imports: [ReactiveFormsModule, RouterLink, ImageField, CopPipe],
+  imports: [ReactiveFormsModule, RouterLink, ImageField, CopPipe, RecipeEditor],
   templateUrl: './edit-product.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

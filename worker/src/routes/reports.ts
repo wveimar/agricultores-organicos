@@ -410,7 +410,7 @@ export async function consolidation(
 
   const where = filtros.join(' AND ');
 
-  const [productosResult, pedidosResult, pendientesResult] = await env.DB.batch([
+  const [productosResult, pedidosResult, pendientesResult, canastasResult] = await env.DB.batch([
     // Consolidado para la finca.
     //
     // `producto_nombre` sale de `order_items` —copiado al vender, así que el
@@ -419,10 +419,39 @@ export async function consolidation(
     // alguien cambia la presentación después del cierre, esa columna refleja
     // la nueva. Es el único dato del informe que no es histórico.
     env.DB.prepare(
-      `SELECT oi.product_id                          AS productId,
-              MAX(oi.producto_nombre)                AS nombre,
-              SUM(oi.cantidad)                       AS cantidadTotal,
-              COUNT(DISTINCT oi.order_id)            AS pedidos,
+      // Una canasta no se cosecha: se cosecha lo que lleva dentro. Así que
+      // antes de agrupar, cada línea de canasta se abre en sus componentes y
+      // se suma con lo que se haya vendido suelto de ese mismo producto — si
+      // hay 3 canastas con 1 kg de papa y alguien pidió 2 kg aparte, al
+      // agricultor le tiene que llegar «Papa: 5 kg», no dos renglones.
+      //
+      // Se abre con `order_item_components` (la receta congelada al vender) y
+      // no con la de hoy: el informe cuenta lo que se prometió, aunque la
+      // canasta haya cambiado desde entonces.
+      `WITH lineas AS (
+         SELECT oi.order_id, oi.product_id, oi.producto_nombre, oi.cantidad
+           FROM order_items oi
+           JOIN orders o ON o.id = oi.order_id
+          WHERE ${where}
+            AND NOT EXISTS (SELECT 1 FROM order_item_components c
+                             WHERE c.order_id = oi.order_id
+                               AND c.parent_product_id = oi.product_id)
+         UNION ALL
+         SELECT oi.order_id,
+                c.child_product_id,
+                COALESCE(hijo.nombre, c.child_product_id),
+                oi.cantidad * c.cantidad_requerida
+           FROM order_items oi
+           JOIN orders o ON o.id = oi.order_id
+           JOIN order_item_components c
+             ON c.order_id = oi.order_id AND c.parent_product_id = oi.product_id
+           LEFT JOIN products hijo ON hijo.id = c.child_product_id
+          WHERE ${where}
+       )
+       SELECT l.product_id                          AS productId,
+              MAX(l.producto_nombre)                AS nombre,
+              SUM(l.cantidad)                       AS cantidadTotal,
+              COUNT(DISTINCT l.order_id)            AS pedidos,
               COALESCE(MAX(p.unidad), 'unidad')      AS unidad,
               COALESCE(MAX(p.cantidad_unidad), 1)    AS cantidadUnidad,
               COALESCE(MAX(p.grupo_admin), 'verduras') AS grupoAdmin,
@@ -431,13 +460,13 @@ export async function consolidation(
               -- negocio real y no solo por "agroindustriales" en bloque.
               COALESCE(MAX(p.categoria_id), '')      AS categoriaId,
               COALESCE(MAX(p.origen), '')            AS origen
-         FROM order_items oi
-         JOIN orders o    ON o.id = oi.order_id
-         LEFT JOIN products p ON p.id = oi.product_id
-        WHERE ${where}
-        GROUP BY oi.product_id
+         FROM lineas l
+         LEFT JOIN products p ON p.id = l.product_id
+        GROUP BY l.product_id
         ORDER BY grupoAdmin ASC, nombre ASC`,
-    ).bind(...params),
+      // El mismo WHERE aparece en las dos mitades del UNION, y los parámetros
+      // son posicionales anónimos, así que hay que enlazarlos dos veces.
+    ).bind(...params, ...params),
 
     // Hoja de ruta: a quién se le lleva y qué se le cobró de domicilio.
     env.DB.prepare(
@@ -469,6 +498,24 @@ export async function consolidation(
         WHERE o.estado IN ('verificacion', 'pendiente')
           ${desde ? `AND datetime(o.creado_en, '${COLOMBIA_OFFSET}') >= datetime(?)` : ''}
           ${hasta ? `AND datetime(o.creado_en, '${COLOMBIA_OFFSET}') < datetime(?, '+1 day')` : ''}`,
+    ).bind(...params),
+
+    // Canastas a armar. La lista de arriba ya reparte sus componentes entre lo
+    // que hay que cosechar, pero quien empaca necesita saber cuántas cajas
+    // montar y con qué — y ese dato desaparece al sumarlo todo.
+    env.DB.prepare(
+      `SELECT oi.product_id               AS productId,
+              MAX(oi.producto_nombre)     AS nombre,
+              SUM(oi.cantidad)            AS cantidadTotal,
+              COUNT(DISTINCT oi.order_id) AS pedidos
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+        WHERE ${where}
+          AND EXISTS (SELECT 1 FROM order_item_components c
+                       WHERE c.order_id = oi.order_id
+                         AND c.parent_product_id = oi.product_id)
+        GROUP BY oi.product_id
+        ORDER BY nombre ASC`,
     ).bind(...params),
   ]);
 
@@ -507,6 +554,10 @@ export async function consolidation(
       costoEnvio: SHIPPING_COST,
     },
     productos: productosResult.results,
+    // Las canastas ya están repartidas en `productos` como componentes sueltos.
+    // Esta lista es para armarlas, no para cosecharlas: sumar sus cantidades a
+    // las de arriba contaría dos veces el mismo tomate.
+    canastas: canastasResult.results,
     pedidos: detalle,
     domicilios: {
       pedidos: detalle.length,

@@ -5,6 +5,7 @@ import { VariantPicker } from '../../../core/services/variant-picker.service';
 import {
   BADGE_LABELS,
   Product,
+  ProductComponent,
   isInStock,
   pluralizeVariantLabel,
   summarizeVariants,
@@ -66,6 +67,18 @@ export class ProductCard {
   protected readonly unitLabel = computed(() =>
     unitPresentation(this.product().quantity, this.product().unit),
   );
+
+  /**
+   * Cuánto de un componente entra en la canasta: «2 × 500 gr», «1 unidad».
+   *
+   * Se enseñan las dos cifras y no su producto —«1 kg»— porque son cosas
+   * distintas: dos bolsas de medio kilo no es lo mismo que una de un kilo, y
+   * quien recibe la canasta abre lo que le llega, no el total.
+   */
+  protected porcion(parte: ProductComponent): string {
+    const presentacion = unitPresentation(parte.unitQuantity, parte.unit);
+    return parte.quantity === 1 ? presentacion : `${parte.quantity} × ${presentacion}`;
+  }
   protected readonly badgeLabel = computed(() => {
     const badge = this.product().badge;
     return badge ? BADGE_LABELS[badge] : null;

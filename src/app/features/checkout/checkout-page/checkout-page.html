@@ -247,16 +247,30 @@
                     loading="lazy"
                     decoding="async"
                   />
-                  <div class="flex min-w-0 flex-1 items-start justify-between gap-3">
-                    <div class="min-w-0">
-                      <p class="truncate text-sm font-medium text-ink">{{ line.product.name }}</p>
-                      <p class="tabular text-xs text-ink-muted">
-                        {{ line.quantity }} × {{ line.product.price | cop }}
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-start justify-between gap-3">
+                      <div class="min-w-0">
+                        <p class="truncate text-sm font-medium text-ink">{{ line.product.name }}</p>
+                        <p class="tabular text-xs text-ink-muted">
+                          {{ line.quantity }} × {{ line.product.price | cop }}
+                        </p>
+                      </div>
+                      <p class="tabular shrink-0 text-sm text-ink">
+                        {{ line.product.price * line.quantity | cop }}
                       </p>
                     </div>
-                    <p class="tabular shrink-0 text-sm text-ink">
-                      {{ line.product.price * line.quantity | cop }}
-                    </p>
+
+                    <!-- Qué lleva dentro, si es una canasta -->
+                    @if (line.product.contains; as contenido) {
+                      <ul class="mt-2 flex flex-col gap-1 border-l-2 border-sage/50 pl-3">
+                        @for (parte of contenido; track parte.name) {
+                          <li class="flex items-baseline justify-between gap-2 text-xs text-ink-soft">
+                            <span>{{ parte.name }}</span>
+                            <span class="tabular text-ink-muted">{{ porcion(parte) }}</span>
+                          </li>
+                        }
+                      </ul>
+                    }
                   </div>
                 </li>
               }

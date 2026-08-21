@@ -11,6 +11,7 @@ import { CatalogService } from '../../../core/services/catalog.service';
 import {
   ApiErrorBody,
   ApiOrder,
+  ApiOrderItem,
   ApiOrderStatusLogEntry,
   Shortfall,
 } from '../../../core/api/api-client';
@@ -22,7 +23,7 @@ import {
   isEditable,
 } from '../../../core/models/order.model';
 import { FREE_SHIPPING_THRESHOLD, SHIPPING_COST } from '../../../core/models/cart.model';
-import { isInStock } from '../../../core/models/product.model';
+import { ProductUnit, isInStock, unitPresentation } from '../../../core/models/product.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
 /** Una línea del pedido tal como está en edición, antes de guardar. */
@@ -377,6 +378,20 @@ export class OrdersManager {
 
   protected canEditItems(order: ApiOrder): boolean {
     return isEditable(order.estado as OrderStatus) && order.closingId === null;
+  }
+
+  /**
+   * Cuánto de un componente salió de la bodega por esta línea completa:
+   * cuántas canastas se vendieron × cuántas presentaciones lleva cada una.
+   *
+   * «2 × 500 gr» y no «1 kg»: es el número de presentaciones que se
+   * descontaron del inventario del componente, no el peso agregado — así el
+   * dato coincide exactamente con la resta que hizo el servidor.
+   */
+  protected consumido(item: ApiOrderItem, parte: NonNullable<ApiOrderItem['contiene']>[number]): string {
+    const total = parte.cantidad * item.cantidad;
+    const presentacion = unitPresentation(parte.cantidadUnidad, parte.unidad as ProductUnit);
+    return total === 1 ? presentacion : `${total} × ${presentacion}`;
   }
 
   protected startEdit(order: ApiOrder): void {

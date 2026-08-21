@@ -95,6 +95,28 @@ export interface Product {
    * falla en cuanto haya dos tamaños al mismo precio.
    */
   readonly variantLabel?: string;
+  /**
+   * Qué lleva dentro, si es una canasta, un combo o un mix.
+   *
+   * Su presencia es lo que distingue una canasta de un producto normal — de ahí
+   * que sea opcional y no un array que a veces está vacío.
+   *
+   * El `stock` de una canasta no es un número que nadie escriba: lo calcula el
+   * servidor con el componente que primero se agote. Llega aquí ya resuelto, y
+   * por eso el carrito y el checkout la tratan como a cualquier otro producto
+   * sin saber que las canastas existen.
+   */
+  readonly contains?: readonly ProductComponent[];
+}
+
+/** Un producto dentro de una canasta, tal como se le enseña al cliente. */
+export interface ProductComponent {
+  readonly name: string;
+  /** Cuántas presentaciones entran en UNA canasta. */
+  readonly quantity: number;
+  readonly unit: ProductUnit;
+  /** Cuánto lleva cada presentación: 500 con `unit: 'gr'`. */
+  readonly unitQuantity: number;
 }
 
 /**

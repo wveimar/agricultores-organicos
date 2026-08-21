@@ -2,6 +2,7 @@ import { ApiError, json, readJson, requireInt } from '../http';
 import { Env, JwtPayload } from '../types';
 import { optionalAuth, requireRole } from '../auth/middleware';
 import { discountedPrice, loadDiscounts, loadUserRoles } from '../pricing';
+import { contenidoPublico } from '../combos';
 
 /**
  * Tope de una imagen de producto ya en base64.
@@ -49,7 +50,22 @@ function checkImageSource(value: string | undefined, field: string): void {
 const PUBLIC_COLUMNS = `
   id, slug, nombre, tagline, categoria_id AS categoriaId, grupo_admin AS grupoAdmin,
   precio, precio_anterior AS precioAnterior, unidad, cantidad_unidad AS cantidadUnidad, origen, rating,
-  review_count AS reviewCount, badge, destacado, stock_actual AS stock,
+  review_count AS reviewCount, badge, destacado,
+  -- Stock de una canasta: cuántas se pueden armar con lo que hay de sus
+  -- componentes, por el que primero se agote. Su columna stock_actual vale 0
+  -- por definición, así que servirla tal cual la mostraría siempre agotada.
+  --
+  -- MIN sobre cero filas devuelve NULL, así que el COALESCE deja pasar el
+  -- stock normal de todo lo que no es canasta sin necesitar un CASE aparte.
+  COALESCE(
+    (SELECT MIN(CASE WHEN h.activo = 1
+                     THEN h.stock_actual / pc.cantidad_requerida
+                     ELSE 0 END)
+       FROM product_components pc
+       JOIN products h ON h.id = pc.child_product_id
+      WHERE pc.parent_product_id = products.id),
+    stock_actual
+  ) AS stock,
   imagen, imagen_hover AS imagenHover, imagen_alt AS imagenAlt,
   parent_id AS parentId, variante_etiqueta AS varianteEtiqueta
 `;
@@ -190,22 +206,31 @@ export async function listPublic(request: Request, env: Env, url: URL): Promise<
    */
   const session = await optionalAuth(request, env);
   const roles = session ? await loadUserRoles(env, session.sub) : [];
-  const discounts = await loadDiscounts(env, results.map((p) => p.id), roles);
+  const ids = results.map((p) => p.id);
+  const discounts = await loadDiscounts(env, ids, roles);
 
-  if (discounts.size === 0) {
+  // Qué lleva cada canasta. Quien compra una tiene que poder ver el contenido
+  // antes de pagarla; su `stock` ya viene calculado desde PUBLIC_COLUMNS.
+  const contenidos = await contenidoPublico(env, ids);
+
+  if (discounts.size === 0 && contenidos.size === 0) {
     return json({ products: results });
   }
 
   return json({
     products: results.map((product) => {
       const porcentaje = discounts.get(product.id);
-      if (!porcentaje) {
-        return product;
-      }
+      const contenido = contenidos.get(product.id);
+
       return {
         ...product,
-        precioMayorista: discountedPrice(product.precio, porcentaje),
-        descuentoMayorista: porcentaje,
+        ...(porcentaje
+          ? {
+              precioMayorista: discountedPrice(product.precio, porcentaje),
+              descuentoMayorista: porcentaje,
+            }
+          : {}),
+        ...(contenido ? { contiene: contenido } : {}),
       };
     }),
   });
@@ -245,6 +270,13 @@ export async function listAlerts(env: Env, user: JwtPayload): Promise<Response> 
     `SELECT ${ADMIN_COLUMNS} FROM products
       WHERE activo = 1 AND stock_actual <= stock_seguridad
         AND NOT EXISTS (SELECT 1 FROM products h WHERE h.parent_id = products.id)
+        -- Las canastas, por el mismo motivo que las madres de variantes: su
+        -- columna vale 0 para siempre, así que cumplirían la condición
+        -- eternamente y taparían lo que de verdad hay que reponer. Reponer una
+        -- canasta es reponer sus componentes, y esos ya salen en la lista.
+        AND NOT EXISTS (
+          SELECT 1 FROM product_components pc WHERE pc.parent_product_id = products.id
+        )
       ORDER BY stock_actual ASC`,
   ).all();
 

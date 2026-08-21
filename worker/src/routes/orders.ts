@@ -3,6 +3,14 @@ import { Env, JwtPayload } from '../types';
 import { optionalAuth, requireRole } from '../auth/middleware';
 import { discountedPrice, loadDiscounts, loadUserRoles } from '../pricing';
 import { decodeDataUrl, validateDataUrl } from '../receipts';
+import {
+  contenidoDePedidos,
+  expandir,
+  recetasActuales,
+  recetasDelPedido,
+  sentenciasDeInstantanea,
+  stockDeCanastas,
+} from '../combos';
 
 /**
  * Misma regla que `src/app/core/models/cart.model.ts`. Editar un pedido
@@ -69,7 +77,18 @@ function aggregate(items: readonly IncomingItem[]): Map<string, number> {
   return required;
 }
 
-/** Lee stock y precios actuales de los productos pedidos, en una sola consulta. */
+/**
+ * Lee stock y precios actuales de los productos pedidos, en una sola consulta.
+ *
+ * El `stock_actual` que devuelve **no siempre es el de la columna**: para una
+ * canasta se sustituye por cuántas se pueden armar con lo que hay de sus
+ * componentes. Su columna vale 0 por definición, así que dejarla pasar tal cual
+ * haría que toda canasta se leyera como agotada.
+ *
+ * Se hace aquí, en el único sitio por el que pasan las tres validaciones de
+ * disponibilidad —crear, aprobar y editar líneas—, y no en cada una: así
+ * ninguna puede quedarse sin enterarse de qué es una canasta.
+ */
 async function loadProducts(env: Env, ids: readonly string[]): Promise<Map<string, StockRow>> {
   const placeholders = ids.map((_, index) => `?${index + 1}`).join(', ');
   const { results } = await env.DB.prepare(
@@ -81,7 +100,14 @@ async function loadProducts(env: Env, ids: readonly string[]): Promise<Map<strin
     .bind(...ids)
     .all<StockRow>();
 
-  return new Map(results.map((row) => [row.id, row]));
+  const canastas = await stockDeCanastas(env, ids);
+
+  return new Map(
+    results.map((row) => [
+      row.id,
+      canastas.has(row.id) ? { ...row, stock_actual: canastas.get(row.id)! } : row,
+    ]),
+  );
 }
 
 /**
@@ -276,7 +302,20 @@ export async function create(request: Request, env: Env): Promise<Response> {
         cantidad,
       ),
     );
+  }
 
+  // La línea del pedido dice «1 Canasta Pequeña»; el inventario tiene que ver
+  // la papa, el tomate y el aguacate. `expandir` traduce lo uno en lo otro y
+  // **suma**: una canasta con 1 kg de papa más 2 kg sueltos son 3 kg en una
+  // sola resta, no dos que pasarían el CHECK por separado.
+  const recetas = await recetasActuales(env, [...required.keys()]);
+  const movimientos = expandir(required, recetas);
+
+  // Qué llevaba cada canasta hoy, congelado en el pedido: es lo que hará
+  // cuadrar la devolución si mañana cambia la receta.
+  statements.push(...sentenciasDeInstantanea(env, orderId, required, recetas));
+
+  for (const [productId, cantidad] of movimientos) {
     // Si entre la validación y este UPDATE otra petición se llevó las unidades,
     // el CHECK (stock_actual >= 0) hace fallar la sentencia y D1 revierte
     // **todo** el batch: no queda un pedido creado sin su descuento.
@@ -401,14 +440,22 @@ export async function approve(
   ];
 
   if (necesitaDescuento) {
-    for (const item of items) {
+    // La receta congelada al vender, no la de hoy: si la canasta cambió entre
+    // el pedido y su aprobación, lo que se descuenta tiene que ser lo que se
+    // le prometió al cliente.
+    const movimientos = expandir(
+      new Map(items.map((item) => [item.product_id, item.cantidad])),
+      await recetasDelPedido(env, orderId),
+    );
+
+    for (const [productId, cantidad] of movimientos) {
       statements.push(
         env.DB.prepare(
           `UPDATE products
               SET stock_actual = stock_actual - ?2, actualizado_en = ?4
             WHERE id = ?1
               AND (SELECT aprobacion_token FROM orders WHERE id = ?3) = ?5`,
-        ).bind(item.product_id, item.cantidad, orderId, now, token),
+        ).bind(productId, cantidad, orderId, now, token),
       );
     }
   }
@@ -540,14 +587,21 @@ export async function cancel(
   ];
 
   if (devuelveStock) {
-    for (const item of items) {
+    // Con la receta congelada: devolver según la de hoy dejaría descontado para
+    // siempre el componente que se le quitó a la canasta desde que se vendió.
+    const movimientos = expandir(
+      new Map(items.map((item) => [item.product_id, item.cantidad])),
+      await recetasDelPedido(env, orderId),
+    );
+
+    for (const [productId, cantidad] of movimientos) {
       statements.push(
         env.DB.prepare(
           `UPDATE products
               SET stock_actual = stock_actual + ?2, actualizado_en = ?4
             WHERE id = ?1
               AND (SELECT cancelacion_token FROM orders WHERE id = ?3) = ?5`,
-        ).bind(item.product_id, item.cantidad, orderId, now, token),
+        ).bind(productId, cantidad, orderId, now, token),
       );
     }
   }
@@ -769,6 +823,26 @@ export async function updateItems(
     ).bind(orderId, user.sub, user.nombre),
   ];
 
+  // ── Recetas: congelada para lo que ya estaba, de hoy para lo que se añade ──
+  //
+  // Una línea que ya existía se mueve con la receta que se le congeló al
+  // vender. Una línea nueva se congela ahora, igual que toma el precio de hoy.
+  //
+  // Un pedido anterior a las canastas no tiene instantánea, así que su mapa
+  // sale vacío y sus líneas se tratan como productos simples — que es
+  // exactamente como se descontaron en su día.
+  const congeladas = await recetasDelPedido(env, orderId);
+  const nuevasCanastas = deltas.filter((d) => d.oldQty === 0).map((d) => d.productId);
+  const deHoy = await recetasActuales(env, nuevasCanastas);
+
+  const recetas = new Map(congeladas);
+  for (const productId of nuevasCanastas) {
+    const receta = deHoy.get(productId);
+    if (receta) {
+      recetas.set(productId, receta);
+    }
+  }
+
   for (const delta of deltas) {
     if (delta.newQty === 0) {
       statements.push(
@@ -776,6 +850,13 @@ export async function updateItems(
           orderId,
           delta.productId,
         ),
+      );
+      // La instantánea de una línea que ya no está sobra: si se vuelve a
+      // añadir esa canasta después, se congelará la receta de ese momento.
+      statements.push(
+        env.DB.prepare(
+          `DELETE FROM order_item_components WHERE order_id = ?1 AND parent_product_id = ?2`,
+        ).bind(orderId, delta.productId),
       );
     } else if (delta.oldQty === 0) {
       const product = products.get(delta.productId)!;
@@ -801,16 +882,42 @@ export async function updateItems(
       );
     }
 
-    // El inventario en vivo solo existe si el pedido lo reservó. Un `diff`
-    // positivo pide más (se resta), uno negativo devuelve (se suma) — la
-    // misma resta cubre las dos direcciones.
-    if (order.stock_reservado === 1) {
+  }
+
+  // Congela la receta de las canastas recién añadidas, en el mismo batch.
+  statements.push(
+    ...sentenciasDeInstantanea(
+      env,
+      orderId,
+      new Map(deltas.filter((d) => d.oldQty === 0).map((d) => [d.productId, d.newQty])),
+      recetas,
+    ),
+  );
+
+  // El inventario en vivo solo existe si el pedido lo reservó. Un `diff`
+  // positivo pide más (se resta), uno negativo devuelve (se suma) — la misma
+  // resta cubre las dos direcciones, también al expandirla: un `diff` negativo
+  // multiplica en negativo y acaba sumando el componente de vuelta.
+  //
+  // Se expande todo junto y no línea por línea para que dos movimientos del
+  // mismo componente —una canasta que sube y la papa suelta que baja— se
+  // netearan en una sola resta en vez de pelearse contra el CHECK por separado.
+  if (order.stock_reservado === 1) {
+    const movimientos = expandir(
+      new Map(deltas.map((delta) => [delta.productId, delta.diff])),
+      recetas,
+    );
+
+    for (const [productId, cantidad] of movimientos) {
+      if (cantidad === 0) {
+        continue;
+      }
       statements.push(
         env.DB.prepare(
           `UPDATE products
               SET stock_actual = stock_actual - ?2, actualizado_en = ?3
             WHERE id = ?1`,
-        ).bind(delta.productId, delta.diff, now),
+        ).bind(productId, cantidad, now),
       );
     }
   }
@@ -888,13 +995,19 @@ export async function remove(
 
   if (devuelveStock) {
     // Antes del DELETE: después, `order_items` ya no existe y no habría de
-    // dónde sacar las cantidades.
-    for (const item of items) {
+    // dónde sacar las cantidades. Lo mismo vale para la receta congelada, que
+    // cuelga del pedido y se borra con él.
+    const movimientos = expandir(
+      new Map(items.map((item) => [item.product_id, item.cantidad])),
+      await recetasDelPedido(env, orderId),
+    );
+
+    for (const [productId, cantidad] of movimientos) {
       statements.push(
         env.DB.prepare(
           `UPDATE products SET stock_actual = stock_actual + ?2, actualizado_en = datetime('now')
             WHERE id = ?1`,
-        ).bind(item.product_id, item.cantidad),
+        ).bind(productId, cantidad),
       );
     }
   }
@@ -980,12 +1093,17 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
       WHERE oi.order_id IN (${placeholders})`,
   )
     .bind(...ids)
-    .all<{ orderId: string }>();
+    .all<{ orderId: string; productId: string }>();
+
+  // Qué llevaba cada canasta del pedido, con la receta congelada del día que
+  // se vendió. Sin esto, "Canasta Pequeña × 3" no dice qué salió de la bodega.
+  const contenidos = await contenidoDePedidos(env, ids);
 
   const byOrder = new Map<string, unknown[]>();
   for (const item of items) {
+    const contenido = contenidos.get(`${item.orderId}:${item.productId}`);
     const bucket = byOrder.get(item.orderId) ?? [];
-    bucket.push(item);
+    bucket.push(contenido ? { ...item, contiene: contenido } : item);
     byOrder.set(item.orderId, bucket);
   }
 
@@ -1107,7 +1225,15 @@ async function loadOrder(env: Env, orderId: string): Promise<unknown> {
     throw ApiError.notFound('Ese pedido no existe.');
   }
 
-  return { ...order, items: itemsResult.results };
+  // También en la respuesta de crear un pedido: es lo que ve el cliente en la
+  // pantalla de éxito justo tras confirmar la compra.
+  const contenidos = await contenidoDePedidos(env, [orderId]);
+  const items = (itemsResult.results as { productId: string }[]).map((item) => {
+    const contenido = contenidos.get(`${orderId}:${item.productId}`);
+    return contenido ? { ...item, contiene: contenido } : item;
+  });
+
+  return { ...order, items };
 }
 
 /**

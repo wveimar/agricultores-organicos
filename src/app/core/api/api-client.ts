@@ -35,6 +35,30 @@ export interface Shortfall {
 }
 
 /** Fila de `categories`. Los chips de la vitrina y el desplegable del panel. */
+/** Un producto dentro de una canasta, con lo necesario para pintarlo. */
+export interface ApiComponent {
+  readonly childId: string;
+  readonly nombre: string;
+  readonly unidad: string;
+  readonly cantidadUnidad: number;
+  /** Stock del componente suelto, para ver cuál es el que frena la canasta. */
+  readonly stock: number;
+  readonly activo: number;
+  /** Cuántos entran en UNA canasta. */
+  readonly cantidadRequerida: number;
+}
+
+/** La receta completa de una canasta. */
+export interface ApiRecipe {
+  readonly parentId: string;
+  readonly componentes: readonly ApiComponent[];
+  /**
+   * Cuántas canastas salen con el inventario de ahora, por el componente más
+   * escaso. `null` = no es canasta, se vende con su propio stock.
+   */
+  readonly armables: number | null;
+}
+
 export interface ApiCategory {
   readonly id: string;
   readonly nombre: string;
@@ -74,6 +98,16 @@ export interface ApiProduct {
   readonly parentId?: string | null;
   /** Solo en las madres: 'presentación', 'sabor'… */
   readonly varianteEtiqueta?: string | null;
+  /**
+   * Qué lleva dentro, si es una canasta. Solo lo que el cliente puede saber:
+   * nombre y cuánto entra, nunca el stock ni el costo de cada componente.
+   */
+  readonly contiene?: readonly {
+    readonly nombre: string;
+    readonly cantidad: number;
+    readonly unidad: string;
+    readonly cantidadUnidad: number;
+  }[];
   /**
    * Precio ya con el descuento del nivel de mayorista de la sesión. Solo llega
    * en `/api/products` y solo si la cuenta tiene tarifa para ese producto: sin
@@ -138,6 +172,15 @@ export function toProduct(p: ApiProduct): Product {
     imageAlt: p.imagenAlt,
     parentId: p.parentId ?? undefined,
     variantLabel: p.varianteEtiqueta ?? undefined,
+    // Solo viene en las canastas. Su ausencia es lo que distingue un producto
+    // normal de uno que se arma con otros, así que se deja `undefined` en vez
+    // de un array vacío: la tienda pregunta por el contenido, no por su largo.
+    contains: p.contiene?.map((c) => ({
+      name: c.nombre,
+      quantity: c.cantidad,
+      unit: c.unidad as ProductUnit,
+      unitQuantity: c.cantidadUnidad,
+    })),
   };
 }
 
@@ -154,6 +197,17 @@ export interface ApiOrderItem {
    * de su incumbencia). `null` si el producto se borró del catálogo.
    */
   readonly stockDisponible: number | null;
+  /**
+   * Si esta línea es una canasta, qué llevaba dentro — con la receta
+   * **congelada** el día que se vendió, no la de hoy. Ausente en un producto
+   * simple; es lo que distingue una línea de la otra.
+   */
+  readonly contiene?: readonly {
+    readonly nombre: string;
+    readonly cantidad: number;
+    readonly unidad: string;
+    readonly cantidadUnidad: number;
+  }[];
 }
 
 export interface ApiOrderStatusLogEntry {
@@ -261,6 +315,14 @@ export interface ApiConsolidationProduct {
 }
 
 /** Un pedido en la hoja de ruta, con el domicilio ya auditado. */
+/** Una canasta a armar, con cuántas y para cuántos pedidos. */
+export interface ApiConsolidationBasket {
+  readonly productId: string;
+  readonly nombre: string;
+  readonly cantidadTotal: number;
+  readonly pedidos: number;
+}
+
 export interface ApiConsolidationOrder {
   readonly id: string;
   readonly referencia: string;
@@ -292,6 +354,12 @@ export interface ApiConsolidation {
     readonly costoEnvio: number;
   };
   readonly productos: readonly ApiConsolidationProduct[];
+  /**
+   * Canastas a armar. **No se suman a `productos`**: sus componentes ya están
+   * repartidos ahí como cantidades a cosechar, y contarlos otra vez duplicaría
+   * el mismo tomate. Esta lista es para quien empaca, no para quien cosecha.
+   */
+  readonly canastas: readonly ApiConsolidationBasket[];
   readonly pedidos: readonly ApiConsolidationOrder[];
   readonly domicilios: {
     readonly pedidos: number;
@@ -488,6 +556,39 @@ export class ApiClient {
     return this.http
       .delete<{ ok: true }>(`/api/admin/categories/${id}`)
       .pipe(map(() => undefined), catchError(handleError));
+  }
+
+  // ─────────────────────── Canastas, combos y mixes ───────────────────────
+
+  /**
+   * La receta de una canasta: qué productos la llenan y cuántos de cada uno.
+   *
+   * `armables` es `null` cuando el producto no tiene receta —entonces es un
+   * producto normal con su propio stock— y un número cuando sí la tiene: lo
+   * manda el componente que primero se agote.
+   */
+  productComponents(productId: string): Observable<ApiRecipe> {
+    return this.http
+      .get<ApiRecipe>(`/api/admin/products/${productId}/componentes`)
+      .pipe(catchError(handleError));
+  }
+
+  /** Añade un componente o corrige su cantidad. Repetirlo deja lo mismo. */
+  setProductComponent(
+    productId: string,
+    childId: string,
+    cantidad: number,
+  ): Observable<ApiRecipe> {
+    return this.http
+      .put<ApiRecipe>(`/api/admin/products/${productId}/componentes`, { childId, cantidad })
+      .pipe(catchError(handleError));
+  }
+
+  /** Al quitar el último, el producto deja de ser canasta. */
+  removeProductComponent(productId: string, childId: string): Observable<ApiRecipe> {
+    return this.http
+      .delete<ApiRecipe>(`/api/admin/products/${productId}/componentes/${childId}`)
+      .pipe(catchError(handleError));
   }
 
   // ────────────────────────────── Catálogo ──────────────────────────────

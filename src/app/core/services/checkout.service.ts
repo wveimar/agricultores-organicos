@@ -99,6 +99,7 @@ export class CheckoutService {
       unitPrice: line.product.price,
       unitCost: line.product.costPrice,
       quantity: line.quantity,
+      contains: line.product.contains,
     }));
 
     return this.api

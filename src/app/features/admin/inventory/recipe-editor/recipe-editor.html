@@ -1,0 +1,136 @@
+<div class="space-y-5 rounded-md border border-sand/50 bg-linen/30 p-5">
+  <div>
+    <p class="text-sm font-semibold text-ink">Canasta o combo</p>
+    <p class="mt-1 text-sm text-ink-soft">
+      Si este producto se arma con otros, ponlos aquí. Al venderlo se descuenta
+      el inventario de cada uno, no el suyo.
+    </p>
+  </div>
+
+  @if (error(); as msg) {
+    <p class="rounded-md border border-berry/30 bg-berry/5 px-4 py-3 text-sm text-berry" role="alert">
+      {{ msg }}
+    </p>
+  }
+
+  @if (loading()) {
+    <p class="text-sm text-ink-muted">Cargando…</p>
+  } @else {
+    @if (esCanasta()) {
+      <!--
+        El número que importa. No es un dato que se escriba: sale del
+        componente que primero se agote, así que se enseña junto a cuál es.
+      -->
+      <div class="rounded-md border border-sage/40 bg-sage-light/40 px-4 py-3.5">
+        <p class="text-xs uppercase tracking-wide text-ink-muted">Se pueden armar</p>
+        <p class="tabular font-display text-h3 text-moss-deep">{{ armables() }}</p>
+        @if (cuelloDeBotella(); as freno) {
+          <p class="mt-1 text-sm text-ink-soft">
+            Lo frena <strong class="text-ink">{{ freno.nombre }}</strong>. Reponer
+            cualquier otro componente no añade ni una canasta más.
+          </p>
+        }
+      </div>
+
+      <ul class="flex flex-col gap-2">
+        @for (componente of componentes(); track componente.childId) {
+          @let frena = esCuelloDeBotella(componente);
+
+          <li
+            class="flex flex-wrap items-center gap-3 rounded-md border bg-bone px-4 py-3"
+            [class]="frena ? 'border-clay/50' : 'border-sand'"
+          >
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-semibold text-ink">{{ componente.nombre }}</p>
+              <p class="tabular mt-0.5 text-xs text-ink-muted">
+                {{ presentacion(componente) }} · quedan {{ componente.stock }} ·
+                <span [class]="frena ? 'font-semibold text-clay-deep' : ''">
+                  {{ rindeTexto(componente) }}
+                </span>
+              </p>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <label [for]="'cant-' + componente.childId" class="text-xs text-ink-soft">
+                Lleva
+              </label>
+              <input
+                [id]="'cant-' + componente.childId"
+                type="number"
+                min="1"
+                step="1"
+                [value]="componente.cantidadRequerida"
+                [disabled]="busyChild() === componente.childId"
+                (change)="updateCantidad(componente, $any($event.target).value)"
+                class="tabular w-20 rounded-md border border-sand bg-transparent px-3 py-2 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss disabled:opacity-50"
+              />
+
+              <button
+                type="button"
+                class="rounded-full border border-sand px-3 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-berry hover:text-berry disabled:opacity-50"
+                [disabled]="busyChild() === componente.childId"
+                (click)="remove(componente)"
+              >
+                Quitar
+              </button>
+            </div>
+          </li>
+        }
+      </ul>
+    } @else {
+      <p class="rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink-soft">
+        Ahora mismo se vende solo, con su propio stock. En cuanto le añadas el
+        primer componente pasará a armarse con ellos.
+      </p>
+    }
+
+    <!-- Añadir componente -->
+    <div class="flex flex-wrap items-end gap-3 border-t border-sand/60 pt-4">
+      <div class="min-w-48 flex-1">
+        <label for="nuevo-componente" class="block text-xs font-semibold text-ink">
+          Añadir producto
+        </label>
+        <select
+          id="nuevo-componente"
+          [value]="nuevoChildId()"
+          (change)="onChildChange($event)"
+          class="mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+        >
+          <option value="">Elige uno…</option>
+          @for (candidato of candidatos(); track candidato.id) {
+            <option [value]="candidato.id">{{ candidato.nombre }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="w-24">
+        <label for="nueva-cantidad" class="block text-xs font-semibold text-ink">Cuántos</label>
+        <input
+          id="nueva-cantidad"
+          type="number"
+          min="1"
+          step="1"
+          [value]="nuevaCantidad()"
+          (input)="onCantidadChange($event)"
+          class="tabular mt-1.5 w-full rounded-md border border-sand bg-transparent px-3 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+        />
+      </div>
+
+      <button
+        type="button"
+        class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:opacity-50"
+        [disabled]="adding() || !nuevoChildId()"
+        (click)="add()"
+      >
+        {{ adding() ? 'Añadiendo…' : 'Añadir' }}
+      </button>
+    </div>
+
+    @if (esCanasta()) {
+      <p class="text-xs text-ink-muted">
+        Mientras tenga componentes, el campo «Stock» de arriba no se usa: la
+        disponibilidad la deciden ellos.
+      </p>
+    }
+  }
+</div>

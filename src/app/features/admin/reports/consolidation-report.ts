@@ -171,6 +171,16 @@ export class ConsolidationReport {
     };
   });
 
+  /**
+   * Canastas a armar, para quien empaca.
+   *
+   * Sus componentes ya están repartidos en `productos` como cantidades a
+   * cosechar —una canasta no se cosecha, se cosecha lo que lleva—, pero al
+   * sumarlo todo se pierde cuántas cajas hay que montar. Esta lista recupera
+   * ese dato sin volver a contar el mismo tomate.
+   */
+  protected readonly canastas = computed(() => this.data()?.canastas ?? []);
+
   /** Pedidos con domicilio cobrado primero: son los que hay que revisar. */
   protected readonly pedidos = computed<readonly ApiConsolidationOrder[]>(
     () => this.data()?.pedidos ?? [],
@@ -225,23 +235,29 @@ export class ConsolidationReport {
   }
 
   /**
+   * Cuánto suma un producto en su unidad de medida real, sin formatear —para
+   * poder sumar varios productos entre sí antes de decidir cómo se escribe el
+   * total—. Los gramos se pasan a kilos por encima del kilo, que es como se
+   * pesa en la finca; el resto se queda en su unidad de venta.
+   */
+  private cantidadBase(producto: ApiConsolidationProduct): { valor: number; unidad: ProductUnit } {
+    const base = producto.cantidadTotal * producto.cantidadUnidad;
+    const unidad = producto.unidad as ProductUnit;
+
+    return unidad === 'gr' && base >= 1000 ? { valor: base / 1000, unidad: 'kg' } : { valor: base, unidad };
+  }
+
+  /**
    * Cuánto suma todo junto en la unidad de medida real.
    *
    * `cantidadTotal` cuenta presentaciones —12 bolsas—, no peso. El agricultor
    * necesita las dos cifras: cuántos paquetes armar y cuánto cosechar en
-   * total. Los gramos se pasan a kilos por encima del kilo, que es como se
-   * pesa en la finca.
+   * total.
    */
   protected equivalencia(producto: ApiConsolidationProduct): string {
-    const base = producto.cantidadTotal * producto.cantidadUnidad;
-    const unidad = producto.unidad as ProductUnit;
-
-    if (unidad === 'gr' && base >= 1000) {
-      return `${decimal(base / 1000)} kg`;
-    }
-
+    const { valor, unidad } = this.cantidadBase(producto);
     const etiqueta = UNIT_LABELS[unidad] ?? { singular: unidad, plural: unidad };
-    return `${decimal(base)} ${base === 1 ? etiqueta.singular : etiqueta.plural}`;
+    return `${decimal(valor)} ${valor === 1 ? etiqueta.singular : etiqueta.plural}`;
   }
 
   /** `true` cuando la presentación no es unitaria y la equivalencia aporta algo. */
@@ -286,11 +302,106 @@ export class ConsolidationReport {
   }
 
   // ──────────────────────────── Copiar para WhatsApp ────────────────────────────
+  //
+  // Es una tabla real, con bordes dibujados a punta de caracteres y envuelta
+  // en ``` para que WhatsApp la muestre en fuente monoespaciada — sin eso, las
+  // columnas se desalinean en cuanto el teléfono usa una fuente proporcional.
+  // Cada categoría es su propio bloque ``` ```, no uno solo para todo el
+  // mensaje: así una tabla larga no arrastra a la siguiente si el cliente de
+  // WhatsApp recorta el bloque de código en algún punto intermedio.
+
+  private static readonly COL = { producto: 16, presentacion: 12, empaques: 8, total: 10 } as const;
+
+  private static readonly GROUP_EMOJI: Readonly<Record<string, string>> = {
+    frutas: '🍎',
+    verduras: '🥬',
+    agroindustriales: '🧺',
+  };
+
+  private celda(texto: string, ancho: number, alinear: 'izq' | 'der' = 'izq'): string {
+    const recortado = texto.length > ancho ? `${texto.slice(0, ancho - 1)}…` : texto;
+    return alinear === 'der' ? recortado.padStart(ancho) : recortado.padEnd(ancho);
+  }
+
+  private fila(cols: readonly [string, string, string, string]): string {
+    const { producto, presentacion, empaques, total } = ConsolidationReport.COL;
+    return (
+      `│ ${this.celda(cols[0], producto)} │ ${this.celda(cols[1], presentacion)} ` +
+      `│ ${this.celda(cols[2], empaques, 'der')} │ ${this.celda(cols[3], total, 'der')} │`
+    );
+  }
+
+  private borde(izq: string, medio: string, der: string): string {
+    return izq + Object.values(ConsolidationReport.COL).map((a) => '─'.repeat(a + 2)).join(medio) + der;
+  }
+
+  /** «10 paq» si viene en paquetes de más de una unidad, «1 und» si es suelto. */
+  private empaquesTexto(producto: ApiConsolidationProduct): string {
+    return `${producto.cantidadTotal} ${this.tieneEquivalencia(producto) ? 'paq' : 'und'}`;
+  }
 
   /**
-   * Texto plano, sin tablas ni markdown: WhatsApp no las renderiza y en un
-   * teléfono en la bodega lo que se lee es una lista corta con la cifra al
-   * final de cada línea.
+   * Suma por categoría, agrupada por unidad real y no por su texto ya
+   * pluralizado: sumar "1 unidad" con "3 unidades" con las etiquetas ya
+   * escritas dejaría dos claves distintas para la misma unidad.
+   */
+  private totalesCategoria(items: readonly ApiConsolidationProduct[]): readonly string[] {
+    const sumas = new Map<ProductUnit, number>();
+    for (const producto of items) {
+      const { valor, unidad } = this.cantidadBase(producto);
+      sumas.set(unidad, (sumas.get(unidad) ?? 0) + valor);
+    }
+    return [...sumas.entries()].map(([unidad, valor]) => {
+      const etiqueta = UNIT_LABELS[unidad] ?? { singular: unidad, plural: unidad };
+      return `${decimal(valor)} ${valor === 1 ? etiqueta.singular : etiqueta.plural}`;
+    });
+  }
+
+  private bloqueCategoria(grupo: string, label: string, items: readonly ApiConsolidationProduct[]): string {
+    const emoji = ConsolidationReport.GROUP_EMOJI[grupo] ?? '📦';
+    const raya = '━'.repeat(30);
+
+    const totales = this.totalesCategoria(items);
+    const filasTotal = totales.map((texto, i) =>
+      this.fila([i === 0 ? 'TOTAL CATEGORÍA' : '', '', '', texto]),
+    );
+
+    return [
+      raya,
+      `${emoji} *${label.toUpperCase()}*`,
+      raya,
+      '```',
+      this.borde('┌', '┬', '┐'),
+      this.fila(['PRODUCTO', 'PRESENTACIÓN', 'EMPAQUES', 'TOTAL']),
+      this.borde('├', '┼', '┤'),
+      ...items.map((p) => this.fila([p.nombre, this.presentacion(p), this.empaquesTexto(p), this.equivalencia(p)])),
+      this.borde('├', '┼', '┤'),
+      ...filasTotal,
+      this.borde('└', '┴', '┘'),
+      '```',
+    ].join('\n');
+  }
+
+  /** Líneas del resumen final: una por unidad presente, «kg» con su propia frase. */
+  private resumenLineas(productos: readonly ApiConsolidationProduct[]): readonly string[] {
+    const sumas = new Map<ProductUnit, number>();
+    for (const producto of productos) {
+      const { valor, unidad } = this.cantidadBase(producto);
+      sumas.set(unidad, (sumas.get(unidad) ?? 0) + valor);
+    }
+
+    return [...sumas.entries()].map(([unidad, valor]) => {
+      if (unidad === 'kg') {
+        return `• Peso total aproximado: ${decimal(valor)} kg`;
+      }
+      const etiqueta = UNIT_LABELS[unidad] ?? { singular: unidad, plural: unidad };
+      return `• Total en ${etiqueta.plural}: ${decimal(valor)}`;
+    });
+  }
+
+  /**
+   * Informe de cosecha para el WhatsApp de la finca: tabla por categoría con
+   * producto, presentación, empaques a armar y total, más un resumen general.
    *
    * Si hay productos seleccionados, solo muestra esos. Si no hay selección,
    * muestra todos (para no dejar sin nada que copiar).
@@ -301,45 +412,70 @@ export class ConsolidationReport {
       return '';
     }
 
-    const cabecera = data.ventana.soloJornadaAbierta
+    const fecha = new Intl.DateTimeFormat('es-CO', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date());
+
+    const periodo = data.ventana.soloJornadaAbierta
       ? 'Pedidos de la semana en curso'
-      : `Pedidos del ${data.ventana.desde ?? 'inicio'} al ${data.ventana.hasta ?? 'hoy'}`;
+      : `Del ${data.ventana.desde ?? 'inicio'} al ${data.ventana.hasta ?? 'hoy'}`;
 
-    const bloques = this.grouped().map(({ label, items }) =>
-      [
-        '',
-        `*${label.toUpperCase()}*`,
-        ...items.map((producto) => {
-          const cantidad = `${producto.cantidadTotal} × ${this.presentacion(producto)}`;
-          const total = this.tieneEquivalencia(producto)
-            ? ` (${this.equivalencia(producto)})`
-            : '';
-          return `• ${producto.nombre}: ${cantidad}${total}`;
-        }),
-      ].join('\n'),
-    );
-
-    const filtered = this.filteredTotals();
-    const aviso =
-      data.pendientes.pedidos > 0
-        ? [
-            '',
-            `Nota: hay ${data.pendientes.pedidos} pedido(s) sin confirmar pago.`,
-            'Si se aprueban, esta lista aumenta.',
-          ].join('\n')
-        : '';
+    const grupos = this.grouped();
+    const bloques = grupos.map(({ grupo, label, items }) => this.bloqueCategoria(grupo, label, items));
+    const resumen = this.resumenLineas(grupos.flatMap((g) => g.items));
 
     return [
-      '*AGRICULTORES ORGÁNICOS*',
-      'Consolidado de cosecha',
-      cabecera,
-      ...bloques,
+      '📋 *INFORME DE COSECHA CONSOLIDADO*',
+      '🌾 *Agricultores Orgánicos*',
+      `📅 Fecha: ${fecha}`,
+      `🗓️ ${periodo}`,
       '',
-      `Total: ${filtered.productos} productos · ${filtered.unidades} unidades`,
-      aviso,
-    ]
-      .filter((line) => line !== '')
-      .join('\n');
+      ...bloques,
+      ...this.bloqueCanastas(),
+      '',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '📊 *RESUMEN GENERAL DE RECOLECCIÓN*',
+      `• Total empaques a alistar: ${this.filteredTotals().unidades}`,
+      ...resumen,
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    ].join('\n');
+  }
+
+  /**
+   * Canastas a armar, al final del informe y no entre las categorías.
+   *
+   * Lo de arriba es lo que hay que traer de la finca; esto es lo que hay que
+   * montar con ello una vez está en la mesa. Son dos trabajos distintos y
+   * mezclarlos invitaría a cosechar dos veces el mismo tomate.
+   */
+  private bloqueCanastas(): readonly string[] {
+    const canastas = this.canastas();
+    if (canastas.length === 0) {
+      return [];
+    }
+
+    const raya = '━'.repeat(30);
+    const total = canastas.reduce((suma, c) => suma + c.cantidadTotal, 0);
+
+    return [
+      raya,
+      '🧺 *CANASTAS A ARMAR*',
+      raya,
+      '_Con los productos de arriba, ya incluidos en las cantidades._',
+      '```',
+      this.borde('┌', '┬', '┐'),
+      this.fila(['CANASTA', 'PRESENTACIÓN', 'EMPAQUES', 'TOTAL']),
+      this.borde('├', '┼', '┤'),
+      ...canastas.map((c) =>
+        this.fila([c.nombre, `${c.pedidos} pedido(s)`, `${c.cantidadTotal} und`, `${c.cantidadTotal}`]),
+      ),
+      this.borde('├', '┼', '┤'),
+      this.fila(['TOTAL CANASTAS', '', '', `${total}`]),
+      this.borde('└', '┴', '┘'),
+      '```',
+    ];
   }
 
   /**

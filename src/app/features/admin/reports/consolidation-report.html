@@ -219,7 +219,7 @@
         <p class="text-sm text-ink-soft">
           El navegador no dejó copiar automáticamente. Selecciona el texto y cópialo a mano:
         </p>
-        <pre class="mt-3 max-h-64 overflow-auto rounded-md border border-sand bg-bone p-4 text-xs leading-relaxed text-ink">{{ buildProducerText() }}</pre>
+        <pre class="mt-3 max-h-64 overflow-auto rounded-md border border-sand bg-bone p-4 font-mono text-xs leading-relaxed text-ink">{{ buildProducerText() }}</pre>
       </div>
     }
 
@@ -294,6 +294,43 @@
           </div>
         </div>
       }
+    }
+    <!--
+      Canastas a armar. Va después de lo que hay que cosechar y visualmente
+      aparte, porque es otro trabajo: arriba está lo que se trae de la finca,
+      aquí lo que se monta con ello. Sus componentes YA están contados arriba.
+    -->
+    @if (canastas().length > 0) {
+      <div class="mt-8 rounded-lg border border-sage/40 bg-sage-light/20 p-5">
+        <h3 class="font-display text-h3 text-ink">Canastas a armar</h3>
+        <p class="mt-1 text-sm text-ink-soft">
+          Con los productos de arriba — sus contenidos ya están sumados en las
+          cantidades a cosechar, así que no hay que traer nada más.
+        </p>
+
+        <div class="mt-4 overflow-x-auto">
+          <table class="w-full min-w-md text-sm">
+            <thead>
+              <tr class="border-b border-sand text-left">
+                <th class="pb-2 font-semibold text-ink-soft">Canasta</th>
+                <th class="pb-2 text-right font-semibold text-ink-soft">Pedidos</th>
+                <th class="pb-2 text-right font-semibold text-ink-soft">A armar</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (canasta of canastas(); track canasta.productId) {
+                <tr class="border-b border-sand/50">
+                  <td class="py-2.5 text-ink">{{ canasta.nombre }}</td>
+                  <td class="tabular py-2.5 text-right text-ink-soft">{{ canasta.pedidos }}</td>
+                  <td class="tabular py-2.5 text-right font-semibold text-moss">
+                    {{ canasta.cantidadTotal }}
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
     }
   </section>
 

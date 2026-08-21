@@ -508,6 +508,25 @@
                       {{ item.precioUnitario * item.cantidad | cop }}
                     </td>
                   </tr>
+
+                  <!--
+                    Qué llevaba esta canasta, con la receta congelada el día
+                    que se vendió. Ausente en un producto simple.
+                  -->
+                  @if (item.contiene; as contenido) {
+                    <tr>
+                      <td colspan="4" class="pb-2.5 pl-4">
+                        <ul class="flex flex-col gap-0.5 border-l-2 border-sage/50 pl-3">
+                          @for (parte of contenido; track parte.nombre) {
+                            <li class="flex items-baseline justify-between gap-2 text-xs text-ink-soft">
+                              <span>{{ parte.nombre }}</span>
+                              <span class="tabular text-ink-muted">{{ consumido(item, parte) }}</span>
+                            </li>
+                          }
+                        </ul>
+                      </td>
+                    </tr>
+                  }
                 }
               </tbody>
             </table>

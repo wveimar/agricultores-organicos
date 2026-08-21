@@ -59,14 +59,28 @@
 
       <ul class="mt-5 flex flex-col divide-y divide-sand">
         @for (line of order().lines; track line.productId) {
-          <li class="flex items-baseline justify-between gap-4 py-3 first:pt-0">
-            <p class="text-sm text-ink">
-              <span class="tabular text-ink-muted">{{ line.quantity }} ×</span>
-              {{ line.productName }}
-            </p>
-            <p class="tabular shrink-0 text-sm text-ink">
-              {{ line.unitPrice * line.quantity | cop }}
-            </p>
+          <li class="py-3 first:pt-0">
+            <div class="flex items-baseline justify-between gap-4">
+              <p class="text-sm text-ink">
+                <span class="tabular text-ink-muted">{{ line.quantity }} ×</span>
+                {{ line.productName }}
+              </p>
+              <p class="tabular shrink-0 text-sm text-ink">
+                {{ line.unitPrice * line.quantity | cop }}
+              </p>
+            </div>
+
+            <!-- Qué lleva dentro, si es una canasta -->
+            @if (line.contains; as contenido) {
+              <ul class="mt-2 flex flex-col gap-1 border-l-2 border-sage/50 pl-3">
+                @for (parte of contenido; track parte.name) {
+                  <li class="flex items-baseline justify-between gap-2 text-xs text-ink-soft">
+                    <span>{{ parte.name }}</span>
+                    <span class="tabular text-ink-muted">{{ porcion(parte) }}</span>
+                  </li>
+                }
+              </ul>
+            }
           </li>
         }
       </ul>

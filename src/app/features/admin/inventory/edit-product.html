@@ -385,6 +385,14 @@
           </div>
         </div>
 
+        <!--
+          Receta de canasta. Va fuera del formulario en la práctica: guarda por
+          su cuenta en cuanto se toca, porque cambiar la receta cambia el stock
+          disponible al instante y dejarlo pendiente de «Guardar cambios» daría
+          una disponibilidad que no es la que se está viendo.
+        -->
+        <app-recipe-editor [productId]="productId" />
+
         <!-- Botones -->
         <div class="flex gap-3 justify-end pt-4">
           <a

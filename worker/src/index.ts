@@ -8,6 +8,7 @@ import * as orders from './routes/orders';
 import * as reports from './routes/reports';
 import * as users from './routes/users';
 import * as wholesale from './routes/wholesale';
+import * as components from './routes/components';
 import * as passwordReset from './routes/password-reset';
 
 /**
@@ -124,6 +125,22 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     const duplicateMatch = pathname.match(/^\/api\/admin\/products\/([\w-]+)\/duplicar$/);
     if (duplicateMatch && method === 'POST') {
       return products.duplicate(env, user, duplicateMatch[1]);
+    }
+
+    // Receta de una canasta: qué productos la llenan y cuántos de cada uno.
+    const recipeMatch = pathname.match(/^\/api\/admin\/products\/([\w-]+)\/componentes$/);
+    if (recipeMatch && method === 'GET') {
+      return components.get(env, user, recipeMatch[1]);
+    }
+    if (recipeMatch && method === 'PUT') {
+      return components.put(request, env, user, recipeMatch[1]);
+    }
+
+    const componentMatch = pathname.match(
+      /^\/api\/admin\/products\/([\w-]+)\/componentes\/([\w-]+)$/,
+    );
+    if (componentMatch && method === 'DELETE') {
+      return components.remove(env, user, componentMatch[1], componentMatch[2]);
     }
 
     const productMatch = pathname.match(/^\/api\/admin\/products\/([\w-]+)$/);
