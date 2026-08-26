@@ -208,6 +208,15 @@ export interface Category {
   /** Se usa como subtítulo cuando la categoría está activa. */
   readonly description: string;
   /**
+   * Silueta del chip en la vitrina. Es una **clave** —'hoja', 'panal'…—, no un
+   * dibujo: el repertorio vive en `CategoryIcon` y esto solo dice cuál toca.
+   *
+   * Viaja con la categoría por lo mismo que `adminGroup`: un mapa compilado
+   * `id → ícono` cubriría las diez sembradas y ninguna de las que se creen
+   * desde el panel. Vacío o desconocido cae en la silueta por defecto.
+   */
+  readonly icon: string;
+  /**
    * Agrupación macro del panel de compras. Viaja con la categoría porque
    * `ADMIN_GROUP_OF` era un mapa compilado y no podía cubrir filas nuevas.
    * Opcional: 'todos' es un filtro de la vitrina, no una estantería.

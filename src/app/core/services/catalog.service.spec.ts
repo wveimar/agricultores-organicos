@@ -38,6 +38,7 @@ function makeApiCategory(id: string, overrides: Partial<ApiCategory> = {}): ApiC
     id,
     nombre: id,
     descripcion: '',
+    icono: '',
     grupoAdmin: 'agroindustriales',
     orden: 100,
     activo: 1,

@@ -16,6 +16,7 @@ import { requireRole } from '../auth/middleware';
 const COLUMNS = `id,
                  nombre,
                  descripcion,
+                 icono,
                  grupo_admin    AS grupoAdmin,
                  orden,
                  activo,
@@ -27,9 +28,23 @@ interface CategoryBody {
   id?: unknown;
   nombre?: unknown;
   descripcion?: unknown;
+  icono?: unknown;
   grupoAdmin?: unknown;
   orden?: unknown;
   activo?: unknown;
+}
+
+/**
+ * La clave del ícono del chip. No se valida contra una lista: el repertorio de
+ * siluetas vive en el front (`CategoryIcon`), y atarlo aquí obligaría a
+ * desplegar el Worker cada vez que se dibuja una nueva. Una clave que el front
+ * no conozca cae en la silueta por defecto, así que lo peor que puede pasar es
+ * que el chip salga con una hoja.
+ *
+ * Vacío es válido y significa exactamente eso: «la que sea».
+ */
+function readIcono(value: unknown): string {
+  return value === '' ? '' : requireString(value, 'icono', 40);
 }
 
 function readGrupo(value: unknown): string {
@@ -125,13 +140,14 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
   }
 
   await env.DB.prepare(
-    `INSERT INTO categories (id, nombre, descripcion, grupo_admin, orden, activo)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+    `INSERT INTO categories (id, nombre, descripcion, icono, grupo_admin, orden, activo)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
   )
     .bind(
       id,
       nombre,
       body.descripcion === undefined ? '' : requireString(body.descripcion, 'descripcion', 200),
+      body.icono === undefined ? '' : readIcono(body.icono),
       body.grupoAdmin === undefined ? 'agroindustriales' : readGrupo(body.grupoAdmin),
       body.orden === undefined ? 100 : Number(body.orden),
       body.activo === 0 ? 0 : 1,
@@ -172,6 +188,9 @@ export async function update(
     sets.push(
       `descripcion = ?${bindings.push(requireString(body.descripcion, 'descripcion', 200))}`,
     );
+  }
+  if (body.icono !== undefined) {
+    sets.push(`icono = ?${bindings.push(readIcono(body.icono))}`);
   }
   if (body.grupoAdmin !== undefined) {
     sets.push(`grupo_admin = ?${bindings.push(readGrupo(body.grupoAdmin))}`);

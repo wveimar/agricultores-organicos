@@ -48,6 +48,9 @@ export class AdminLayout {
       roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'],
     },
     { path: '/admin/reportes', label: 'Reportes', roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'] },
+    // Junto a Reportes: las dos hablan de dinero, y de la cartera se sale a
+    // mirar la caja para ver qué falta por entrar.
+    { path: '/admin/cartera', label: 'Cartera', roles: ['GESTOR_PEDIDOS'] },
     {
       path: '/admin/entregas',
       label: 'Entregas',

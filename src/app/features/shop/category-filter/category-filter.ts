@@ -1,9 +1,18 @@
-import { ChangeDetectionStrategy, Component, ElementRef, inject, viewChild } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  afterRenderEffect,
+  inject,
+  viewChild,
+} from '@angular/core';
 import { CatalogService } from '../../../core/services/catalog.service';
 import { CategoryId } from '../../../core/models/product.model';
+import { CategoryIcon } from '../../../shared/category-icon/category-icon';
 
 @Component({
   selector: 'app-category-filter',
+  imports: [CategoryIcon],
   templateUrl: './category-filter.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -16,6 +25,57 @@ export class CategoryFilter {
   protected readonly catalog = inject(CatalogService);
 
   private readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('buscador');
+  private readonly chips = viewChild<ElementRef<HTMLElement>>('chips');
+
+  constructor() {
+    // El primer ajuste no se anima: es la posición de partida, no un
+    // movimiento, y verla deslizarse sola al cargar la página parece un fallo.
+    let primera = true;
+
+    /**
+     * Trae a la vista el chip activo cuando queda fuera de pantalla.
+     *
+     * Con diez categorías la fila mide bastante más que un teléfono. Al
+     * recargar con «Canastas» puesta —o al llegar desde un enlace— su chip
+     * está a la derecha, fuera del encuadre, y la barra se ve como si no
+     * hubiera nada seleccionado mientras la rejilla enseña una sola sección.
+     *
+     * Va en `afterRenderEffect` y no en `effect`: mide y desplaza el DOM, así
+     * que tiene que correr con la vista ya pintada. Y lee `visibleCategories`
+     * aunque no use el valor, porque al llegar el catálogo la barra pasa de un
+     * chip a diez: sin esa dependencia el efecto no volvería a correr y el
+     * chip activo se quedaría escondido.
+     */
+    afterRenderEffect(() => {
+      const activa = this.catalog.activeCategory();
+      this.catalog.visibleCategories();
+
+      const fila = this.chips()?.nativeElement;
+      const chip = fila?.querySelector<HTMLElement>(`[data-category="${activa}"]`);
+      if (!chip) {
+        return;
+      }
+
+      chip.scrollIntoView({
+        // `nearest` y no `center`: centrar movería la fila en cada toque,
+        // incluso con el chip ya entero a la vista. `nearest` solo actúa
+        // cuando de verdad hace falta.
+        inline: 'nearest',
+        // Obligatorio. Sin él el navegador también desplaza la página en
+        // vertical para «traer» la barra, que al ser pegajosa ya se veía: el
+        // salto deja la rejilla a media altura sin motivo.
+        block: 'nearest',
+        behavior: primera || this.prefiereMenosMovimiento() ? 'instant' : 'smooth',
+      });
+
+      primera = false;
+    });
+  }
+
+  /** `doc/plan.md §6`: el movimiento es discreto, y opcional si el sistema lo pide. */
+  private prefiereMenosMovimiento(): boolean {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  }
 
   protected select(id: CategoryId | 'todos'): void {
     this.catalog.selectCategory(id);

@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiCategory, ApiErrorBody } from '../../../core/api/api-client';
 import { ADMIN_GROUP_LABELS } from '../../../core/models/product.model';
+import { CATEGORY_ICONS, CategoryIcon } from '../../../shared/category-icon/category-icon';
 
 /**
  * Categorías del catálogo: los chips de la vitrina y el desplegable con el que
@@ -26,7 +27,7 @@ import { ADMIN_GROUP_LABELS } from '../../../core/models/product.model';
  */
 @Component({
   selector: 'app-categories-manager',
-  imports: [ReactiveFormsModule, RouterLink, NgTemplateOutlet],
+  imports: [ReactiveFormsModule, RouterLink, NgTemplateOutlet, CategoryIcon],
   templateUrl: './categories-manager.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -35,6 +36,9 @@ export class CategoriesManager {
   private readonly fb = inject(FormBuilder);
 
   protected readonly grupos = ADMIN_GROUP_LABELS.filter((g) => g.value !== 'todos');
+
+  /** Las siluetas entre las que se elige. El repertorio vive en `CategoryIcon`. */
+  protected readonly iconos = CATEGORY_ICONS;
 
   /** Fila abierta en el formulario. `null` = ninguna; `'nueva'` = creando. */
   protected readonly editingId = signal<string | null>(null);
@@ -49,6 +53,9 @@ export class CategoriesManager {
   protected readonly form = this.fb.nonNullable.group({
     nombre: ['', [Validators.required, Validators.minLength(2)]],
     descripcion: [''],
+    // Sin validador: la lista del desplegable ya acota lo que se puede elegir,
+    // y vacío es un valor legítimo — significa «la de por defecto».
+    icono: [''],
     grupoAdmin: ['agroindustriales' as 'frutas' | 'verduras' | 'agroindustriales'],
     orden: [100, [Validators.required, Validators.min(0)]],
   });
@@ -74,6 +81,7 @@ export class CategoriesManager {
     this.form.reset({
       nombre: '',
       descripcion: '',
+      icono: '',
       grupoAdmin: 'agroindustriales',
       // Al final de la lista: una categoría nueva no debería colarse delante
       // de las que ya tienen producto sin que nadie lo pida.
@@ -87,6 +95,8 @@ export class CategoriesManager {
     this.form.setValue({
       nombre: category.nombre,
       descripcion: category.descripcion,
+      // `?? ''` por si la fila viene de un Worker sin la 0016 desplegada.
+      icono: category.icono ?? '',
       grupoAdmin: category.grupoAdmin,
       orden: category.orden,
     });
@@ -111,8 +121,14 @@ export class CategoriesManager {
     this.saving.set(true);
     this.formError.set(null);
 
-    const { nombre, descripcion, grupoAdmin, orden } = this.form.getRawValue();
-    const payload = { nombre: nombre.trim(), descripcion: descripcion.trim(), grupoAdmin, orden };
+    const { nombre, descripcion, icono, grupoAdmin, orden } = this.form.getRawValue();
+    const payload = {
+      nombre: nombre.trim(),
+      descripcion: descripcion.trim(),
+      icono,
+      grupoAdmin,
+      orden,
+    };
 
     const peticion =
       id === 'nueva'

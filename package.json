@@ -60,7 +60,12 @@
     "db:migrate:variantes:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0012_variantes.sql",
     "db:seed:variantes": "wrangler d1 execute DB --local --file=worker/seed-variantes.sql",
     "db:seed:variantes:remote": "wrangler d1 execute DB --remote --file=worker/seed-variantes.sql",
-    "qa:variantes": "node worker/tests/qa-variantes.mjs"
+    "qa:variantes": "node worker/tests/qa-variantes.mjs",
+    "db:migrate:icono-categorias": "wrangler d1 execute DB --local --file=worker/migrations/0016_icono_categorias.sql",
+    "db:migrate:icono-categorias:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0016_icono_categorias.sql",
+    "db:migrate:credito": "wrangler d1 execute DB --local --file=worker/migrations/0017_credito_mayoristas.sql",
+    "db:migrate:credito:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0017_credito_mayoristas.sql",
+    "qa:credito": "node worker/tests/qa-credito.mjs"
   },
   "private": true,
   "packageManager": "npm@11.12.1",

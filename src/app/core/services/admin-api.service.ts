@@ -6,6 +6,7 @@ import {
   ApiClient,
   ApiClosing,
   ApiClosingOrder,
+  ApiCarteraRow,
   ApiCodPending,
   ApiConsolidation,
   ApiDelivery,
@@ -484,6 +485,32 @@ export class AdminApiService {
     );
   }
 
+  /** Fía un pedido al mayorista que lo hizo. El Worker valida cupo y plazo. */
+  grantCredit(id: string): Observable<ApiOrder> {
+    return this.api.grantCredit(id).pipe(
+      tap((updated) => {
+        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+        // Acaba de nacer una deuda: la cartera ya no dice lo mismo.
+        this.loadCartera();
+      }),
+    );
+  }
+
+  /**
+   * El mayorista pagó. A partir de aquí el pedido sí cuenta como recaudado y
+   * lo recogerá el siguiente cierre de caja, así que hay que refrescar las
+   * tres cosas que cambian de significado a la vez.
+   */
+  collectCredit(id: string): Observable<ApiOrder> {
+    return this.api.collectCredit(id).pipe(
+      tap((updated) => {
+        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+        this.cartera.update((list) => list.filter((d) => d.id !== id));
+        this.loadCashSummary();
+      }),
+    );
+  }
+
   /** Confirma que el efectivo de un pedido contra entrega ya está en la finca. */
   settleOrderCash(id: string): Observable<ApiOrder> {
     return this.api.settleOrderCash(id).pipe(
@@ -698,6 +725,38 @@ export class AdminApiService {
       }),
     );
   }
+
+  /** Lo que los mayoristas deben hoy. Vacío mientras no se haya pedido. */
+  readonly cartera = signal<readonly ApiCarteraRow[]>([]);
+  readonly carteraLoading = signal(false);
+  readonly carteraError = signal<string | null>(null);
+
+  loadCartera(): void {
+    this.carteraLoading.set(true);
+    this.carteraError.set(null);
+    this.api.cartera().subscribe({
+      next: (list) => {
+        this.cartera.set(list);
+        this.carteraLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.carteraError.set(error.message);
+        this.carteraLoading.set(false);
+      },
+    });
+  }
+
+  /** Total adeudado, para la métrica junto al recaudado del cierre. */
+  readonly carteraTotal = computed(() =>
+    this.cartera().reduce((suma, deuda) => suma + deuda.total, 0),
+  );
+
+  /** Lo ya vencido, que es lo que de verdad preocupa. */
+  readonly carteraVencida = computed(() =>
+    this.cartera()
+      .filter((deuda) => deuda.tramo !== 'corriente')
+      .reduce((suma, deuda) => suma + deuda.total, 0),
+  );
 
   /** Efectivo contra entrega cobrado, esperando que un admin confirme que llegó a la finca. */
   readonly codPending = signal<readonly ApiCodPending[]>([]);

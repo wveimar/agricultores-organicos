@@ -571,6 +571,203 @@ export async function markPaid(env: Env, user: JwtPayload, orderId: string): Pro
 }
 
 /**
+ * POST /api/admin/orders/:id/credito — se le fía este pedido al mayorista.
+ *
+ * El checkout público no puede llegar aquí: `readMetodoPago()` es lista
+ * blanca y solo deja pasar 'contraentrega'. Fiar es siempre una decisión de
+ * alguien del panel sobre una cuenta concreta.
+ *
+ * ── Por qué el cupo se comprueba dentro del UPDATE ──
+ *
+ * Leer el cupo, sumar la deuda y luego escribir deja una ventana entre la
+ * lectura y la escritura: dos pedidos concedidos a la vez para el mismo
+ * mayorista pasarían los dos la comprobación y juntos se saldrían del cupo.
+ * Metiendo la suma en el propio WHERE, SQLite evalúa y escribe en la misma
+ * sentencia y el segundo afecta 0 filas — que es exactamente lo que hay que
+ * decirle a quien lo intentó.
+ *
+ * `vence_en` sale de `dias_credito` de la cuenta y se calcula en la base, no
+ * en el navegador de quien pulsa: el vencimiento de una factura no puede
+ * depender de la zona horaria del que la crea.
+ */
+export async function grantCredit(
+  env: Env,
+  user: JwtPayload,
+  orderId: string,
+): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  // Deuda viva de esa misma cuenta, sin contar este pedido. Es la definición
+  // que usa cartera(): a crédito, aprobado o enviado, todavía sin 'pago'.
+  const DEUDA_ACTUAL = `COALESCE((
+        SELECT SUM(d.total) FROM orders d
+         WHERE d.user_id = o.user_id
+           AND d.metodo_pago = 'credito'
+           AND d.estado IN ('aprobado', 'enviado')
+           AND d.id <> o.id
+      ), 0)`;
+
+  const CUPO = `(SELECT cupo_credito FROM users WHERE id = o.user_id)`;
+
+  const result = await env.DB.prepare(
+    `UPDATE orders AS o
+        SET metodo_pago = 'credito',
+            vence_en = date('now', '-5 hours',
+                            '+' || (SELECT dias_credito FROM users WHERE id = o.user_id) || ' days')
+      WHERE o.id = ?1
+        AND o.metodo_pago <> 'credito'
+        AND o.estado IN ('aprobado', 'enviado')
+        AND o.user_id IS NOT NULL
+        AND ${CUPO} > 0
+        AND o.total + ${DEUDA_ACTUAL} <= ${CUPO}`,
+  )
+    .bind(orderId)
+    .run();
+
+  if (result.meta.changes === 0) {
+    throw await explicarRechazoCredito(env, orderId);
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO order_status_log (order_id, estado, actor_id, actor_nombre)
+     VALUES (?1, 'editado', ?2, ?3)`,
+  )
+    .bind(orderId, user.sub, user.nombre)
+    .run();
+
+  return json({ order: await loadOrder(env, orderId) });
+}
+
+/**
+ * Por qué no se pudo fiar. Se calcula solo cuando ya falló, así que el camino
+ * feliz sigue siendo una sola consulta.
+ */
+async function explicarRechazoCredito(env: Env, orderId: string): Promise<ApiError> {
+  const fila = await env.DB.prepare(
+    `SELECT o.estado, o.metodo_pago, o.total, o.user_id AS userId,
+            COALESCE(u.cupo_credito, 0) AS cupo,
+            COALESCE((
+              SELECT SUM(d.total) FROM orders d
+               WHERE d.user_id = o.user_id
+                 AND d.metodo_pago = 'credito'
+                 AND d.estado IN ('aprobado', 'enviado')
+                 AND d.id <> o.id
+            ), 0) AS deuda
+       FROM orders o
+       LEFT JOIN users u ON u.id = o.user_id
+      WHERE o.id = ?1`,
+  )
+    .bind(orderId)
+    .first<{
+      estado: string;
+      metodo_pago: string;
+      total: number;
+      userId: string | null;
+      cupo: number;
+      deuda: number;
+    }>();
+
+  if (!fila) {
+    return ApiError.notFound('Ese pedido no existe.');
+  }
+  if (fila.metodo_pago === 'credito') {
+    return ApiError.conflict('ya-es-credito', 'Este pedido ya estaba a crédito.');
+  }
+  if (!['aprobado', 'enviado'].includes(fila.estado)) {
+    return ApiError.conflict(
+      'estado-invalido',
+      `Solo se fía un pedido aprobado o enviado, y este está ${fila.estado}.`,
+    );
+  }
+  if (!fila.userId) {
+    return ApiError.conflict(
+      'sin-cuenta',
+      'Este pedido se hizo sin cuenta. El crédito se le da a un cliente registrado, que es a quien se le cobra después.',
+    );
+  }
+  if (fila.cupo === 0) {
+    return ApiError.conflict(
+      'sin-cupo',
+      'Esta cuenta no tiene cupo de crédito. Asígnaselo en Usuarios antes de fiarle.',
+    );
+  }
+  const libre = fila.cupo - fila.deuda;
+  return ApiError.conflict(
+    'cupo-excedido',
+    `Se pasa del cupo: debe ${fila.deuda} de ${fila.cupo}, le quedan ${libre} y este pedido son ${fila.total}.`,
+    { cupo: fila.cupo, deuda: fila.deuda, libre, total: fila.total },
+  );
+}
+
+/**
+ * POST /api/admin/orders/:id/recaudar — el mayorista pagó lo que debía.
+ *
+ * Va aparte de markPaid() aunque las dos escriban estado='pago', por dos
+ * razones que no son de estilo:
+ *
+ * - **Quién.** markPaid() lo puede llamar un DOMICILIARIO, que es quien tiene
+ *   el efectivo en la mano. Un crédito no lo cobra nadie en la calle: el
+ *   mayorista transfiere. Un domiciliario que pudiera marcar una deuda como
+ *   pagada estaría certificando algo que no presenció.
+ * - **Desde dónde.** Contra entrega solo se cobra tras enviar. Una deuda se
+ *   puede pagar en cuanto existe: el mayorista puede transferir el mismo día
+ *   que se aprueba el pedido, antes de que salga el camión. De ahí que aquí
+ *   valgan 'aprobado' y 'enviado'.
+ *
+ * Sin token de idempotencia, mismo argumento que markPaid(): no toca stock ni
+ * inventario, solo una columna y una traza. El segundo envío de un doble
+ * click afecta 0 filas.
+ *
+ * A partir de aquí el pedido sí encaja en RECAUDADO_WHERE, así que lo recoge
+ * el siguiente cierre de caja. No se toca `efectivo_liquidado`: esa columna
+ * es de contra entrega, y aquí no hay efectivo de nadie que liquidar.
+ */
+export async function collectCredit(
+  env: Env,
+  user: JwtPayload,
+  orderId: string,
+): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const [updateResult] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE orders SET estado = 'pago'
+        WHERE id = ?1 AND metodo_pago = 'credito' AND estado IN ('aprobado', 'enviado')`,
+    ).bind(orderId),
+    env.DB.prepare(
+      `INSERT INTO order_status_log (order_id, estado, actor_id, actor_nombre)
+       SELECT ?1, 'pago', ?2, ?3
+        WHERE (SELECT estado FROM orders WHERE id = ?1) = 'pago'`,
+    ).bind(orderId, user.sub, user.nombre),
+  ]);
+
+  if (updateResult.meta.changes === 0) {
+    const actual = await env.DB.prepare(`SELECT estado, metodo_pago FROM orders WHERE id = ?1`)
+      .bind(orderId)
+      .first<{ estado: string; metodo_pago: string }>();
+
+    if (!actual) {
+      throw ApiError.notFound('Ese pedido no existe.');
+    }
+    if (actual.metodo_pago !== 'credito') {
+      throw ApiError.conflict('no-es-credito', 'Este pedido no se vendió a crédito.');
+    }
+    if (actual.estado === 'pago') {
+      throw ApiError.conflict(
+        'ya-pagado',
+        'Esta deuda ya fue registrada como pagada por otra persona.',
+      );
+    }
+    throw ApiError.conflict(
+      'estado-invalido',
+      `No se puede recaudar un pedido ${actual.estado}.`,
+    );
+  }
+
+  return json({ order: await loadOrder(env, orderId) });
+}
+
+/**
  * POST /api/admin/orders/:id/liquidar — un admin confirma que el efectivo
  * cobrado por el domiciliario ya está físicamente en la finca.
  *
@@ -1275,7 +1472,7 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
             -- cuando el admin abre el pedido concreto que quiere revisar.
             (comprobante_url IS NOT NULL) AS tieneComprobante,
             aprobado_en AS aprobadoEn,
-            metodo_pago AS metodoPago, efectivo_liquidado AS efectivoLiquidado,
+            metodo_pago AS metodoPago, efectivo_liquidado AS efectivoLiquidado, vence_en AS venceEn,
             closing_id AS closingId, creado_en AS creadoEn
        FROM orders ${where}
       ORDER BY creado_en DESC
@@ -1470,7 +1667,7 @@ async function loadOrder(env: Env, orderId: string): Promise<unknown> {
               subtotal, envio, total, comprobante_nombre AS comprobanteNombre,
               (comprobante_url IS NOT NULL) AS tieneComprobante,
               aprobado_en AS aprobadoEn,
-              metodo_pago AS metodoPago, efectivo_liquidado AS efectivoLiquidado,
+              metodo_pago AS metodoPago, efectivo_liquidado AS efectivoLiquidado, vence_en AS venceEn,
               closing_id AS closingId, creado_en AS creadoEn
          FROM orders WHERE id = ?1`,
     ).bind(orderId),

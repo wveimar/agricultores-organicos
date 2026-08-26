@@ -49,6 +49,30 @@
     <p class="mt-1 text-xs text-ink-muted">Producto + envíos</p>
   </div>
 
+  <!--
+    Va pegada a «Ventas brutas» a propósito: la de al lado es la plata que ya
+    entró y esta la que falta por entrar. Verlas juntas es lo que evita creer
+    que la caja va mejor de lo que va.
+
+    Solo aparece si hay algo fiado: un cero permanente aquí sería una casilla
+    muerta ocupando sitio en la rejilla.
+  -->
+  @if (adminApi.carteraTotal() > 0) {
+    <div class="rounded-lg border border-clay/40 bg-bone p-5">
+      <p class="text-overline font-semibold uppercase text-ink-muted">En cartera</p>
+      <p class="tabular mt-2 font-display text-h3 text-clay-deep">
+        {{ adminApi.carteraTotal() | cop }}
+      </p>
+      <p class="mt-1 text-xs text-ink-muted">
+        @if (adminApi.carteraVencida() > 0) {
+          {{ adminApi.carteraVencida() | cop }} ya vencido
+        } @else {
+          Fiado, aún sin vencer
+        }
+      </p>
+    </div>
+  }
+
   <div class="rounded-lg border border-moss/40 bg-bone p-5">
     <p class="text-overline font-semibold uppercase text-ink-muted">Ganancia</p>
     <p class="tabular mt-2 font-display text-h3 text-moss">{{ (adminApi.cashSummary()?.ganancia ?? 0) | cop }}</p>

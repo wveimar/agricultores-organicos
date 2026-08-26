@@ -1,0 +1,199 @@
+<div class="min-h-screen bg-linen py-12 px-5">
+  <div class="mx-auto max-w-5xl">
+    <!-- Encabezado -->
+    <div class="mb-8">
+      <h1 class="text-h2 text-ink">Cartera</h1>
+      <p class="mt-2 max-w-2xl text-sm text-ink-soft">
+        Lo que los mayoristas se llevaron a crédito y todavía no han pagado.
+        Cuando registres un pago aquí, ese dinero entra al cierre de caja de
+        <strong class="font-semibold text-ink">hoy</strong>, no al del día en que
+        salió la mercancía.
+      </p>
+    </div>
+
+    @if (adminApi.carteraError(); as fallo) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4">
+        <p class="text-sm font-semibold text-berry">No se pudo cargar la cartera</p>
+        <p class="mt-1 text-sm text-ink-soft">{{ fallo }}</p>
+      </div>
+    }
+
+    @if (error(); as fallo) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4" role="alert">
+        <p class="text-sm text-ink-soft">{{ fallo }}</p>
+      </div>
+    }
+
+    <!-- Resumen: el total y, aparte, lo que ya está vencido -->
+    <div class="mb-6 flex flex-wrap gap-8">
+      <div>
+        <p class="tabular font-display text-h3 text-ink">{{ adminApi.carteraTotal() | cop }}</p>
+        <p class="text-sm text-ink-soft">por cobrar en total</p>
+      </div>
+      @if (adminApi.carteraVencida() > 0) {
+        <div>
+          <p class="tabular font-display text-h3 text-clay-deep">
+            {{ adminApi.carteraVencida() | cop }}
+          </p>
+          <p class="text-sm text-ink-soft">ya vencido</p>
+        </div>
+      }
+      <div>
+        <p class="tabular font-display text-h3 text-moss">{{ adminApi.cartera().length }}</p>
+        <p class="text-sm text-ink-soft">facturas abiertas</p>
+      </div>
+    </div>
+
+    <!--
+      Filtros por antigüedad. Son pestañas que se apagan al volver a tocarlas:
+      lo normal es mirar un tramo y volver al total, no ir saltando entre ellos.
+    -->
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      @for (tramo of tramos; track tramo.value) {
+        @let cuantos = cuantosEnTramo()[tramo.value] ?? 0;
+        @if (cuantos > 0) {
+          @let activo = tramoActivo() === tramo.value;
+          <button
+            type="button"
+            class="flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm transition-colors duration-200"
+            [class]="
+              activo
+                ? 'border-moss bg-moss font-semibold text-bone'
+                : 'border-sand bg-bone text-ink hover:border-stone hover:bg-linen'
+            "
+            [attr.aria-pressed]="activo"
+            (click)="seleccionarTramo(tramo.value)"
+          >
+            {{ tramo.label }}
+            <span
+              class="tabular rounded-full px-1.5 py-0.5 text-[11px] leading-none"
+              [class]="activo ? 'bg-bone/20 text-bone' : 'bg-sand/60 text-ink-muted'"
+            >
+              {{ cuantos }}
+            </span>
+          </button>
+        }
+      }
+    </div>
+
+    <!-- Buscador -->
+    <div class="mb-6">
+      <label for="buscar-deudor" class="sr-only">Buscar deudor</label>
+      <input
+        id="buscar-deudor"
+        type="search"
+        placeholder="Buscar por cliente, teléfono o referencia…"
+        autocomplete="off"
+        class="w-full rounded-full border border-sand bg-bone px-5 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss sm:max-w-md"
+        [value]="busqueda()"
+        (input)="onBuscar($event)"
+      />
+    </div>
+
+    <!-- Listado -->
+    @if (adminApi.carteraLoading() && adminApi.cartera().length === 0) {
+      <div class="rounded-lg border border-sand bg-bone p-8 text-center">
+        <p class="text-sm text-ink-soft">Cargando cartera…</p>
+      </div>
+    } @else {
+      <ul class="flex flex-col gap-3">
+        @for (deuda of visible(); track deuda.id) {
+          @let vencida = deuda.tramo !== 'corriente';
+
+          <li
+            class="rounded-lg border bg-bone transition-colors duration-200"
+            [class]="vencida ? 'border-clay/40' : 'border-sand'"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="text-sm font-semibold text-ink">{{ deuda.clienteNombre }}</p>
+
+                  <!--
+                    El badge de aviso solo cuando de verdad hay mora. Si se
+                    pintara siempre, dejaría de significar nada.
+                  -->
+                  <span
+                    class="text-overline rounded-full px-2 py-0.5 font-semibold uppercase"
+                    [class]="
+                      vencida
+                        ? 'bg-honey/10 text-clay-deep'
+                        : 'bg-sage-light/60 text-moss-deep'
+                    "
+                  >
+                    {{ plazo(deuda) }}
+                  </span>
+                </div>
+
+                <p class="tabular mt-1.5 text-xs text-ink-muted">
+                  <code>{{ deuda.referencia }}</code> · {{ deuda.clienteTelefono }}
+                  @if (deuda.venceEn) {
+                    · vence {{ deuda.venceEn }}
+                  }
+                </p>
+                <p class="mt-1 truncate text-sm text-ink-soft">{{ deuda.clienteDireccion }}</p>
+              </div>
+
+              <p class="tabular shrink-0 text-lg font-semibold text-ink">
+                {{ deuda.total | cop }}
+              </p>
+
+              <!-- Confirmación en el sitio: registrar un pago no se deshace -->
+              @if (confirmandoId() === deuda.id) {
+                <div class="flex items-center gap-3">
+                  <p class="text-sm text-ink-soft">¿Ya entró el dinero?</p>
+                  <button
+                    type="button"
+                    class="min-h-11 rounded-full bg-moss px-5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:opacity-50"
+                    [disabled]="cobrandoId() === deuda.id"
+                    (click)="cobrar(deuda.id)"
+                  >
+                    {{ cobrandoId() === deuda.id ? 'Registrando…' : 'Sí, registrar' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="text-sm text-ink-soft transition-colors duration-200 hover:text-ink"
+                    (click)="cancelar()"
+                  >
+                    No
+                  </button>
+                </div>
+              } @else {
+                <button
+                  type="button"
+                  class="min-h-11 shrink-0 rounded-full border border-sand px-5 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+                  (click)="preguntar(deuda.id)"
+                >
+                  Registrar pago
+                </button>
+              }
+            </div>
+          </li>
+        } @empty {
+          <li class="rounded-lg border border-sand bg-bone p-8 text-center">
+            @if (adminApi.cartera().length === 0) {
+              <p class="text-sm text-ink-soft">
+                No hay nada fiado ahora mismo. Para vender a crédito, asígnale
+                cupo a la cuenta en Usuarios y luego marca el pedido como
+                crédito desde Pedidos.
+              </p>
+            } @else {
+              <p class="text-sm text-ink-soft">Ninguna deuda coincide con el filtro.</p>
+            }
+          </li>
+        }
+      </ul>
+
+      <!--
+        Solo cuando hay filtro puesto: sin él este número sería el mismo que ya
+        está arriba, y repetirlo haría dudar de si son dos cosas distintas.
+      -->
+      @if (visible().length > 0 && visible().length < adminApi.cartera().length) {
+        <p class="tabular mt-4 text-sm text-ink-soft">
+          {{ visible().length }} de {{ adminApi.cartera().length }} facturas ·
+          <strong class="font-semibold text-ink">{{ totalVisible() | cop }}</strong>
+        </p>
+      }
+    }
+  </div>
+</div>

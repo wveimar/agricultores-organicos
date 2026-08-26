@@ -87,6 +87,14 @@ export const ADMIN_ROUTES: Routes = [
           import('./reports/consolidation-report').then((m) => m.ConsolidationReport),
       },
       {
+        path: 'cartera',
+        // Quien cobra es quien gestiona pedidos: registrar un pago cambia lo
+        // que entra al cierre de caja, no el inventario.
+        canActivate: [roleGuard('GESTOR_PEDIDOS')],
+        title: 'Cartera · Panel',
+        loadComponent: () => import('./portfolio/portfolio').then((m) => m.Portfolio),
+      },
+      {
         path: 'entregas',
         canActivate: [roleGuard('DOMICILIARIO')],
         title: 'Entregas · Panel',

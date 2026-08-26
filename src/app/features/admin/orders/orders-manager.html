@@ -86,6 +86,16 @@
                   Contra entrega
                 </span>
               }
+              <!--
+                El vencimiento va dentro del badge y no en una línea aparte:
+                una deuda sin fecha no dice nada, y es lo primero que se
+                pregunta al ver que un pedido salió fiado.
+              -->
+              @if (order.metodoPago === 'credito') {
+                <span class="text-overline rounded-full bg-honey/10 px-3 py-1 font-semibold uppercase text-clay-deep">
+                  Crédito@if (order.venceEn) { · vence {{ order.venceEn }} }
+                </span>
+              }
             </div>
             <p class="mt-1 truncate text-sm text-ink-soft">
               {{ order.clienteNombre }} · {{ order.clienteDireccion }}
@@ -155,8 +165,38 @@
                 >
                   {{ isWorking ? 'Enviando…' : 'Marcar enviado' }}
                 </button>
+
+                <!--
+                  Solo si aún no es crédito. El Worker vuelve a comprobar cupo
+                  y cuenta: este botón puede fallar con un mensaje explicando
+                  cuánto le queda libre al mayorista.
+                -->
+                @if (order.metodoPago !== 'credito') {
+                  <button
+                    type="button"
+                    class="rounded-full border border-sand px-5 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-clay hover:text-clay-deep disabled:cursor-not-allowed disabled:opacity-60"
+                    [disabled]="isWorking"
+                    (click)="grantCredit(order)"
+                  >
+                    {{ isWorking ? 'Fiando…' : 'Pasar a crédito' }}
+                  </button>
+                }
               }
               @case ('enviado') {
+                <!--
+                  Fiar sigue siendo posible con el pedido ya en la calle: pasa
+                  cuando el mayorista pide plazo después de que salió el camión.
+                -->
+                @if (order.metodoPago !== 'credito') {
+                  <button
+                    type="button"
+                    class="rounded-full border border-sand px-5 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-clay hover:text-clay-deep disabled:cursor-not-allowed disabled:opacity-60"
+                    [disabled]="isWorking"
+                    (click)="grantCredit(order)"
+                  >
+                    {{ isWorking ? 'Fiando…' : 'Pasar a crédito' }}
+                  </button>
+                }
                 <!--
                   Respaldo admin: normalmente lo marca el propio domiciliario
                   desde /admin/entregas, sin pasar por este panel.

@@ -196,6 +196,18 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return orders.markPaid(env, user, payMatch[1]);
     }
 
+    // Aparte de /pagar: solo GESTOR_PEDIDOS, y desde 'aprobado' o 'enviado'.
+    // El porqué, en collectCredit().
+    const grantMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/credito$/);
+    if (grantMatch && method === 'POST') {
+      return orders.grantCredit(env, user, grantMatch[1]);
+    }
+
+    const collectMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/recaudar$/);
+    if (collectMatch && method === 'POST') {
+      return orders.collectCredit(env, user, collectMatch[1]);
+    }
+
     const settleMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/liquidar$/);
     if (settleMatch && method === 'POST') {
       return orders.settleCash(env, user, settleMatch[1]);
@@ -267,6 +279,9 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (pathname === '/api/admin/reports/cod-pendiente' && method === 'GET') {
       return reports.codPending(env, user);
+    }
+    if (pathname === '/api/admin/reports/cartera' && method === 'GET') {
+      return reports.cartera(env, user);
     }
     if (pathname === '/api/admin/reports/closings' && method === 'GET') {
       return reports.closings(env, user);

@@ -57,37 +57,84 @@
       </p>
     </div>
 
-    <!-- Chips de categoría: scroll en móvil, wrap en escritorio -->
-    <div
-      class="no-scrollbar -mx-6 flex snap-x snap-mandatory gap-1.5 overflow-x-auto px-6 lg:mx-0 lg:flex-wrap lg:gap-2 lg:px-0"
-      role="tablist"
-      aria-label="Filtrar por categoría"
-    >
-      @for (category of catalog.visibleCategories(); track category.id) {
-        @let isActive = catalog.activeCategory() === category.id;
+    <!--
+      Chips de categoría: scroll en móvil, wrap en escritorio.
 
-        <button
-          type="button"
-          role="tab"
-          [attr.aria-selected]="isActive"
-          class="group flex shrink-0 snap-start items-center gap-1.5 rounded-full border px-3 py-2 text-xs transition-all duration-300 ease-[cubic-bezier(.22,1,.36,1)] sm:px-4 sm:py-2.5 sm:text-sm lg:gap-2"
-          [class]="
-            isActive
-              ? 'border-moss bg-moss text-bone'
-              : 'border-sand bg-transparent text-ink-soft hover:border-stone hover:bg-linen'
-          "
-          (click)="select(category.id)"
-        >
-          {{ category.name }}
-          <!-- El contador se atenúa en reposo y gana contraste al activarse -->
-          <span
-            class="tabular rounded-full px-1 py-0.5 text-[10px] leading-none transition-colors duration-300 sm:px-1.5 sm:text-[11px]"
-            [class]="isActive ? 'bg-bone/20 text-bone' : 'bg-sand/60 text-ink-muted'"
+      El envoltorio existe solo para colgar de él el desvanecido del borde: un
+      absoluto dentro del propio contenedor con scroll viajaría con los chips
+      en vez de quedarse pegado al borde de la pantalla.
+    -->
+    <div class="relative -mx-6 lg:mx-0">
+      <div
+        #chips
+        class="no-scrollbar flex w-full snap-x snap-mandatory gap-2 overflow-x-auto px-6 py-1 lg:flex-wrap lg:gap-2.5 lg:px-0"
+        role="tablist"
+        aria-label="Filtrar por categoría"
+      >
+        @for (category of catalog.visibleCategories(); track category.id) {
+          @let isActive = catalog.activeCategory() === category.id;
+
+          <!--
+            En móvil el chip es un disco de 44 px con solo la silueta. El
+            nombre y el contador se llevaban unos 120 px cada uno y dejaban ver
+            dos categorías por pantalla; ahora se ven seis o siete de diez.
+            Desde md vuelve a ser una píldora con texto, que ahí sobra sitio.
+
+            El nombre no se esconde con `hidden` sino con `sr-only`: la silueta
+            es `aria-hidden`, así que con `hidden` el botón se quedaría **sin
+            nombre accesible** y un lector de pantalla anunciaría diez botones
+            vacíos. Así se sigue oyendo «Verduras y raíces, 12» aunque no se
+            lea, y `md:not-sr-only` lo devuelve al flujo. Igual el contador.
+
+            `size-11` = 44 px: el mínimo táctil, y a la vez lo que decide
+            cuántos caben. Diez no caben a ningún tamaño que se pueda tocar.
+
+            `data-category` lo lee el efecto que trae a la vista el chip
+            activo; ver `category-filter.ts`. Con solo siluetas ese efecto deja
+            de ser comodidad: el disco activo es la única señal de dónde estás,
+            y fuera de pantalla no hay ninguna.
+          -->
+          <button
+            type="button"
+            role="tab"
+            [attr.aria-selected]="isActive"
+            [attr.data-category]="category.id"
+            class="group flex size-11 shrink-0 snap-start items-center justify-center whitespace-nowrap rounded-full border transition-all duration-300 ease-[cubic-bezier(.22,1,.36,1)] md:size-auto md:justify-start md:gap-2 md:px-4 md:py-2.5 md:text-sm"
+            [class]="
+              isActive
+                ? 'border-moss bg-moss font-semibold text-bone'
+                : 'border-sage/60 bg-bone text-ink hover:border-sage hover:bg-linen'
+            "
+            (click)="select(category.id)"
           >
-            {{ catalog.counts()[category.id] ?? 0 }}
-          </span>
-        </button>
-      }
+            <!--
+              La silueta se tiñe sola: dibuja con `currentColor`, así que pasa
+              a hueso al activarse el chip sin una clase condicional más.
+            -->
+            <app-category-icon [name]="category.icon" svgClass="size-6 shrink-0 md:size-4" />
+
+            <span class="sr-only md:not-sr-only">{{ category.name }}</span>
+
+            <!-- El contador se atenúa en reposo y gana contraste al activarse -->
+            <span
+              class="tabular sr-only rounded-full px-1.5 py-0.5 leading-none transition-colors duration-300 md:not-sr-only md:text-xs"
+              [class]="isActive ? 'bg-bone/20 text-bone' : 'bg-sand/60 text-ink-muted'"
+            >
+              {{ catalog.counts()[category.id] ?? 0 }}
+            </span>
+          </button>
+        }
+      </div>
+
+      <!--
+        Desvanecido en el borde derecho: la pista de que la fila sigue. Sin él
+        el último chip queda cortado a hueso contra el borde y parece el final
+        de la lista. En escritorio sobra, ahí los chips hacen wrap.
+      -->
+      <div
+        class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-bone lg:hidden"
+        aria-hidden="true"
+      ></div>
     </div>
   </div>
 </div>

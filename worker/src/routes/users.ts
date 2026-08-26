@@ -10,6 +10,7 @@ import { hashPassword, verifyPassword } from '../auth/crypto';
  */
 const USER_COLUMNS = `
   u.id, u.email, u.nombre, u.activo, u.creado_en AS creadoEn,
+  u.cupo_credito AS cupoCredito, u.dias_credito AS diasCredito,
   (SELECT group_concat(r.role) FROM user_roles r WHERE r.user_id = u.id) AS roles
 `;
 
@@ -23,6 +24,8 @@ interface UserRow {
   activo: number;
   creadoEn: string;
   roles: string | null;
+  cupoCredito: number;
+  diasCredito: number;
 }
 
 const toUser = (row: UserRow) => ({
@@ -32,6 +35,10 @@ const toUser = (row: UserRow) => ({
   activo: row.activo,
   creadoEn: row.creadoEn,
   roles: (row.roles?.split(',') ?? []) as UserRole[],
+  // Cuánto se le puede fiar y a cuántos días. 0 = esta cuenta no compra a
+  // crédito, que es como nacen todas.
+  cupoCredito: row.cupoCredito,
+  diasCredito: row.diasCredito,
 });
 
 function validarPassword(value: unknown, campo: string): string {
@@ -152,6 +159,23 @@ interface UpdateBody {
   password?: unknown;
   roles?: unknown;
   activo?: unknown;
+  cupoCredito?: unknown;
+  diasCredito?: unknown;
+}
+
+/**
+ * Un entero de dinero o de días, nunca negativo.
+ *
+ * Se valida aquí y no solo con el CHECK de la tabla porque `Number('hola')`
+ * es NaN, y SQLite guardaría eso como NULL rompiendo el NOT NULL con un error
+ * que no dice nada útil. Así el mensaje nombra el campo.
+ */
+function readEnteroNoNegativo(value: unknown, campo: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) {
+    throw ApiError.badRequest(`${campo}-invalido`, `El campo "${campo}" debe ser un entero de 0 o más.`);
+  }
+  return n;
 }
 
 /** PATCH /api/admin/users/:id — nombre, contraseña, roles o alta/baja. */
@@ -193,6 +217,16 @@ export async function update(
 
   if (body.password !== undefined) {
     push('password_hash', await hashPassword(validarPassword(body.password, 'password')));
+  }
+
+  // Cupo 0 = esta cuenta no compra a crédito. Es el valor con el que nacen
+  // todas, así que conceder crédito es siempre un acto explícito de alguien.
+  if (body.cupoCredito !== undefined) {
+    push('cupo_credito', readEnteroNoNegativo(body.cupoCredito, 'cupoCredito'));
+  }
+
+  if (body.diasCredito !== undefined) {
+    push('dias_credito', readEnteroNoNegativo(body.diasCredito, 'diasCredito'));
   }
 
   if (body.activo !== undefined) {

@@ -18,6 +18,10 @@ export interface ApiUser {
   readonly activo: number;
   readonly creadoEn: string;
   readonly roles: readonly UserRole[];
+  /** Cuánto se le puede fiar, en pesos. 0 = esta cuenta no compra a crédito. */
+  readonly cupoCredito: number;
+  /** A cuántos días vence lo que se le fía. */
+  readonly diasCredito: number;
 }
 
 /** Forma estable de los errores del Worker: `{ error: { code, message, details } }`. */
@@ -63,6 +67,12 @@ export interface ApiCategory {
   readonly id: string;
   readonly nombre: string;
   readonly descripcion: string;
+  /**
+   * Clave de la silueta del chip: 'hoja', 'panal', 'espiga'… El repertorio
+   * vive en `CategoryIcon`; aquí solo viaja cuál le toca. Vacío = la de por
+   * defecto, que es lo que trae una categoría recién creada.
+   */
+  readonly icono: string;
   readonly grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
   /** Posición del chip. Menor va antes. */
   readonly orden: number;
@@ -239,9 +249,14 @@ export interface ApiOrder {
    */
   readonly tieneComprobante?: number | null;
   readonly aprobadoEn?: string | null;
-  readonly metodoPago: 'transferencia' | 'contraentrega';
+  readonly metodoPago: 'transferencia' | 'contraentrega' | 'credito';
   /** Solo importa para contra entrega — ver la migración 0015. */
   readonly efectivoLiquidado: number;
+  /**
+   * Cuándo vence la deuda. Solo en 'credito'; `null` en el resto, donde no
+   * hay nada que vencer porque el dinero ya entró o se cobra en la puerta.
+   */
+  readonly venceEn: string | null;
   readonly closingId: string | null;
   readonly creadoEn: string;
   readonly items: readonly ApiOrderItem[];
@@ -431,6 +446,28 @@ export interface ApiClosing {
   readonly totalRecaudado: number;
 }
 
+/**
+ * Una deuda viva de un mayorista: pedido a crédito entregado y sin pagar.
+ *
+ * `diasVencido` y `tramo` los calcula el Worker contra el reloj de la base,
+ * no el navegador: si los calculara cada cliente, dos personas en husos
+ * distintos verían vencida la misma factura en días distintos.
+ */
+export interface ApiCarteraRow {
+  readonly id: string;
+  readonly referencia: string;
+  readonly clienteNombre: string;
+  readonly clienteTelefono: string;
+  readonly clienteDireccion: string;
+  readonly total: number;
+  readonly venceEn: string | null;
+  readonly creadoEn: string;
+  readonly estado: string;
+  /** Negativo = aún no vence. Positivo = días de mora. `null` = sin fecha. */
+  readonly diasVencido: number | null;
+  readonly tramo: 'corriente' | '30' | '60' | '90';
+}
+
 /** Efectivo contra entrega ya cobrado por un domiciliario, pendiente de liquidar. */
 export interface ApiCodPending {
   readonly id: string;
@@ -558,6 +595,7 @@ export class ApiClient {
     /** Se deduce del nombre si no se manda. */
     id?: string;
     descripcion?: string;
+    icono?: string;
     grupoAdmin?: 'frutas' | 'verduras' | 'agroindustriales';
     orden?: number;
     activo?: 0 | 1;
@@ -573,6 +611,7 @@ export class ApiClient {
     patch: Partial<{
       nombre: string;
       descripcion: string;
+      icono: string;
       grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
       orden: number;
       activo: 0 | 1;
@@ -723,7 +762,13 @@ export class ApiClient {
     comprobanteNombre?: string;
     /** Data URL del comprobante ya comprimido (ver `shared/utils/image-file.ts`). */
     comprobanteUrl?: string;
-    /** Se omite en transferencia: 'transferencia' es el default del servidor. */
+    /**
+     * Se omite en transferencia: 'transferencia' es el default del servidor.
+     *
+     * 'credito' no cabe aquí a propósito: fiar es una decisión del panel sobre
+     * una cuenta con cupo, no algo que se elija en el checkout. El Worker lo
+     * vuelve a comprobar con lista blanca por si alguien llama a la API a mano.
+     */
     metodoPago?: 'transferencia' | 'contraentrega';
   }): Observable<ApiOrder> {
     return this.http
@@ -778,6 +823,29 @@ export class ApiClient {
   markOrderPaid(id: string): Observable<ApiOrder> {
     return this.http
       .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/pagar`, {})
+      .pipe(map((res) => res.order), catchError(handleError));
+  }
+
+  /**
+   * Fía este pedido al mayorista que lo hizo. El Worker comprueba el cupo y
+   * calcula el vencimiento con el plazo de esa cuenta.
+   */
+  grantCredit(id: string): Observable<ApiOrder> {
+    return this.http
+      .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/credito`, {})
+      .pipe(map((res) => res.order), catchError(handleError));
+  }
+
+  /**
+   * El mayorista pagó lo que debía.
+   *
+   * Endpoint propio y no `markOrderPaid`: a ese llega un DOMICILIARIO, que no
+   * puede certificar una transferencia que no presenció. Ver collectCredit()
+   * en el Worker.
+   */
+  collectCredit(id: string): Observable<ApiOrder> {
+    return this.http
+      .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/recaudar`, {})
       .pipe(map((res) => res.order), catchError(handleError));
   }
 
@@ -946,6 +1014,13 @@ export class ApiClient {
     return this.http
       .get<{ orders: ApiClosingOrder[] }>(`/api/admin/reports/closings/${id}/pedidos`)
       .pipe(map((res) => res.orders), catchError(handleError));
+  }
+
+  /** Lo que los mayoristas deben, con su antigüedad ya calculada por el Worker. */
+  cartera(): Observable<readonly ApiCarteraRow[]> {
+    return this.http
+      .get<{ deudores: ApiCarteraRow[] }>('/api/admin/reports/cartera')
+      .pipe(map((res) => res.deudores), catchError(handleError));
   }
 
   /** Efectivo contra entrega ya cobrado, esperando que un admin lo liquide. */

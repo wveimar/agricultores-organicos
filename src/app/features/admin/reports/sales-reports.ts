@@ -70,6 +70,9 @@ export class SalesReports {
     this.adminApi.loadCashSummary();
     this.adminApi.loadClosings();
     this.adminApi.loadCodPending();
+    // Para el contador «En cartera» de los KPIs: lo fiado que aún no ha
+    // entrado, al lado de lo que sí entró.
+    this.adminApi.loadCartera();
   }
 
   protected readonly settlingId = signal<string | null>(null);

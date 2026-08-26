@@ -448,6 +448,52 @@
               </div>
             </div>
 
+            <!--
+              Cupo de crédito. Va después del correo y antes de los roles a
+              propósito: se rellena justo cuando se marca la casilla de
+              mayorista, y tenerlo debajo obligaría a bajar y volver a subir.
+
+              Cupo 0 es el estado normal y significa que esta cuenta paga
+              siempre por adelantado. Solo con cupo > 0 se le puede fiar.
+            -->
+            <fieldset class="mt-4 rounded-md border border-sand p-4">
+              <legend class="px-1 text-sm font-medium text-ink">Crédito</legend>
+              <p class="mt-0.5 text-xs text-ink-muted">
+                Cuánto se le puede fiar y a cuántos días vence. Déjalo en 0 si
+                esta cuenta paga siempre por adelantado.
+              </p>
+
+              <div class="mt-3 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label [for]="'cupo-' + user.id" class="block text-sm text-ink-soft">
+                    Cupo en pesos
+                  </label>
+                  <input
+                    [id]="'cupo-' + user.id"
+                    type="number"
+                    formControlName="cupoCredito"
+                    min="0"
+                    step="10000"
+                    class="tabular mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+                  />
+                </div>
+
+                <div>
+                  <label [for]="'plazo-' + user.id" class="block text-sm text-ink-soft">
+                    Plazo en días
+                  </label>
+                  <input
+                    [id]="'plazo-' + user.id"
+                    type="number"
+                    formControlName="diasCredito"
+                    min="0"
+                    step="15"
+                    class="tabular mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+                  />
+                </div>
+              </div>
+            </fieldset>
+
             @for (group of roleGroups; track group.key) {
               <fieldset class="mt-4">
                 <legend class="text-sm font-medium text-ink">{{ group.title }}</legend>

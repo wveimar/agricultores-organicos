@@ -148,6 +148,15 @@
               </form>
             } @else {
               <div class="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
+                <!-- La silueta tal cual se ve en la tienda, para reconocer la fila de un vistazo -->
+                <span
+                  class="flex size-10 shrink-0 items-center justify-center rounded-full border border-sand"
+                  [class]="apagada ? 'bg-linen/50 text-ink-muted' : 'bg-linen text-moss'"
+                  aria-hidden="true"
+                >
+                  <app-category-icon [name]="categoria.icono" svgClass="size-5" />
+                </span>
+
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center gap-2">
                     <p class="text-sm font-semibold" [class]="apagada ? 'text-ink-muted' : 'text-ink'">
@@ -298,6 +307,36 @@
       />
       <p class="mt-2 text-sm text-ink-soft">
         Se lee bajo el título de la rejilla cuando el cliente elige esta sección.
+      </p>
+    </div>
+
+    <!--
+      La silueta del chip. Va con vista previa al lado porque el nombre de la
+      lista («Panal», «Frasco») no dice gran cosa hasta que se ve dibujado.
+    -->
+    <div class="sm:col-span-2">
+      <label for="cat-icono" class="block text-sm font-semibold text-ink">Ícono del chip</label>
+      <div class="mt-2 flex items-center gap-3">
+        <span
+          class="flex size-11 shrink-0 items-center justify-center rounded-full border border-sand bg-linen text-moss"
+          aria-hidden="true"
+        >
+          <app-category-icon [name]="form.controls.icono.value" svgClass="size-5" />
+        </span>
+        <select
+          id="cat-icono"
+          formControlName="icono"
+          class="w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+        >
+          <option value="">Por defecto (hoja)</option>
+          @for (icono of iconos; track icono.value) {
+            <option [value]="icono.value">{{ icono.label }}</option>
+          }
+        </select>
+      </div>
+      <p class="mt-2 text-sm text-ink-soft">
+        Acompaña al nombre en la barra de la tienda. Se dibuja en un solo color
+        y toma el del chip, así que ninguna elección desentona.
       </p>
     </div>
 

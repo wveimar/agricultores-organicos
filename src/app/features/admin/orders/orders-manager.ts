@@ -278,6 +278,37 @@ export class OrdersManager {
   }
 
   /** Respaldo admin: normalmente lo marca el domiciliario desde /admin/entregas. */
+  /**
+   * Pasa el pedido a crédito: el mayorista se lo lleva y paga al vencimiento.
+   *
+   * Puede fallar por cupo, y el mensaje del Worker dice cuánto le queda libre
+   * — se muestra tal cual porque es exactamente lo que hay que saber para
+   * decidir si se le fía igual una parte o se le cobra ya.
+   *
+   * El cobro NO se hace desde aquí sino desde /admin/cartera, que es donde se
+   * ve la deuda completa del cliente y no un pedido suelto.
+   */
+  protected grantCredit(order: ApiOrder): void {
+    this.workingId.set(order.id);
+
+    this.adminApi.grantCredit(order.id).subscribe({
+      next: (actualizado) => {
+        this.workingId.set(null);
+        this.feedback.set(
+          `${order.referencia} pasa a crédito` +
+            (actualizado.venceEn ? `, vence el ${actualizado.venceEn}.` : '.'),
+        );
+        if (this.expandedId() === order.id) {
+          this.loadHistory(order.id);
+        }
+      },
+      error: (error: ApiErrorBody) => {
+        this.workingId.set(null);
+        this.feedback.set(error.message);
+      },
+    });
+  }
+
   protected markPaid(order: ApiOrder): void {
     this.workingId.set(order.id);
 

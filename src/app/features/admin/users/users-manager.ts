@@ -237,6 +237,10 @@ export class UsersManager {
     nombre: ['', [Validators.required, Validators.minLength(3)]],
     email: ['', [Validators.required, Validators.email]],
     roles: this.fb.nonNullable.control<UserRole[]>([], [Validators.required]),
+    // Sin validadores: 0 es válido y significa «no compra a crédito», que es
+    // como nace toda cuenta. El Worker rechaza los negativos.
+    cupoCredito: [0, [Validators.min(0)]],
+    diasCredito: [0, [Validators.min(0)]],
   });
 
   protected startEdit(user: ApiUser): void {
@@ -248,6 +252,9 @@ export class UsersManager {
       nombre: user.nombre,
       email: user.email,
       roles: [...user.roles],
+      // `?? 0` por si la fila viene de un Worker sin la 0017 desplegada.
+      cupoCredito: user.cupoCredito ?? 0,
+      diasCredito: user.diasCredito ?? 0,
     });
   }
 
@@ -282,14 +289,22 @@ export class UsersManager {
 
     this.resetError.set(null);
     this.savingId.set(user.id);
-    const { nombre, email, roles } = this.editForm.getRawValue();
+    const { nombre, email, roles, cupoCredito, diasCredito } = this.editForm.getRawValue();
 
     // Solo se envía lo que cambió: así el servidor no rehace trabajo, y un
     // guardado sin cambios devuelve "sin-cambios" en vez de tocar la fila.
-    const patch: { nombre?: string; email?: string; roles?: UserRole[] } = {};
+    const patch: {
+      nombre?: string;
+      email?: string;
+      roles?: UserRole[];
+      cupoCredito?: number;
+      diasCredito?: number;
+    } = {};
     if (nombre.trim() !== user.nombre) patch.nombre = nombre.trim();
     if (email.trim().toLowerCase() !== user.email) patch.email = email.trim().toLowerCase();
     if (roles.join() !== [...user.roles].join()) patch.roles = roles;
+    if (cupoCredito !== (user.cupoCredito ?? 0)) patch.cupoCredito = cupoCredito;
+    if (diasCredito !== (user.diasCredito ?? 0)) patch.diasCredito = diasCredito;
 
     if (Object.keys(patch).length === 0) {
       this.savingId.set(null);

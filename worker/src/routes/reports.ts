@@ -37,7 +37,15 @@ const COLOMBIA_OFFSET = '-5 hours';
  * entrega: el domiciliario puede tener el efectivo en el bolsillo sin que
  * haya llegado a la finca todavía, así que no cuenta hasta 'pago' **y**
  * liquidado — dos condiciones, no una (ver la migración 0015 para el porqué
- * de que sean dos pasos separados).
+ * de que sean dos pasos separados). Crédito: es fiado, así que no cuenta
+ * hasta que el mayorista paga; entonces basta 'pago', porque paga por
+ * transferencia y no hay efectivo de nadie que liquidar (migración 0017).
+ *
+ * De ahí sale la propiedad que hace cuadrar la cartera: mientras la deuda
+ * vive, el pedido no encaja en ninguna rama, así que ningún cierre lo barre y
+ * su closing_id sigue nulo. Al marcarse 'pago' pasa a encajar y lo recoge el
+ * **siguiente** cierre — el dinero aparece en la jornada en que de verdad
+ * entró, no en aquella en que salió la mercancía.
  *
  * Aparece en sales(), cashSummary() y closeCash() (esta última dos veces: lo
  * que se suma para el recibo y lo que se archiva con closing_id). Las cuatro
@@ -50,6 +58,7 @@ const COLOMBIA_OFFSET = '-5 hours';
 const RECAUDADO_WHERE = `(
          (o.metodo_pago = 'transferencia' AND o.estado IN ('aprobado', 'enviado'))
          OR (o.metodo_pago = 'contraentrega' AND o.estado = 'pago' AND o.efectivo_liquidado = 1)
+         OR (o.metodo_pago = 'credito' AND o.estado = 'pago')
        ) AND o.closing_id IS NULL`;
 
 /** `YYYY-MM-DD` y nada más: lo que entra va directo a `datetime()` de SQLite. */
@@ -238,6 +247,62 @@ export async function codPending(env: Env, user: JwtPayload): Promise<Response> 
   ).all();
 
   return json({ pendientes: results });
+}
+
+/**
+ * GET /api/admin/reports/cartera — lo que los mayoristas deben.
+ *
+ * Un pedido a crédito aprobado o enviado y todavía sin 'pago' es una deuda
+ * viva. Los 'cancelado' quedan fuera solos: nadie debe por mercancía que no
+ * salió.
+ *
+ * ── La antigüedad se calcula aquí, no en el front ──
+ *
+ * `diasVencido` sale de SQLite y no de `new Date()` en Angular porque el
+ * navegador de quien mira puede estar en otra zona horaria o con el reloj
+ * corrido, y entonces dos personas verían vencimientos distintos para la
+ * misma factura. La base es una sola y su 'now' también.
+ *
+ * Negativo = aún no vence (faltan tantos días). Positivo = mora. `vence_en`
+ * puede ser NULL en un crédito antiguo dado antes de la 0017: se ordena al
+ * final en vez de tratarse como vencido hace medio siglo.
+ *
+ * El tramo ('corriente' / '30' / '60' / '90') se decide también aquí para que
+ * el total por tramo y la fila individual no puedan discrepar nunca: son la
+ * misma expresión evaluada una vez.
+ */
+export async function cartera(env: Env, user: JwtPayload): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  // `julianday` en vez de restar textos: son fechas ISO y la diferencia tiene
+  // que ser en días reales, cruzando meses y años. Se trunca con CAST a
+  // entero — un vencimiento a medio día no es «0,4 días de mora».
+  const DIAS = `CAST(julianday('now', '${COLOMBIA_OFFSET}') - julianday(o.vence_en) AS INTEGER)`;
+
+  const { results } = await env.DB.prepare(
+    `SELECT o.id,
+            o.referencia,
+            o.cliente_nombre    AS clienteNombre,
+            o.cliente_telefono  AS clienteTelefono,
+            o.cliente_direccion AS clienteDireccion,
+            o.total,
+            o.vence_en          AS venceEn,
+            o.creado_en         AS creadoEn,
+            o.estado,
+            CASE WHEN o.vence_en IS NULL THEN NULL ELSE ${DIAS} END AS diasVencido,
+            CASE
+              WHEN o.vence_en IS NULL THEN 'corriente'
+              WHEN ${DIAS} <= 0  THEN 'corriente'
+              WHEN ${DIAS} <= 30 THEN '30'
+              WHEN ${DIAS} <= 60 THEN '60'
+              ELSE '90'
+            END AS tramo
+       FROM orders o
+      WHERE o.metodo_pago = 'credito' AND o.estado IN ('aprobado', 'enviado')
+      ORDER BY o.vence_en IS NULL, o.vence_en ASC`,
+  ).all();
+
+  return json({ deudores: results });
 }
 
 /**

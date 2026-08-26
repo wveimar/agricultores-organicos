@@ -25,6 +25,9 @@ export class CatalogService {
     id: 'todos',
     name: 'Todo el huerto',
     description: 'Cosechado esta semana por familias campesinas.',
+    // El único ícono que sí puede estar en código: este chip tampoco es una
+    // fila, así que no hay panel donde elegírselo.
+    icon: 'brote',
   };
 
   private readonly loadedCategories = signal<readonly Category[]>([]);
@@ -111,6 +114,10 @@ export class CatalogService {
       id: row.id,
       name: row.nombre,
       description: row.descripcion,
+      // `?? ''` y no `row.icono` a secas: un Worker sin desplegar todavía la
+      // 0016 devolvería filas sin el campo, y la vitrina tiene que seguir
+      // pintando chips —sin ícono— en vez de quedarse en blanco.
+      icon: row.icono ?? '',
       adminGroup: row.grupoAdmin,
     };
   }
