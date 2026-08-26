@@ -65,6 +65,8 @@
     "db:migrate:icono-categorias:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0016_icono_categorias.sql",
     "db:migrate:credito": "wrangler d1 execute DB --local --file=worker/migrations/0017_credito_mayoristas.sql",
     "db:migrate:credito:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0017_credito_mayoristas.sql",
+    "db:migrate:entrega-confirmada": "wrangler d1 execute DB --local --file=worker/migrations/0018_entrega_confirmada.sql",
+    "db:migrate:entrega-confirmada:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0018_entrega_confirmada.sql",
     "qa:credito": "node worker/tests/qa-credito.mjs"
   },
   "private": true,

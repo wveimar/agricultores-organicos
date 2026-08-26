@@ -18,8 +18,11 @@ import {
 import {
   ORDER_LOG_LABELS,
   ORDER_STATUS_LABELS,
+  OrderAction,
+  OrderActionOption,
   OrderLogEvent,
   OrderStatus,
+  availableActions,
   isCancelable,
   isEditable,
 } from '../../../core/models/order.model';
@@ -157,6 +160,82 @@ export class OrdersManager {
 
   protected units(order: ApiOrder): number {
     return order.items.reduce((sum, item) => sum + item.cantidad, 0);
+  }
+
+  // ─────────────────────── Menú de cambio de estado ───────────────────────
+
+  /**
+   * Qué admite este pedido ahora mismo. Se delega al modelo en vez de
+   * resolverlo aquí porque tener las reglas en un solo sitio es lo que permite
+   * compararlas de un vistazo con las guardias del Worker cuando alguna
+   * cambie.
+   */
+  private actionsFor(order: ApiOrder): readonly OrderActionOption[] {
+    return availableActions({
+      status: order.estado as OrderStatus,
+      metodoPago: order.metodoPago,
+      efectivoLiquidado: order.efectivoLiquidado,
+    });
+  }
+
+  /**
+   * El paso normal: aprobar, enviar, cobrar. Van separadas de `undoFor()` en
+   * el menú porque un `<select>` no admite el matiz que daban los botones
+   * —sólido para la acción habitual, discreto y rojo para la que no tiene
+   * vuelta atrás—, y un `<optgroup>` es lo más parecido que hay.
+   */
+  protected stepsFor(order: ApiOrder): readonly OrderActionOption[] {
+    return this.actionsFor(order).filter((option) => !option.destructive);
+  }
+
+  /** Cancelar y rechazar entrega: devuelven stock y anulan la venta. */
+  protected undoFor(order: ApiOrder): readonly OrderActionOption[] {
+    return this.actionsFor(order).filter((option) => option.destructive);
+  }
+
+  /**
+   * Despacha lo elegido en el desplegable.
+   *
+   * El `<select>` se devuelve al placeholder —la etiqueta del estado actual—
+   * antes de disparar nada. Si no, una acción que falla (409 por carrera, cupo
+   * de crédito agotado) dejaría el menú mostrando un estado al que el pedido
+   * nunca llegó, que es justo la mentira que este panel no puede contar. La
+   * etiqueta real la repinta la señal de `adminApi.orders()` al confirmar el
+   * servidor.
+   */
+  protected onActionSelect(order: ApiOrder, event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    const action = select.value as OrderAction | '';
+    select.value = '';
+
+    if (!action) {
+      return;
+    }
+
+    switch (action) {
+      case 'aprobar':
+        this.approve(order);
+        return;
+      case 'enviar':
+        this.ship(order);
+        return;
+      case 'pagar':
+        this.markPaid(order);
+        return;
+      case 'liquidar':
+        this.settleCash(order);
+        return;
+      case 'credito':
+        this.grantCredit(order);
+        return;
+      // Las dos destructivas no ejecutan nada: abren su confirmación con motivo.
+      case 'cancelar':
+        this.askCancel(order);
+        return;
+      case 'rechazar':
+        this.askRejectDelivery(order);
+        return;
+    }
   }
 
 

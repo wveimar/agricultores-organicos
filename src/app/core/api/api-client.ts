@@ -262,7 +262,13 @@ export interface ApiOrder {
   readonly items: readonly ApiOrderItem[];
 }
 
-/** Un pedido contra entrega listo para cobrar, tal como lo ve un domiciliario. */
+/**
+ * Un pedido 'enviado' pendiente en la calle, tal como lo ve un domiciliario.
+ *
+ * `metodoPago` decide qué le falta: a un contra entrega hay que cobrarle
+ * (`markOrderPaid`), a cualquier otro solo confirmarle la entrega
+ * (`confirmDelivery`) — no trae nada que cobrar.
+ */
 export interface ApiDelivery {
   readonly id: string;
   readonly referencia: string;
@@ -271,6 +277,7 @@ export interface ApiDelivery {
   readonly clienteDireccion: string;
   readonly total: number;
   readonly creadoEn: string;
+  readonly metodoPago: 'transferencia' | 'contraentrega' | 'credito';
   readonly items: readonly {
     readonly productoNombre: string;
     readonly precioUnitario: number;
@@ -823,6 +830,17 @@ export class ApiClient {
   markOrderPaid(id: string): Observable<ApiOrder> {
     return this.http
       .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/pagar`, {})
+      .pipe(map((res) => res.order), catchError(handleError));
+  }
+
+  /**
+   * El domiciliario confirma que entregó un pedido que NO es contra entrega
+   * (ya venía pagado por transferencia). No hay nada que cobrar, así que a
+   * diferencia de `markOrderPaid` esto no mueve `estado`, solo anota cuándo.
+   */
+  confirmDelivery(id: string): Observable<ApiOrder> {
+    return this.http
+      .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/entregar`, {})
       .pipe(map((res) => res.order), catchError(handleError));
   }
 

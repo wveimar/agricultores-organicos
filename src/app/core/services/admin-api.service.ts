@@ -485,6 +485,21 @@ export class AdminApiService {
     );
   }
 
+  /**
+   * El domiciliario confirma que entregó un pedido que no es contra entrega.
+   * No hay nada que cobrar ni recaudar: solo actualiza la lista de escritorio
+   * por si `entregadoEn` llega a mostrarse ahí. La lista de entregas la
+   * refresca el propio componente con `loadDeliveries()`, igual que hace
+   * `markOrderPaid` desde la pantalla del domiciliario.
+   */
+  confirmDelivery(id: string): Observable<ApiOrder> {
+    return this.api.confirmDelivery(id).pipe(
+      tap((updated) => {
+        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+      }),
+    );
+  }
+
   /** Fía un pedido al mayorista que lo hizo. El Worker valida cupo y plazo. */
   grantCredit(id: string): Observable<ApiOrder> {
     return this.api.grantCredit(id).pipe(

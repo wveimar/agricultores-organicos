@@ -196,6 +196,13 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return orders.markPaid(env, user, payMatch[1]);
     }
 
+    // Equivalente de /pagar para lo que no es contra entrega: no hay nada que
+    // cobrar, solo confirmar que el domiciliario tocó la puerta.
+    const deliverMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/entregar$/);
+    if (deliverMatch && method === 'POST') {
+      return orders.confirmDelivery(env, user, deliverMatch[1]);
+    }
+
     // Aparte de /pagar: solo GESTOR_PEDIDOS, y desde 'aprobado' o 'enviado'.
     // El porqué, en collectCredit().
     const grantMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/credito$/);

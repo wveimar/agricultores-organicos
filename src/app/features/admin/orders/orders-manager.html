@@ -120,9 +120,9 @@
             </button>
 
             <!--
-              No compite con "Detalle": lo abre si hace falta. Vive junto a
-              Aprobar/Cancelar porque, igual que ellas, cambia algo del
-              pedido — a diferencia de "Detalle", que solo lo muestra.
+              No compite con "Detalle": lo abre si hace falta. Vive junto al
+              menú de acciones porque, igual que él, cambia algo del pedido —
+              a diferencia de "Detalle", que solo lo muestra.
             -->
             @if (canEditItems(order) && editingId() !== order.id) {
               <button
@@ -135,128 +135,72 @@
               </button>
             }
 
-            @switch (order.estado) {
-              @case ('verificacion') {
-                <button
-                  type="button"
-                  class="rounded-full bg-clay px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep disabled:cursor-not-allowed disabled:opacity-60"
-                  [disabled]="isWorking"
-                  (click)="approve(order)"
-                >
-                  {{ isWorking ? 'Verificando…' : 'Verificar pago' }}
-                </button>
-              }
-              @case ('pendiente') {
-                <button
-                  type="button"
-                  class="rounded-full bg-clay px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep disabled:cursor-not-allowed disabled:opacity-60"
-                  [disabled]="isWorking"
-                  (click)="approve(order)"
-                >
-                  {{ isWorking ? 'Aprobando…' : 'Aprobar compra' }}
-                </button>
-              }
-              @case ('aprobado') {
-                <button
-                  type="button"
-                  class="rounded-full bg-moss px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
-                  [disabled]="isWorking"
-                  (click)="ship(order)"
-                >
-                  {{ isWorking ? 'Enviando…' : 'Marcar enviado' }}
-                </button>
-
-                <!--
-                  Solo si aún no es crédito. El Worker vuelve a comprobar cupo
-                  y cuenta: este botón puede fallar con un mensaje explicando
-                  cuánto le queda libre al mayorista.
-                -->
-                @if (order.metodoPago !== 'credito') {
-                  <button
-                    type="button"
-                    class="rounded-full border border-sand px-5 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-clay hover:text-clay-deep disabled:cursor-not-allowed disabled:opacity-60"
-                    [disabled]="isWorking"
-                    (click)="grantCredit(order)"
-                  >
-                    {{ isWorking ? 'Fiando…' : 'Pasar a crédito' }}
-                  </button>
-                }
-              }
-              @case ('enviado') {
-                <!--
-                  Fiar sigue siendo posible con el pedido ya en la calle: pasa
-                  cuando el mayorista pide plazo después de que salió el camión.
-                -->
-                @if (order.metodoPago !== 'credito') {
-                  <button
-                    type="button"
-                    class="rounded-full border border-sand px-5 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-clay hover:text-clay-deep disabled:cursor-not-allowed disabled:opacity-60"
-                    [disabled]="isWorking"
-                    (click)="grantCredit(order)"
-                  >
-                    {{ isWorking ? 'Fiando…' : 'Pasar a crédito' }}
-                  </button>
-                }
-                <!--
-                  Respaldo admin: normalmente lo marca el propio domiciliario
-                  desde /admin/entregas, sin pasar por este panel.
-                -->
-                @if (order.metodoPago === 'contraentrega') {
-                  <button
-                    type="button"
-                    class="rounded-full bg-moss px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
-                    [disabled]="isWorking"
-                    (click)="markPaid(order)"
-                  >
-                    {{ isWorking ? 'Marcando…' : 'Marcar pago recibido' }}
-                  </button>
-                }
-              }
-              @case ('pago') {
-                @if (order.efectivoLiquidado === 0) {
-                  <button
-                    type="button"
-                    class="rounded-full bg-moss px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
-                    [disabled]="isWorking"
-                    (click)="settleCash(order)"
-                  >
-                    {{ isWorking ? 'Liquidando…' : 'Marcar efectivo entregado' }}
-                  </button>
-                }
-              }
-            }
-
             <!--
-              Discreto a propósito: comparte fila con "Aprobar", que es la
-              acción habitual. Un botón rojo y sólido al lado invitaría al clic
-              equivocado en la acción que no tiene vuelta atrás.
+              Menú de acciones, no de estados. Cada opción es un endpoint con
+              sus efectos —aprobar descuenta inventario, cancelar lo devuelve,
+              liquidar ni siquiera mueve `estado`—, así que aquí solo se
+              listan las transiciones legales desde donde está el pedido ahora
+              mismo. Las reglas viven en availableActions(), copiadas de las
+              guardias del Worker: el menú no ofrece nada que vaya a volver
+              con un 409.
             -->
-            @if (canCancel(order)) {
-              <button
-                type="button"
-                class="rounded-full border border-red-200 px-4 py-2 text-sm text-red-600 transition-colors duration-200 hover:border-red-400 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                [disabled]="isWorking"
-                (click)="askCancel(order)"
-              >
-                Cancelar
-              </button>
-            }
+            @let steps = stepsFor(order);
+            @let undo = undoFor(order);
 
-            <!--
-              Único camino de reversión para un pedido 'enviado': cancelar
-              está bloqueado a propósito una vez sale de la finca. Solo tiene
-              sentido en contra entrega — el escenario real es "el cliente no
-              abrió la puerta", no aplica a una transferencia ya verificada.
-            -->
-            @if (canRejectDelivery(order)) {
-              <button
-                type="button"
-                class="rounded-full border border-red-200 px-4 py-2 text-sm text-red-600 transition-colors duration-200 hover:border-red-400 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                [disabled]="isWorking"
-                (click)="askRejectDelivery(order)"
-              >
-                Rechazar entrega
-              </button>
+            @if (steps.length > 0 || undo.length > 0) {
+              <div class="relative">
+                <select
+                  class="cursor-pointer appearance-none rounded-full border border-sand bg-bone py-2 pl-4 pr-9 text-sm font-semibold text-ink transition-colors duration-200 hover:border-clay hover:text-clay-deep disabled:cursor-not-allowed disabled:opacity-60"
+                  [disabled]="isWorking"
+                  [attr.aria-label]="'Cambiar estado de ' + order.referencia"
+                  (change)="onActionSelect(order, $event)"
+                >
+                  <!--
+                    El placeholder es el estado actual y el select vuelve
+                    siempre a él: lo que se elige es el paso siguiente, no el
+                    valor de un campo. La etiqueta definitiva la repinta la
+                    señal de pedidos cuando el servidor confirma.
+                  -->
+                  <option value="" selected>
+                    {{ isWorking ? 'Aplicando…' : statusLabels[order.estado] }}
+                  </option>
+
+                  @if (steps.length > 0) {
+                    <optgroup label="Siguiente paso">
+                      @for (step of steps; track step.action) {
+                        <option [value]="step.action">{{ step.label }}</option>
+                      }
+                    </optgroup>
+                  }
+
+                  <!--
+                    Aparte y al final, por lo mismo que antes el botón de
+                    cancelar era discreto y no rojo sólido: comparte menú con
+                    la acción habitual, que es justo donde un clic despistado
+                    hace daño. Las dos piden confirmación con motivo.
+                  -->
+                  @if (undo.length > 0) {
+                    <optgroup label="Anular">
+                      @for (item of undo; track item.action) {
+                        <option [value]="item.action">{{ item.label }}</option>
+                      }
+                    </optgroup>
+                  }
+                </select>
+
+                <svg
+                  class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-ink-muted"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </div>
             }
 
             <!--

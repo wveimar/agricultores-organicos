@@ -1,7 +1,7 @@
 <div class="mx-auto max-w-lg pb-24">
   <header>
     <h1 class="text-h2 text-ink">Entregas de hoy</h1>
-    <p class="mt-1 text-sm text-ink-soft">Pedidos contra entrega, listos para cobrar.</p>
+    <p class="mt-1 text-sm text-ink-soft">Pedidos enviados: contra entrega para cobrar, el resto solo para confirmar.</p>
   </header>
 
   @if (feedback(); as msg) {
@@ -17,7 +17,7 @@
   } @else if (adminApi.deliveries().length === 0) {
     <div class="mt-8 rounded-lg border border-dashed border-sand py-16 text-center">
       <p class="text-h3 text-ink">No hay entregas pendientes</p>
-      <p class="mt-2 text-sm text-ink-soft">Cuando salga un pedido contra entrega, aparece aquí.</p>
+      <p class="mt-2 text-sm text-ink-soft">Cuando salga un pedido, aparece aquí hasta que se cobre o se confirme.</p>
     </div>
   } @else {
     <div class="mt-6 flex flex-col gap-4">
@@ -28,7 +28,14 @@
           <div class="p-5">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="tabular text-xs text-ink-muted">{{ entrega.referencia }}</p>
+                <div class="flex items-center gap-2">
+                  <p class="tabular text-xs text-ink-muted">{{ entrega.referencia }}</p>
+                  @if (!isCashOnDelivery(entrega)) {
+                    <span class="text-overline rounded-full bg-sage-light px-2 py-0.5 font-semibold uppercase text-moss-deep">
+                      Ya pagado
+                    </span>
+                  }
+                </div>
                 <h2 class="mt-0.5 truncate text-h3 text-ink">{{ entrega.clienteNombre }}</h2>
               </div>
               <p class="tabular shrink-0 text-right font-display text-h3 text-moss-deep">
@@ -67,15 +74,30 @@
             aquí se pasa de largo — es la acción que hace el domiciliario con
             el celular en una mano y la caja en la otra, no un botón de panel
             de escritorio.
+
+            Contra entrega pasa por el modal de abajo porque hay plata de por
+            medio; cualquier otro método confirma directo, sin ese paso — no
+            hay nada que cobrar, solo la puerta que ya se tocó.
           -->
-          <button
-            type="button"
-            class="flex min-h-14 w-full items-center justify-center bg-moss text-base font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
-            [disabled]="isWorking"
-            (click)="askConfirm(entrega)"
-          >
-            {{ isWorking ? 'Marcando…' : 'Confirmar entrega y pago' }}
-          </button>
+          @if (isCashOnDelivery(entrega)) {
+            <button
+              type="button"
+              class="flex min-h-14 w-full items-center justify-center bg-moss text-base font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
+              [disabled]="isWorking"
+              (click)="askConfirm(entrega)"
+            >
+              {{ isWorking ? 'Marcando…' : 'Confirmar entrega y pago' }}
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="flex min-h-14 w-full items-center justify-center bg-moss text-base font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
+              [disabled]="isWorking"
+              (click)="confirmDelivered(entrega)"
+            >
+              {{ isWorking ? 'Marcando…' : 'Confirmar entrega' }}
+            </button>
+          }
         </article>
       }
     </div>

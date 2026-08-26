@@ -4,14 +4,19 @@ import { ApiDelivery, ApiErrorBody } from '../../../core/api/api-client';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
 /**
- * Lo que ve el domiciliario en la calle: pedidos contra entrega ya enviados,
- * listos para cobrar.
+ * Lo que ve el domiciliario en la calle: pedidos 'enviado' que todavía tiene
+ * pendientes.
+ *
+ * No todos traen cobro: uno contra entrega necesita `markOrderPaid` (con
+ * modal, porque involucra plata); cualquier otro método solo necesita
+ * `confirmDelivery` (sin modal — no hay nada que verificar más que la puerta).
+ * `isCashOnDelivery()` decide cuál de las dos ofrecer.
  *
  * Pantalla deliberadamente distinta del panel de escritorio (`orders-manager`):
  * nada de tabla densa, nada de costo ni margen (esta vista viene de
  * `GET /api/admin/entregas`, que nunca los selecciona — ver el porqué en
  * `worker/src/routes/orders.ts`). Solo lo que hace falta para tocar la puerta,
- * cobrar y seguir: cliente, dirección, teléfono, cuánto cobrar.
+ * cobrar si toca y seguir: cliente, dirección, teléfono, cuánto cobrar.
  */
 @Component({
   selector: 'app-delivery-orders',
@@ -49,6 +54,11 @@ export class DeliveryOrders {
     return `tel:${telefono.replace(/[^\d+]/g, '')}`;
   }
 
+  /** Solo un contra entrega trae dinero que cobrar en la puerta. */
+  protected isCashOnDelivery(entrega: ApiDelivery): boolean {
+    return entrega.metodoPago === 'contraentrega';
+  }
+
   protected askConfirm(entrega: ApiDelivery): void {
     this.confirmingId.set(entrega.id);
     this.feedback.set(null);
@@ -77,6 +87,28 @@ export class DeliveryOrders {
         // Alguien más pudo haberlo cobrado primero (dos domiciliarios con el
         // mismo pedido, mal asignado): refrescar quita de la lista lo que ya
         // no está pendiente, en vez de dejar un botón que solo va a fallar.
+        this.adminApi.loadDeliveries();
+      },
+    });
+  }
+
+  /**
+   * Confirma la entrega de un pedido que no es contra entrega. Sin modal, a
+   * diferencia de `confirmPaid`: no hay plata que verificar antes de tocar el
+   * botón, así que el paso extra solo estorbaría.
+   */
+  protected confirmDelivered(entrega: ApiDelivery): void {
+    this.workingId.set(entrega.id);
+
+    this.adminApi.confirmDelivery(entrega.id).subscribe({
+      next: () => {
+        this.workingId.set(null);
+        this.feedback.set(`${entrega.referencia} entregado. Buen trabajo.`);
+        this.adminApi.loadDeliveries();
+      },
+      error: (error: ApiErrorBody) => {
+        this.workingId.set(null);
+        this.feedback.set(error.message);
         this.adminApi.loadDeliveries();
       },
     });

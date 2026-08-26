@@ -54,6 +54,169 @@ export function isEditable(status: OrderStatus): boolean {
   return EDITABLE.includes(status);
 }
 
+/** Cómo se paga el pedido. Fuente: `orders.metodo_pago`. */
+export type PaymentMethod = 'transferencia' | 'contraentrega' | 'credito';
+
+/**
+ * Las acciones que mueven un pedido, no los estados a los que llega.
+ *
+ * La distinción es la que sostiene todo lo demás: `estado` no es un campo que
+ * se edite, es el **resultado** de una operación con efectos colaterales.
+ * Aprobar descuenta inventario y sella `aprobado_por`; cancelar lo devuelve y
+ * escribe un motivo; liquidar ni siquiera cambia `estado`. Por eso el panel
+ * ofrece acciones —cada una con su endpoint— y nunca un `UPDATE estado = ?`:
+ * eso dejaría el inventario y la caja mintiendo respecto a lo que se muestra.
+ */
+export type OrderAction =
+  | 'aprobar'
+  | 'enviar'
+  | 'pagar'
+  | 'liquidar'
+  | 'credito'
+  | 'cancelar'
+  | 'rechazar';
+
+export interface OrderActionOption {
+  readonly action: OrderAction;
+  readonly label: string;
+  /**
+   * Dónde queda el pedido. `null` cuando la acción no mueve `estado`:
+   * `liquidar` deja el pedido en 'pago' y solo levanta `efectivo_liquidado`;
+   * `credito` deja el pedido donde estaba y solo cambia `metodo_pago`.
+   */
+  readonly resulting: OrderStatus | null;
+  /** Pide confirmación con motivo antes de ejecutarse. */
+  readonly confirms: boolean;
+  /** Devuelve stock o anula la venta: se pinta aparte dentro del menú. */
+  readonly destructive: boolean;
+}
+
+/** Lo mínimo que hace falta saber de un pedido para decidir qué admite. */
+export interface OrderActionContext {
+  readonly status: OrderStatus;
+  readonly metodoPago: PaymentMethod;
+  /** 1 cuando el efectivo del domiciliario ya entró a la caja de la finca. */
+  readonly efectivoLiquidado: number;
+}
+
+/**
+ * Transiciones legales desde donde está el pedido ahora mismo.
+ *
+ * Réplica exacta de las guardias del Worker (`routes/orders.ts`), y por eso el
+ * menú nunca ofrece algo que vaya a volver con un 409. El servidor las vuelve
+ * a comprobar igual: esto es ergonomía, no seguridad — dos admins con la lista
+ * abierta a la vez pueden verla desactualizada, y ahí manda el `WHERE estado =
+ * ...` de la sentencia, no este mapa.
+ *
+ * No aparece 'recaudar' (cobrar un crédito) a propósito: se hace desde
+ * /admin/cartera, donde se ve la deuda completa del cliente y no un pedido
+ * suelto.
+ */
+export function availableActions(order: OrderActionContext): readonly OrderActionOption[] {
+  const options: OrderActionOption[] = [];
+  const fiable = order.metodoPago !== 'credito';
+
+  switch (order.status) {
+    case 'verificacion':
+    case 'pendiente':
+      // Mismo endpoint para las dos, distinto punto de partida: en
+      // 'verificacion' el dinero ya se dio por transferido y falta confirmar
+      // que entró al banco; en 'pendiente' ni siquiera ha tocado inventario.
+      // La opción muestra a dónde llega —'Aprobado'—, no el verbo del botón
+      // que tenía cada una: un desplegable se lee como "elegir el siguiente
+      // estado", y el verbo antiguo tapaba justo ese dato.
+      options.push(option('aprobar', 'aprobado'));
+      break;
+
+    case 'aprobado':
+      options.push(option('enviar', 'enviado'));
+      if (fiable) {
+        // No hay estado "Aprobado (a crédito)": esto solo cambia
+        // `metodo_pago`, el pedido se queda en 'aprobado'. Por eso no puede
+        // llevar el nombre de un estado como las demás — mostrar "Aprobado"
+        // aquí sería mentir sobre a dónde llega.
+        options.push(creditOption());
+      }
+      break;
+
+    case 'enviado':
+      // Fiar sigue siendo posible con el pedido en la calle: pasa cuando el
+      // mayorista pide plazo después de que salió el camión. Mismo motivo que
+      // arriba: no mueve `estado`, así que no puede llamarse "Enviado".
+      if (fiable) {
+        options.push(creditOption());
+      }
+      if (order.metodoPago === 'contraentrega') {
+        options.push(option('pagar', 'pago'));
+      }
+      break;
+
+    case 'pago':
+      if (order.metodoPago === 'contraentrega' && order.efectivoLiquidado === 0) {
+        // Tampoco cambia `estado` —el pedido sigue en 'pago'—, solo levanta
+        // `efectivo_liquidado`. Reutiliza el texto de `ORDER_LOG_LABELS`
+        // porque es el mismo evento que ya se ve en la traza del pedido.
+        options.push({
+          action: 'liquidar',
+          label: ORDER_LOG_LABELS.liquidado,
+          resulting: null,
+          confirms: false,
+          destructive: false,
+        });
+      }
+      break;
+
+    case 'cancelado':
+      break;
+  }
+
+  // Las de anular van al final y aparte: comparten menú con la acción normal,
+  // que es justo donde un clic despistado hace daño.
+  if (isCancelable(order.status)) {
+    options.push({
+      action: 'cancelar',
+      label: 'Cancelar pedido…',
+      resulting: 'cancelado',
+      confirms: true,
+      destructive: true,
+    });
+  }
+
+  // Única reversión de un 'enviado': cancelar está bloqueado una vez sale de
+  // la finca. Solo tiene sentido contra entrega — el caso real es "el cliente
+  // no abrió la puerta", que no aplica a una transferencia ya verificada.
+  if (order.status === 'enviado' && order.metodoPago === 'contraentrega') {
+    options.push({
+      action: 'rechazar',
+      label: 'Rechazar entrega…',
+      resulting: 'cancelado',
+      confirms: true,
+      destructive: true,
+    });
+  }
+
+  return options;
+}
+
+/**
+ * Una opción cuya etiqueta es, literalmente, el nombre del estado al que
+ * llega — no el verbo de la acción que lo produce. Es lo que hace que el
+ * desplegable se lea como "elegir el siguiente estado" en vez de listar
+ * nombres de botones que no dicen a dónde van.
+ */
+function option(action: OrderAction, resulting: OrderStatus): OrderActionOption {
+  return { action, label: ORDER_STATUS_LABELS[resulting], resulting, confirms: false, destructive: false };
+}
+
+/**
+ * "Pasar a crédito" no encaja en `option()`: no mueve `estado`, solo
+ * `metodo_pago`, así que no tiene un nombre de estado que mostrar sin mentir
+ * sobre a dónde llega el pedido.
+ */
+function creditOption(): OrderActionOption {
+  return { action: 'credito', label: 'Pasar a crédito', resulting: null, confirms: false, destructive: false };
+}
+
 /**
  * Eventos de la traza de un pedido: los estados reales más `'editado'`, una
  * marca de auditoría que no es un estado — el pedido sigue donde estaba, solo

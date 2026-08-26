@@ -220,7 +220,15 @@ CREATE TABLE orders (
   -- Si el efectivo cobrado por el domiciliario ya está en la caja de la
   -- finca. Solo importa para 'contraentrega' — ver la migración 0015 para el
   -- porqué de que sea un paso separado de 'pago'.
-  efectivo_liquidado INTEGER NOT NULL DEFAULT 0 CHECK (efectivo_liquidado IN (0, 1))
+  efectivo_liquidado INTEGER NOT NULL DEFAULT 0 CHECK (efectivo_liquidado IN (0, 1)),
+
+  -- Cuándo el domiciliario confirmó que tocó la puerta, para lo que NO es
+  -- contra entrega. Un pedido por transferencia también sale a la calle y
+  -- también hay que saber si sigue en camino, pero ahí no hay nada que cobrar
+  -- — por eso es una marca aparte y no un estado nuevo: 'enviado' no cambia,
+  -- solo se anota que ya llegó. En contra entrega no se usa: ahí `pagar()`
+  -- confirma cobro y entrega en el mismo paso. Ver la migración 0018.
+  entregado_en       TEXT
 );
 
 -- El panel lista por estado y por jornada abierta; ambos índices evitan
@@ -264,7 +272,7 @@ CREATE TABLE order_status_log (
   order_id      TEXT    NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   estado        TEXT    NOT NULL CHECK (estado IN (
     'verificacion', 'pendiente', 'aprobado', 'enviado', 'cancelado', 'editado',
-    'pago', 'liquidado', 'rechazado'
+    'pago', 'liquidado', 'rechazado', 'entregado'
   )),
   -- NULL en la creación del pedido: ese paso lo dispara el propio cliente,
   -- sin sesión de administrador detrás.

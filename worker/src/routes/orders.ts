@@ -571,6 +571,68 @@ export async function markPaid(env: Env, user: JwtPayload, orderId: string): Pro
 }
 
 /**
+ * POST /api/admin/orders/:id/entregar — el domiciliario confirma que un
+ * pedido que NO es contra entrega ya tocó la puerta.
+ *
+ * Es el equivalente de markPaid() para lo que no hay nada que cobrar: mismo
+ * patrón (una sola columna cambia, sin token de idempotencia — un
+ * doble-submit hace que el segundo UPDATE afecte 0 filas sin efecto
+ * secundario más allá de un posible duplicado en la traza, igual que en
+ * markPaid()/settleCash()), pero `estado` se queda en 'enviado' — no hay
+ * transición que hacer, solo una fecha que anotar. Ver la migración 0018.
+ *
+ * Contra entrega no pasa por aquí: ahí `pagar()` confirma cobro y entrega en
+ * el mismo paso, y esta ruta lo rechaza para no dejar dos caminos abiertos
+ * hacia el mismo pedido.
+ */
+export async function confirmDelivery(
+  env: Env,
+  user: JwtPayload,
+  orderId: string,
+): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS', 'DOMICILIARIO');
+
+  const [updateResult] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE orders SET entregado_en = datetime('now')
+        WHERE id = ?1 AND estado = 'enviado' AND metodo_pago <> 'contraentrega'
+          AND entregado_en IS NULL`,
+    ).bind(orderId),
+    env.DB.prepare(
+      `INSERT INTO order_status_log (order_id, estado, actor_id, actor_nombre)
+       SELECT ?1, 'entregado', ?2, ?3
+        WHERE (SELECT entregado_en FROM orders WHERE id = ?1) IS NOT NULL`,
+    ).bind(orderId, user.sub, user.nombre),
+  ]);
+
+  if (updateResult.meta.changes === 0) {
+    // Distingue "ya la confirmó otra persona" del caso general, por el mismo
+    // motivo que markPaid() separa 'ya-pagado': a quien pierde esa carrera no
+    // le sirve reintentar, solo confundiría un segundo mensaje de error.
+    const actual = await env.DB.prepare(
+      `SELECT estado, metodo_pago, entregado_en FROM orders WHERE id = ?1`,
+    )
+      .bind(orderId)
+      .first<{ estado: string; metodo_pago: string; entregado_en: string | null }>();
+
+    if (actual?.entregado_en) {
+      throw ApiError.conflict(
+        'ya-entregado',
+        'Este pedido ya fue confirmado como entregado.',
+      );
+    }
+    throw ApiError.conflict(
+      'estado-invalido',
+      actual?.metodo_pago === 'contraentrega'
+        ? 'Este pedido es contra entrega: se confirma junto con el cobro.'
+        : 'Solo se puede confirmar la entrega de un pedido enviado.',
+    );
+  }
+
+  return json({ order: await loadOrder(env, orderId) });
+}
+
+/**
  * POST /api/admin/orders/:id/credito — se le fía este pedido al mayorista.
  *
  * El checkout público no puede llegar aquí: `readMetodoPago()` es lista
@@ -1523,7 +1585,16 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
 }
 
 /**
- * GET /api/admin/entregas — pedidos contra entrega listos para cobrar.
+ * GET /api/admin/entregas — pedidos enviados que el domiciliario todavía
+ * tiene pendientes en la calle.
+ *
+ * No son solo los contra entrega: un pedido pagado por transferencia también
+ * sale a repartir, y el domiciliario necesita verlo en su lista aunque no
+ * haya nada que cobrarle — solo confirmar que ya tocó la puerta
+ * (`entregar()`). Por eso el filtro es "contra entrega" (siempre, hasta que
+ * se cobre y `estado` deje de ser 'enviado') **o** "todavía sin
+ * `entregado_en`" (para el resto, hasta que se confirme la entrega). Ver la
+ * migración 0018.
  *
  * Deliberadamente NO reutiliza list(): esa consulta trae `costoUnitario` sin
  * filtrar por rol, y un domiciliario no tiene por qué ver costo ni margen.
@@ -1537,9 +1608,10 @@ export async function deliveries(env: Env, user: JwtPayload): Promise<Response> 
   const { results: orders } = await env.DB.prepare(
     `SELECT id, referencia, cliente_nombre AS clienteNombre,
             cliente_telefono AS clienteTelefono, cliente_direccion AS clienteDireccion,
-            total, creado_en AS creadoEn
+            total, creado_en AS creadoEn, metodo_pago AS metodoPago
        FROM orders
-      WHERE estado = 'enviado' AND metodo_pago = 'contraentrega'
+      WHERE estado = 'enviado'
+        AND (metodo_pago = 'contraentrega' OR entregado_en IS NULL)
       ORDER BY creado_en ASC`,
   ).all<{ id: string }>();
 
