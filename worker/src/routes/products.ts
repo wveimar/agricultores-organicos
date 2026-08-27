@@ -77,7 +77,19 @@ const ADMIN_COLUMNS = `
   stock_seguridad AS stockSeguridad,
   categoria_abc AS categoriaAbc,
   activo,
-  (precio - precio_costo) AS margenUnitario
+  (precio - precio_costo) AS margenUnitario,
+  -- Las dos formas de no tener inventario propio. Ambas tienen stock_actual = 0
+  -- por definición: la canasta lo deriva de sus componentes y la madre de sus
+  -- hijas (ver el COALESCE de arriba y combos.ts).
+  --
+  -- Viajan al panel para que las pantallas que MUEVEN stock —hoy, registrar una
+  -- compra a una finca— no las ofrezcan siquiera. Sin esto habría que deducirlo
+  -- recorriendo la lista entera buscando quién es hija de quién, y de las
+  -- canastas no habría forma: sus componentes no salen en esta respuesta.
+  EXISTS (SELECT 1 FROM product_components pc
+           WHERE pc.parent_product_id = products.id) AS esCanasta,
+  EXISTS (SELECT 1 FROM products h
+           WHERE h.parent_id = products.id)          AS tieneVariantes
 `;
 
 /** `null`, o un id no vacío. Cualquier otra cosa es un 400. */

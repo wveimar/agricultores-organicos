@@ -1,0 +1,467 @@
+<div class="min-h-screen bg-linen px-5 py-12">
+  <div class="mx-auto max-w-5xl">
+    <header class="mb-8 flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <h1 class="text-h2 text-ink">Compras a las fincas</h1>
+        <p class="mt-2 max-w-2xl text-sm text-ink-soft">
+          Lo que le compras a cada agricultor. Al registrar la compra el
+          inventario sube y el costo del producto queda actualizado; el pago se
+          confirma después, cuando le hagas la transferencia.
+        </p>
+      </div>
+
+      @if (!abierto()) {
+        <button
+          type="button"
+          class="shrink-0 rounded-full bg-moss px-6 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep"
+          (click)="nuevaCompra()"
+        >
+          Registrar compra
+        </button>
+      }
+    </header>
+
+    @if (adminApi.purchasesError(); as msg) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4">
+        <p class="text-sm font-semibold text-berry">No se pudo cargar</p>
+        <p class="mt-1 text-sm text-ink-soft">{{ msg }}</p>
+      </div>
+    }
+
+    @if (formError(); as msg) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4" role="alert">
+        <p class="text-sm text-ink-soft">{{ msg }}</p>
+      </div>
+    }
+
+    @if (feedback(); as msg) {
+      <div class="mb-6 rounded-md border border-sage/40 bg-sage-light/40 px-5 py-4" role="status">
+        <p class="text-sm text-moss-deep">{{ msg }}</p>
+      </div>
+    }
+
+    <!-- ═════════════════════ Nueva liquidación ═════════════════════ -->
+    @if (abierto()) {
+      <section class="mb-8 rounded-lg border border-moss/30 bg-bone p-6">
+        <h2 class="text-h3 text-ink">
+          {{ editandoId() ? 'Corregir compra' : 'Nueva compra' }}
+        </h2>
+
+        <!-- Paso 1: la finca -->
+        <div class="mt-5">
+          <label for="compra-origen" class="block text-sm font-medium text-ink">
+            1 · ¿A qué finca le compras?
+          </label>
+          <select
+            id="compra-origen"
+            class="mt-1.5 w-full max-w-md rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+            [value]="origen()"
+            (change)="onOrigen($event)"
+          >
+            <option value="">Elige una finca…</option>
+            @for (finca of origenes(); track finca) {
+              <option [value]="finca">{{ finca }}</option>
+            }
+          </select>
+          @if (lineas().length > 0) {
+            <p class="mt-1.5 text-xs text-ink-muted">
+              Cambiar de finca vacía el detalle: una compra es a un solo productor.
+            </p>
+          }
+        </div>
+
+        <!-- Paso 2: los productos de esa finca -->
+        @if (origen()) {
+          <div class="mt-6">
+            <label for="compra-producto" class="block text-sm font-medium text-ink">
+              2 · Añade lo que le compraste
+            </label>
+            <select
+              id="compra-producto"
+              class="mt-1.5 w-full max-w-md rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+              (change)="agregar($event)"
+            >
+              <option value="">Añadir un producto…</option>
+              @for (producto of disponibles(); track producto.id) {
+                <option [value]="producto.id">
+                  {{ producto.nombre }} · hay {{ producto.stock }}
+                </option>
+              }
+            </select>
+            @if (disponibles().length === 0) {
+              <p class="mt-1.5 text-xs text-ink-muted">
+                No queda nada más de esta finca por añadir.
+              </p>
+            }
+          </div>
+        }
+
+        <!-- Paso 3: cantidades y costos -->
+        @if (lineas().length > 0) {
+          <div class="mt-6 overflow-x-auto">
+            <table class="w-full min-w-[36rem] text-left text-sm">
+              <caption class="sr-only">Detalle de la compra</caption>
+              <thead>
+                <tr class="text-ink-muted">
+                  <th scope="col" class="pb-2 font-medium">3 · Producto</th>
+                  <th scope="col" class="pb-2 text-right font-medium">Cantidad</th>
+                  <th scope="col" class="pb-2 text-right font-medium">Costo unitario</th>
+                  <th scope="col" class="pb-2 text-right font-medium">Subtotal</th>
+                  <th scope="col" class="pb-2"><span class="sr-only">Quitar</span></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-sand">
+                @for (linea of lineas(); track linea.productId) {
+                  <tr>
+                    <td class="py-2.5 pr-3 text-ink">
+                      {{ linea.nombre }}
+                      <span class="text-xs text-ink-muted">({{ linea.unidad }})</span>
+                    </td>
+                    <td class="py-2.5">
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        inputmode="numeric"
+                        class="tabular w-24 rounded-md border border-sand bg-bone px-2 py-1.5 text-right text-sm text-ink focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+                        [value]="linea.cantidad"
+                        [attr.aria-label]="'Cantidad de ' + linea.nombre"
+                        (input)="onCantidad(linea.productId, $event)"
+                      />
+                    </td>
+                    <td class="py-2.5">
+                      <!--
+                        Trae el `precioCosto` del catálogo como punto de
+                        partida, pero es editable: el costo se negocia cada
+                        semana y el que manda es el de esta compra.
+                      -->
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        inputmode="numeric"
+                        class="tabular w-32 rounded-md border border-sand bg-bone px-2 py-1.5 text-right text-sm text-ink focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+                        [value]="linea.costoUnitario"
+                        [attr.aria-label]="'Costo unitario de ' + linea.nombre"
+                        (input)="onCosto(linea.productId, $event)"
+                      />
+                    </td>
+                    <td class="tabular py-2.5 text-right font-medium text-ink">
+                      {{ subtotalDe(linea) | cop }}
+                    </td>
+                    <td class="py-2.5 pl-3 text-right">
+                      <button
+                        type="button"
+                        class="text-sm text-ink-muted transition-colors duration-200 hover:text-red-600"
+                        [attr.aria-label]="'Quitar ' + linea.nombre"
+                        (click)="quitar(linea.productId)"
+                      >
+                        Quitar
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+              <tfoot>
+                <tr class="border-t-2 border-sand">
+                  <td colspan="3" class="pt-3 text-right text-sm font-medium text-ink-soft">
+                    Total a pagar
+                  </td>
+                  <td class="tabular pt-3 text-right font-display text-h3 text-ink">
+                    {{ total() | cop }}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div class="mt-5">
+            <label for="compra-notas" class="block text-sm font-medium text-ink">
+              Notas <span class="font-normal text-ink-muted">(opcional)</span>
+            </label>
+            <textarea
+              id="compra-notas"
+              rows="2"
+              maxlength="500"
+              placeholder="Nº de remisión, acuerdo de pago, quién recibió…"
+              class="mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+              [value]="notas()"
+              (input)="onNotas($event)"
+            ></textarea>
+          </div>
+        }
+
+        <div class="mt-6 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            class="rounded-full bg-moss px-6 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-50"
+            [disabled]="!puedeGuardar() || guardando()"
+            (click)="guardar()"
+          >
+            {{
+              guardando()
+                ? 'Guardando…'
+                : editandoId()
+                  ? 'Guardar cambios'
+                  : 'Registrar compra'
+            }}
+          </button>
+          <button
+            type="button"
+            class="rounded-full border border-sand px-5 py-2.5 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
+            (click)="cerrar()"
+          >
+            Cancelar
+          </button>
+
+          @if (lineas().length > 0) {
+            <p class="text-xs text-ink-muted">
+              Al guardar, el inventario sube y el costo del catálogo se
+              actualiza al que pusiste aquí.
+            </p>
+          }
+        </div>
+      </section>
+    }
+
+    <!-- ═════════════════════ Historial ═════════════════════ -->
+    <div class="mb-5 flex flex-wrap items-end justify-between gap-6">
+      <div class="flex flex-wrap gap-8">
+        <div>
+          <p class="tabular font-display text-h3 text-clay-deep">
+            {{ adminApi.purchasesPendiente() | cop }}
+          </p>
+          <p class="text-sm text-ink-soft">pendiente de pagar</p>
+        </div>
+        <div>
+          <p class="tabular font-display text-h3 text-ink">{{ visibles().length }}</p>
+          <p class="text-sm text-ink-soft">
+            {{ visibles().length === 1 ? 'compra' : 'compras' }}
+          </p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3">
+        @if (origenesEnHistorial().length > 1) {
+          <select
+            class="rounded-full border border-sand bg-bone px-4 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+            aria-label="Filtrar por finca"
+            [value]="filtroOrigen()"
+            (change)="onFiltroOrigen($event)"
+          >
+            <option value="">Todas las fincas</option>
+            @for (finca of origenesEnHistorial(); track finca) {
+              <option [value]="finca">{{ finca }}</option>
+            }
+          </select>
+        }
+
+        <div class="flex gap-2">
+          @for (opcion of [
+            { valor: 'todos', label: 'Todas' },
+            { valor: 'pendiente', label: 'Por pagar' },
+            { valor: 'pagado', label: 'Pagadas' }
+          ]; track opcion.valor) {
+            <button
+              type="button"
+              class="rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200"
+              [class]="
+                filtroEstado() === opcion.valor
+                  ? 'bg-moss text-bone'
+                  : 'border border-sand text-ink-soft hover:border-stone hover:text-ink'
+              "
+              (click)="onFiltroEstado($any(opcion.valor))"
+            >
+              {{ opcion.label }}
+            </button>
+          }
+        </div>
+      </div>
+    </div>
+
+    @if (adminApi.purchasesLoading() && adminApi.purchases().length === 0) {
+      <div class="rounded-lg border border-dashed border-sand py-16 text-center">
+        <p class="text-sm text-ink-soft">Cargando…</p>
+      </div>
+    } @else if (visibles().length === 0) {
+      <div class="rounded-lg border border-dashed border-sand py-16 text-center">
+        <p class="text-h3 text-ink">
+          {{ adminApi.purchases().length === 0 ? 'Todavía no hay compras' : 'Nada con ese filtro' }}
+        </p>
+        <p class="mt-2 text-sm text-ink-soft">
+          @if (adminApi.purchases().length === 0) {
+            Registra la primera y el inventario subirá solo.
+          } @else {
+            Prueba con otra finca o con otro estado.
+          }
+        </p>
+      </div>
+    } @else {
+      <ul class="flex flex-col gap-3">
+        @for (compra of visibles(); track compra.id) {
+          @let ocupada = ocupadoId() === compra.id;
+          @let desplegada = expandida() === compra.id;
+
+          <li class="overflow-hidden rounded-lg border border-sand bg-bone">
+            <div class="flex flex-wrap items-center gap-4 p-5">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-3">
+                  <p class="truncate text-sm font-semibold text-ink">{{ compra.origen }}</p>
+                  @if (compra.estado === 'pagado') {
+                    <span class="text-overline rounded-full bg-sage-light px-3 py-1 font-semibold uppercase text-moss-deep">
+                      Pagada
+                    </span>
+                  } @else {
+                    <span class="text-overline rounded-full bg-honey/25 px-3 py-1 font-semibold uppercase text-clay-deep">
+                      Por pagar
+                    </span>
+                  }
+                </div>
+                <p class="tabular mt-1 text-xs text-ink-muted">
+                  {{ formatDate(compra.creadoEn) }} ·
+                  {{ compra.items.length }}
+                  {{ compra.items.length === 1 ? 'producto' : 'productos' }} ·
+                  {{ unidadesDe(compra) }} uds
+                  @if (compra.creadoPor) {
+                    · {{ compra.creadoPor }}
+                  }
+                </p>
+                @if (compra.notas) {
+                  <p class="mt-1 truncate text-sm text-ink-soft">{{ compra.notas }}</p>
+                }
+              </div>
+
+              <p class="tabular shrink-0 text-lg font-semibold text-ink">
+                {{ compra.totalPago | cop }}
+              </p>
+
+              <div class="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+                  [attr.aria-expanded]="desplegada"
+                  (click)="alternar(compra)"
+                >
+                  {{ desplegada ? 'Ocultar' : 'Ver detalle' }}
+                </button>
+
+                <!--
+                  Editar y borrar solo mientras esté por pagar. Una compra
+                  girada es el respaldo de una transferencia que sí ocurrió:
+                  el servidor la protege igual, aquí se ocultan los botones
+                  para no ofrecer algo que va a fallar.
+                -->
+                @if (compra.estado === 'pendiente') {
+                  <button
+                    type="button"
+                    class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss disabled:opacity-50"
+                    [disabled]="ocupada"
+                    (click)="editar(compra)"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-full bg-moss px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
+                    [disabled]="ocupada"
+                    (click)="pagar(compra)"
+                  >
+                    {{ ocupada ? 'Marcando…' : 'Marcar pagada' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-full border border-sand px-4 py-2 text-sm text-ink-muted transition-colors duration-200 hover:border-red-400 hover:text-red-600 disabled:opacity-50"
+                    [disabled]="ocupada"
+                    (click)="pedirBorrado(compra)"
+                  >
+                    Borrar
+                  </button>
+                }
+              </div>
+            </div>
+
+            <!-- Confirmación de borrado: devuelve mercancía al inventario -->
+            @if (confirmandoBorrado() === compra.id) {
+              <div class="flex flex-wrap items-center justify-between gap-4 border-t border-sand bg-clay/8 px-5 py-4">
+                <p class="text-sm text-ink">
+                  Al borrarla se descuentan
+                  <strong class="tabular">{{ unidadesDe(compra) }}</strong>
+                  unidades del inventario. Si ya se vendieron, no se podrá.
+                </p>
+                <div class="flex gap-2">
+                  <button
+                    type="button"
+                    class="rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-red-700 disabled:opacity-60"
+                    [disabled]="ocupada"
+                    (click)="borrar(compra)"
+                  >
+                    {{ ocupada ? 'Borrando…' : 'Sí, borrar' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
+                    (click)="cancelarBorrado()"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            }
+
+            @if (desplegada) {
+              <div class="border-t border-sand bg-linen/50 px-5 py-4">
+                <table class="w-full text-left text-sm">
+                  <caption class="sr-only">Detalle de la compra a {{ compra.origen }}</caption>
+                  <thead>
+                    <tr class="text-ink-muted">
+                      <th scope="col" class="pb-2 font-medium">Producto</th>
+                      <th scope="col" class="pb-2 text-right font-medium">Cantidad</th>
+                      <th scope="col" class="pb-2 text-right font-medium">Costo unit.</th>
+                      <th scope="col" class="pb-2 text-right font-medium">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-sand">
+                    @for (item of compra.items; track item.productId) {
+                      <tr>
+                        <td class="py-2 text-ink">{{ item.productoNombre }}</td>
+                        <td class="tabular py-2 text-right text-ink-soft">
+                          {{ item.cantidad }} {{ item.unidad }}
+                        </td>
+                        <td class="tabular py-2 text-right text-ink-soft">
+                          {{ item.costoUnitario | cop }}
+                        </td>
+                        <td class="tabular py-2 text-right text-ink">{{ item.subtotal | cop }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+
+                @if (compra.estado === 'pagado' && compra.pagadoEn) {
+                  <p class="mt-3 text-xs text-ink-muted">
+                    Pagada el {{ formatDate(compra.pagadoEn) }}
+                    @if (compra.pagadoPor) {
+                      por {{ compra.pagadoPor }}
+                    }
+                  </p>
+                }
+              </div>
+            }
+          </li>
+        }
+      </ul>
+
+      <!--
+        La duda que va a tener cualquiera al comparar esta pantalla con el
+        cierre de caja. Decirlo aquí evita que alguien reste dos veces el
+        mismo costo al cuadrar a mano.
+      -->
+      <p class="mt-6 text-xs text-ink-muted">
+        Estas compras no se restan de la ganancia del cierre: el costo se
+        descuenta cuando el producto se vende, no cuando entra a la bodega. Lo
+        que compraste y aún no has vendido está en el inventario, no en la
+        pérdida.
+      </p>
+    }
+  </div>
+</div>

@@ -14,13 +14,14 @@ import {
   ApiExpense,
   ApiOrder,
   ApiOrderStatusLogEntry,
-  ApiPayout,
   ApiProduct,
+  ApiPurchase,
   ApiSalesRow,
   ApiUser,
   ApiWholesaleRow,
   ApiWholesaleTariff,
   ExpenseCategory,
+  PurchaseItemInput,
 } from '../api/api-client';
 import { UserRole, WholesaleRole } from '../models/user.model';
 
@@ -853,39 +854,79 @@ export class AdminApiService {
     );
   }
 
-  /** Lo que se le debe a las fincas. Qué trae depende de cómo se cargue. */
-  readonly payouts = signal<readonly ApiPayout[]>([]);
-  readonly payoutsLoading = signal(false);
-  readonly payoutsError = signal<string | null>(null);
+  // ─────────────────────── Compras a las fincas ───────────────────────
 
-  loadPayouts(options?: { closingId?: string; soloPendientes?: boolean }): void {
-    this.payoutsLoading.set(true);
-    this.payoutsError.set(null);
-    this.api.payouts(options).subscribe({
+  /** Historial completo de compras. El filtrado por finca/estado va en la vista. */
+  readonly purchases = signal<readonly ApiPurchase[]>([]);
+  readonly purchasesLoading = signal(false);
+  readonly purchasesError = signal<string | null>(null);
+
+  loadPurchases(): void {
+    this.purchasesLoading.set(true);
+    this.purchasesError.set(null);
+    this.api.purchases().subscribe({
       next: (list) => {
-        this.payouts.set(list);
-        this.payoutsLoading.set(false);
+        this.purchases.set(list);
+        this.purchasesLoading.set(false);
       },
       error: (error: ApiErrorBody) => {
-        this.payoutsError.set(error.message);
-        this.payoutsLoading.set(false);
+        this.purchasesError.set(error.message);
+        this.purchasesLoading.set(false);
       },
     });
   }
 
-  /** Lo que falta girar de lo que hay cargado ahora mismo. */
-  readonly payoutsPendiente = computed(() =>
-    this.payouts()
-      .filter((pago) => pago.estado === 'pendiente')
-      .reduce((suma, pago) => suma + pago.montoPago, 0),
+  /** Lo que se le debe todavía a los agricultores, de lo que hay cargado. */
+  readonly purchasesPendiente = computed(() =>
+    this.purchases()
+      .filter((compra) => compra.estado === 'pendiente')
+      .reduce((suma, compra) => suma + compra.totalPago, 0),
   );
 
-  markPayoutPaid(id: string): Observable<ApiPayout> {
-    return this.api.markPayoutPaid(id).pipe(
-      tap((actualizado) => {
-        this.payouts.update((list) =>
-          list.map((pago) => (pago.id === id ? actualizado : pago)),
-        );
+  /**
+   * Registrar una compra mueve inventario y costo, así que además de meterla
+   * en la lista hay que refrescar el catálogo: los productos que se ven en el
+   * panel acaban de cambiar de stock y de `precioCosto`.
+   */
+  createPurchase(compra: {
+    origen: string;
+    notas: string | null;
+    items: readonly PurchaseItemInput[];
+  }): Observable<ApiPurchase> {
+    return this.api.createPurchase(compra).pipe(
+      tap((creada) => {
+        this.purchases.update((list) => [creada, ...list]);
+        this.loadProducts();
+      }),
+    );
+  }
+
+  updatePurchase(
+    id: string,
+    compra: { origen: string; notas: string | null; items: readonly PurchaseItemInput[] },
+  ): Observable<ApiPurchase> {
+    return this.api.updatePurchase(id, compra).pipe(
+      tap((actualizada) => {
+        this.purchases.update((list) => list.map((c) => (c.id === id ? actualizada : c)));
+        this.loadProducts();
+      }),
+    );
+  }
+
+  deletePurchase(id: string): Observable<void> {
+    return this.api.deletePurchase(id).pipe(
+      tap(() => {
+        this.purchases.update((list) => list.filter((c) => c.id !== id));
+        this.loadProducts();
+      }),
+    );
+  }
+
+  /** Solo cambia el estado: el inventario ya se movió al registrar. */
+  markPurchasePaid(id: string): Observable<ApiPurchase> {
+    return this.api.markPurchasePaid(id).pipe(
+      tap((actualizada) => {
+        this.purchases.update((list) => list.map((c) => (c.id === id ? actualizada : c)));
       }),
     );
   }

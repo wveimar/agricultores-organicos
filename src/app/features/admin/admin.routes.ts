@@ -105,13 +105,16 @@ export const ADMIN_ROUTES: Routes = [
           import('./expenses/expenses-manager').then((m) => m.ExpensesManager),
       },
       {
-        path: 'pagos-fincas',
-        // Girar a un proveedor es sacar plata de la caja: mismo rol que cierra
-        // la jornada y que cobra la cartera.
-        canActivate: [roleGuard('GESTOR_PEDIDOS')],
-        title: 'Pago a fincas · Panel',
+        path: 'compras',
+        // Los dos roles: una compra mueve inventario (ADMIN_INVENTARIO) y
+        // genera una deuda con el agricultor (GESTOR_PEDIDOS). El servidor
+        // aplica la misma regla; marcar el pago sí es solo de pedidos.
+        canActivate: [roleGuard('GESTOR_PEDIDOS', 'ADMIN_INVENTARIO')],
+        title: 'Compras a fincas · Panel',
         loadComponent: () =>
-          import('./payouts/provider-payouts').then((m) => m.ProviderPayouts),
+          import('./purchases/provider-purchases-manager').then(
+            (m) => m.ProviderPurchasesManager,
+          ),
       },
       {
         path: 'entregas',

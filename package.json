@@ -71,8 +71,11 @@
     "db:migrate:envio-fuera:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0019_envio_fuera_de_ventas.sql",
     "db:migrate:gastos": "wrangler d1 execute DB --local --file=worker/migrations/0020_gastos_y_pagos.sql",
     "db:migrate:gastos:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0020_gastos_y_pagos.sql",
+    "db:migrate:compras": "wrangler d1 execute DB --local --file=worker/migrations/0021_compras_a_fincas.sql",
+    "db:migrate:compras:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0021_compras_a_fincas.sql",
     "qa:credito": "node worker/tests/qa-credito.mjs",
-    "qa:gastos-pagos": "node worker/tests/qa-gastos-pagos.mjs"
+    "qa:gastos": "node worker/tests/qa-gastos.mjs",
+    "qa:compras": "node worker/tests/qa-compras.mjs"
   },
   "private": true,
   "packageManager": "npm@11.12.1",

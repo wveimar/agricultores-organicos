@@ -23,7 +23,8 @@ PRAGMA foreign_keys = ON;
 -- porque `product_components` seguía referenciándolo. Si mañana se agrega una
 -- tabla nueva, va aquí arriba y en su sitio más abajo, o el reset vuelve a
 -- romperse.
-DROP TABLE IF EXISTS provider_payouts;
+DROP TABLE IF EXISTS provider_purchase_items;
+DROP TABLE IF EXISTS provider_purchases;
 DROP TABLE IF EXISTS expenses;
 DROP TABLE IF EXISTS order_item_components;
 DROP TABLE IF EXISTS order_status_log;
@@ -452,22 +453,47 @@ CREATE TABLE expenses (
 
 CREATE INDEX idx_expenses_closing ON expenses (closing_id, creado_en DESC);
 
--- Cuánto se le debe a cada finca por una jornada. `origen` es el texto de
--- `products.origen` COPIADO al cerrar, no una referencia: si mañana renombran
--- la finca en el catálogo, el giro de la semana pasada debe seguir diciendo a
--- quién se le pagó.
-CREATE TABLE provider_payouts (
+-- ──────────────────────── Compras a las fincas (0021) ────────────────────────
+--
+-- Lo que se le compró a cada agricultor. Al registrarse sube el inventario y
+-- se actualiza `products.precio_costo`; ese costo se congela en
+-- `order_items.costo_unitario` al vender y de ahí sale el `costo_producto` del
+-- cierre. Por eso la compra NO se resta de `ganancia`: ya está contada al
+-- venderse. Restarla otra vez convertiría el inventario en bodega en pérdida.
+
+CREATE TABLE provider_purchases (
   id          TEXT    PRIMARY KEY,
+  -- Copia del `products.origen` al comprar, no una referencia: si renombran la
+  -- finca en el catálogo, esta compra debe seguir diciendo a quién se le compró.
   origen      TEXT    NOT NULL,
-  monto_pago  INTEGER NOT NULL CHECK (monto_pago >= 0),
+  -- Suma del detalle, verificada por el servidor antes de escribirla.
+  total_pago  INTEGER NOT NULL CHECK (total_pago >= 0),
+  -- 'pendiente': la mercancía ya entró pero no se ha girado al agricultor.
   estado      TEXT    NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'pagado')),
-  closing_id  TEXT    NOT NULL REFERENCES cash_closings(id) ON DELETE CASCADE,
+  notas       TEXT,
+  creado_por  TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  creado_en   TEXT    NOT NULL DEFAULT (datetime('now')),
   pagado_por  TEXT    REFERENCES users(id) ON DELETE SET NULL,
-  pagado_en   TEXT,
-  -- Una sola fila por finca y jornada: sin esto un cierre reintentado
-  -- duplicaría la deuda y nadie lo notaría hasta ir a girar.
-  UNIQUE (closing_id, origen)
+  pagado_en   TEXT
 );
 
-CREATE INDEX idx_payouts_closing ON provider_payouts (closing_id);
-CREATE INDEX idx_payouts_estado  ON provider_payouts (estado, closing_id);
+CREATE INDEX idx_purchases_origen ON provider_purchases (origen, creado_en DESC);
+CREATE INDEX idx_purchases_estado ON provider_purchases (estado, creado_en DESC);
+
+CREATE TABLE provider_purchase_items (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- CASCADE: borrar la compra se lleva su detalle. El stock que sumó se
+  -- devuelve antes, en la misma transacción (ver remove() en purchases.ts).
+  purchase_id    TEXT    NOT NULL REFERENCES provider_purchases(id) ON DELETE CASCADE,
+  -- RESTRICT como en `order_items`: lo que alguna vez se compró no se borra
+  -- del catálogo mientras esta línea lo nombre.
+  product_id     TEXT    NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  cantidad       INTEGER NOT NULL CHECK (cantidad > 0),
+  -- El costo negociado ese día, congelado: una compra posterior a otro precio
+  -- actualiza el catálogo, pero no reescribe esta línea.
+  costo_unitario INTEGER NOT NULL CHECK (costo_unitario >= 0),
+  subtotal       INTEGER NOT NULL CHECK (subtotal >= 0)
+);
+
+CREATE INDEX idx_purchase_items_purchase ON provider_purchase_items (purchase_id);
+CREATE INDEX idx_purchase_items_product  ON provider_purchase_items (product_id);

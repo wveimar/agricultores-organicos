@@ -134,6 +134,16 @@ export interface ApiProduct {
   readonly categoriaAbc?: 'A' | 'B' | 'C';
   readonly margenUnitario?: number;
   /**
+   * 1 = tiene receta: su stock sale de los componentes, no de columna propia.
+   * 1 en `tieneVariantes` = es madre y el inventario vive en sus hijas.
+   *
+   * Las pantallas que mueven inventario (registrar una compra) no deben
+   * ofrecer ninguna de las dos: sumarles unidades escribiría en una columna
+   * que nadie lee. Solo en `/api/admin/*`.
+   */
+  readonly esCanasta?: number;
+  readonly tieneVariantes?: number;
+  /**
    * 1 = se ofrece esta semana · 0 = el agricultor no tiene cosecha.
    *
    * Solo llega en `/api/admin/*`: el catálogo público ya viene filtrado por
@@ -459,25 +469,45 @@ export interface ApiExpense {
   readonly closingId: string | null;
 }
 
+/** Una línea de compra: qué producto, cuánto y a qué costo se negoció. */
+export interface ApiPurchaseItem {
+  readonly productId: string;
+  readonly productoNombre: string;
+  readonly unidad: string;
+  readonly cantidad: number;
+  /** El costo pactado ese día, congelado. Puede diferir del catálogo de hoy. */
+  readonly costoUnitario: number;
+  readonly subtotal: number;
+}
+
 /**
- * Lo que se le debe a una finca por una jornada.
+ * Una compra a una finca.
  *
- * Las filas las escribe el cierre de caja, no el panel: el reparto es una
- * consecuencia de lo que se vendió, no algo que alguien teclee. Ver
- * `calcularPagosAFincas()` en el Worker.
+ * Registrarla sube el inventario y fija `products.precio_costo`. NO se resta
+ * de la ganancia: ese costo ya se cuenta al vender, cuando viaja congelado a
+ * la línea del pedido. Ver `worker/src/routes/purchases.ts`.
  */
-export interface ApiPayout {
+export interface ApiPurchase {
   readonly id: string;
-  /** Texto de `products.origen`, copiado al cerrar. No es una referencia. */
+  /** Texto de `products.origen`, copiado al comprar. No es una referencia. */
   readonly origen: string;
-  readonly montoPago: number;
+  /** Suma del detalle, calculada por el servidor. */
+  readonly totalPago: number;
+  /** 'pendiente' = la mercancía entró pero al agricultor no se le ha girado. */
   readonly estado: 'pendiente' | 'pagado';
-  readonly closingId: string;
+  readonly notas: string | null;
+  readonly creadoEn: string;
+  readonly creadoPor: string | null;
   readonly pagadoEn: string | null;
   readonly pagadoPor: string | null;
-  /** De qué jornada viene. Una lista de fincas sin esto no dice de qué semana es. */
-  readonly closingReferencia: string;
-  readonly closingCerradoEn: string;
+  readonly items: readonly ApiPurchaseItem[];
+}
+
+/** Lo que el formulario manda por línea. El servidor recalcula los totales. */
+export interface PurchaseItemInput {
+  readonly productId: string;
+  readonly cantidad: number;
+  readonly costoUnitario: number;
 }
 
 export interface ApiClosing {
@@ -1133,33 +1163,63 @@ export class ApiClient {
       .pipe(map(() => undefined), catchError(handleError));
   }
 
-  /**
-   * Lo que se le debe a cada finca.
-   *
-   * Sin argumentos trae lo pendiente de todas las jornadas ("¿a quién le
-   * debo?"); con `closingId`, el reparto completo de una ("¿qué pasó con este
-   * cierre?"), pagados incluidos.
-   */
-  payouts(options?: { closingId?: string; soloPendientes?: boolean }): Observable<readonly ApiPayout[]> {
+  // ─────────────────────── Compras a las fincas ───────────────────────
+
+  /** Historial de compras, con su detalle dentro. Filtros opcionales. */
+  purchases(options?: {
+    origen?: string;
+    estado?: 'pendiente' | 'pagado';
+  }): Observable<readonly ApiPurchase[]> {
     const params = new URLSearchParams();
-    if (options?.closingId) {
-      params.set('closing_id', options.closingId);
+    if (options?.origen) {
+      params.set('origen', options.origen);
     }
-    if (options?.soloPendientes) {
-      params.set('estado', 'pendiente');
+    if (options?.estado) {
+      params.set('estado', options.estado);
     }
     const query = params.toString() ? `?${params}` : '';
 
     return this.http
-      .get<{ pagos: ApiPayout[] }>(`/api/admin/payouts${query}`)
-      .pipe(map((res) => res.pagos), catchError(handleError));
+      .get<{ compras: ApiPurchase[] }>(`/api/admin/providers/purchases${query}`)
+      .pipe(map((res) => res.compras), catchError(handleError));
   }
 
-  /** Se le giró a la finca. No tiene vuelta atrás — ver payouts.ts. */
-  markPayoutPaid(id: string): Observable<ApiPayout> {
+  /** Registra la compra: sube el inventario y fija el costo del catálogo. */
+  createPurchase(compra: {
+    origen: string;
+    notas: string | null;
+    items: readonly PurchaseItemInput[];
+  }): Observable<ApiPurchase> {
     return this.http
-      .post<{ pago: ApiPayout }>(`/api/admin/payouts/${id}/pagar`, {})
-      .pipe(map((res) => res.pago), catchError(handleError));
+      .post<{ compra: ApiPurchase }>('/api/admin/providers/purchases', compra)
+      .pipe(map((res) => res.compra), catchError(handleError));
+  }
+
+  /**
+   * Corrige una compra. El servidor devuelve al inventario lo anterior y suma
+   * lo nuevo; si lo anterior ya se vendió, responde `stock-ya-vendido`.
+   */
+  updatePurchase(
+    id: string,
+    compra: { origen: string; notas: string | null; items: readonly PurchaseItemInput[] },
+  ): Observable<ApiPurchase> {
+    return this.http
+      .patch<{ compra: ApiPurchase }>(`/api/admin/providers/purchases/${id}`, compra)
+      .pipe(map((res) => res.compra), catchError(handleError));
+  }
+
+  /** Borra la compra y devuelve su mercancía al inventario. */
+  deletePurchase(id: string): Observable<void> {
+    return this.http
+      .delete<{ ok: true }>(`/api/admin/providers/purchases/${id}`)
+      .pipe(map(() => undefined), catchError(handleError));
+  }
+
+  /** Se le giró al agricultor. Solo cambia el estado: el stock ya entró. */
+  markPurchasePaid(id: string): Observable<ApiPurchase> {
+    return this.http
+      .post<{ compra: ApiPurchase }>(`/api/admin/providers/purchases/${id}/pagar`, {})
+      .pipe(map((res) => res.compra), catchError(handleError));
   }
 }
 

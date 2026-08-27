@@ -54,7 +54,11 @@ export class AdminLayout {
     // El bloque de plata que SALE, después del de la que entra: gastos se
     // registra durante la jornada y pagos a fincas se resuelve tras cerrarla.
     { path: '/admin/gastos', label: 'Gastos', roles: ['GESTOR_PEDIDOS'] },
-    { path: '/admin/pagos-fincas', label: 'Pago a fincas', roles: ['GESTOR_PEDIDOS'] },
+    {
+      path: '/admin/compras',
+      label: 'Compras',
+      roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'],
+    },
     {
       path: '/admin/entregas',
       label: 'Entregas',

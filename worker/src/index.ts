@@ -7,7 +7,7 @@ import * as categories from './routes/categories';
 import * as orders from './routes/orders';
 import * as reports from './routes/reports';
 import * as expenses from './routes/expenses';
-import * as payouts from './routes/payouts';
+import * as purchases from './routes/purchases';
 import * as users from './routes/users';
 import * as wholesale from './routes/wholesale';
 import * as components from './routes/components';
@@ -310,15 +310,30 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return expenses.remove(env, user, expenseMatch[1]);
     }
 
-    // Liquidación a las fincas. Las filas las escribe el cierre de caja; aquí
-    // solo se consultan y se marcan giradas.
-    if (pathname === '/api/admin/payouts' && method === 'GET') {
-      return payouts.list(env, user, url);
+    // Compras a las fincas: registrarlas sube el inventario y fija el costo.
+    // El pago al agricultor se confirma aparte, con /pagar.
+    if (pathname === '/api/admin/providers/purchases' && method === 'GET') {
+      return purchases.list(env, user, url);
+    }
+    if (pathname === '/api/admin/providers/purchases' && method === 'POST') {
+      return purchases.create(request, env, user);
     }
 
-    const payoutMatch = pathname.match(/^\/api\/admin\/payouts\/([\w-]+)\/pagar$/);
-    if (payoutMatch && method === 'POST') {
-      return payouts.markPaid(env, user, payoutMatch[1]);
+    // El id va antes que /pagar en el mismo prefijo, así que el patrón de la
+    // acción se prueba primero: si no, `([\w-]+)` se tragaría "…/pagar".
+    const purchasePayMatch = pathname.match(
+      /^\/api\/admin\/providers\/purchases\/([\w-]+)\/pagar$/,
+    );
+    if (purchasePayMatch && method === 'POST') {
+      return purchases.markPaid(env, user, purchasePayMatch[1]);
+    }
+
+    const purchaseMatch = pathname.match(/^\/api\/admin\/providers\/purchases\/([\w-]+)$/);
+    if (purchaseMatch && method === 'PATCH') {
+      return purchases.update(request, env, user, purchaseMatch[1]);
+    }
+    if (purchaseMatch && method === 'DELETE') {
+      return purchases.remove(env, user, purchaseMatch[1]);
     }
     // Consolidado semanal: qué cosechar y a quién se le lleva.
     if (pathname === '/api/admin/reports/consolidation' && method === 'GET') {

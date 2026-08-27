@@ -1,14 +1,15 @@
 /**
- * Gastos operativos y liquidación a fincas (migración 0020).
+ * Gastos operativos y aritmética del cierre (migración 0020).
  *
  * Lo que de verdad importa comprobar aquí es la aritmética del cierre, que es
- * irreversible: que la ganancia reste los gastos, que el envío siga fuera, y
- * —lo más frágil— que el reparto a las fincas sume EXACTAMENTE el costo de la
- * mercancía aunque haya canastas de por medio, donde el costo se distribuye
- * en proporción y hay divisiones enteras que pueden perder pesos.
+ * irreversible: que la ganancia reste los gastos, que el envío siga fuera de
+ * toda cifra de venta, y que un gasto ya archivado no se pueda borrar.
+ *
+ * Lo que se le compra a las fincas no se prueba aquí: es un evento propio, con
+ * su propio inventario y su propio pago. Ver qa-compras.mjs.
  *
  *   npm run worker:dev
- *   node worker/tests/qa-gastos-pagos.mjs [http://localhost:8788]
+ *   node worker/tests/qa-gastos.mjs [http://localhost:8788]
  */
 
 const BASE = process.argv[2] ?? 'http://localhost:8788';
@@ -168,74 +169,6 @@ t(
 // Un gasto ya archivado no se puede borrar: es parte de una cuenta congelada.
 const { status: sBorrarCerrado } = await del(`/api/admin/expenses/${gastoId}`);
 t(sBorrarCerrado === 409, `no deja borrar un gasto ya archivado (${sBorrarCerrado})`);
-
-// ─────────────────── Reparto a las fincas ───────────────────
-
-seccion('Liquidación a fincas: la suma tiene que cuadrar al peso');
-
-const { body: bPagos } = await api(`/api/admin/payouts?closing_id=${cierre.id}`);
-const pagos = bPagos?.pagos ?? [];
-
-t(pagos.length > 0, `hay reparto (${pagos.length} fincas)`);
-
-const sumaPagos = pagos.reduce((s, p) => s + p.montoPago, 0);
-t(
-  sumaPagos === cierre.costoProducto,
-  `Σ pagos = costo_producto: ${cop(sumaPagos)} vs ${cop(cierre.costoProducto)}`,
-);
-
-// El punto de todo el ejercicio: una canasta CON receta congelada reparte su
-// costo entre las fincas de verdad, en vez de acreditárselo entero a su
-// propio `origen` —que en este catálogo es el texto "38 fincas asociadas"—.
-//
-// Una canasta SIN receta no se puede expandir: no hay en qué. Esas sí caen a
-// su propio origen, a propósito, porque perder su costo descuadraría el
-// reparto contra costo_producto. Que aparezca es señal de que a esa canasta
-// le falta la receta en el panel, no de que el cálculo esté mal, así que se
-// avisa en vez de fallar.
-const fantasma = pagos.find((p) => p.origen === '38 fincas asociadas');
-if (fantasma) {
-  console.log(
-    `\n  ⚠ ${cop(fantasma.montoPago)} quedaron en "${fantasma.origen}": son canastas\n` +
-      `    sin receta definida. Descríbelas en el panel para que ese dinero se\n` +
-      `    reparta entre las fincas que de verdad pusieron el producto.`,
-  );
-}
-
-// Lo que sí es innegociable: si hubo canastas con receta, sus componentes
-// tienen que haber recibido plata. Se comprueba con que el reparto tenga más
-// fincas de las que tendría si nada se hubiera expandido.
-t(pagos.length > 1, `el reparto llega a varias fincas (${pagos.length}), no a una sola`);
-
-console.log('\n  Reparto:');
-for (const pago of pagos.slice(0, 8)) {
-  console.log(`   · ${cop(pago.montoPago).padStart(12)}  ${pago.origen}`);
-}
-if (pagos.length > 8) console.log(`   · … y ${pagos.length - 8} más`);
-
-t(
-  pagos.every((p) => p.estado === 'pendiente'),
-  'todos nacen pendientes de girar',
-);
-
-// ─────────────────── Marcar un giro ───────────────────
-
-seccion('Marcar una finca como pagada');
-
-const primero = pagos[0];
-const { status: sPagar, body: bPagar } = await post(`/api/admin/payouts/${primero.id}/pagar`);
-t(sPagar === 200, `marca el giro (${sPagar})`);
-t(bPagar?.pago?.estado === 'pagado', 'queda en estado pagado');
-t(!!bPagar?.pago?.pagadoEn, 'guarda cuándo se giró');
-
-const { status: sOtraVez } = await post(`/api/admin/payouts/${primero.id}/pagar`);
-t(sOtraVez === 409, `un segundo clic no vuelve a girar (${sOtraVez})`);
-
-const { body: bPendientes } = await api('/api/admin/payouts?estado=pendiente');
-t(
-  !(bPendientes?.pagos ?? []).some((p) => p.id === primero.id),
-  'sale de la lista de pendientes',
-);
 
 // ─────────────────────────────────────────────────────────────
 
