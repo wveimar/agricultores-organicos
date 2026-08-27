@@ -761,9 +761,27 @@ export class AdminApiService {
     });
   }
 
-  /** Total adeudado, para la métrica junto al recaudado del cierre. */
+  /**
+   * Venta fiada, para la métrica junto al recaudado del cierre.
+   *
+   * Solo producto, igual que todas las cifras de venta del panel: el
+   * domicilio no cuenta como ingreso. Para saber cuánto hay que pedirle de
+   * verdad al mayorista está `carteraPorCobrar`.
+   */
   readonly carteraTotal = computed(() =>
     this.cartera().reduce((suma, deuda) => suma + deuda.total, 0),
+  );
+
+  /**
+   * Lo que hay que cobrar: producto **más** domicilio.
+   *
+   * El mayorista debe las dos cosas — el domicilio no será venta de la finca,
+   * pero se lo cobraron igual. Va separada de `carteraTotal` porque las dos
+   * responden preguntas distintas: aquella "cuánto vendí fiado", esta "cuánta
+   * plata tengo que recoger".
+   */
+  readonly carteraPorCobrar = computed(() =>
+    this.cartera().reduce((suma, deuda) => suma + deuda.total + deuda.envio, 0),
   );
 
   /** Lo ya vencido, que es lo que de verdad preocupa. */

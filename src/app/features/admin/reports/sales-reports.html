@@ -46,7 +46,7 @@
   <div class="rounded-lg border border-sand bg-bone p-5">
     <p class="text-overline font-semibold uppercase text-ink-muted">Ventas brutas</p>
     <p class="tabular mt-2 font-display text-h3 text-ink">{{ (adminApi.cashSummary()?.totalRecaudado ?? 0) | cop }}</p>
-    <p class="mt-1 text-xs text-ink-muted">Producto + envíos</p>
+    <p class="mt-1 text-xs text-ink-muted">Solo producto, sin domicilios</p>
   </div>
 
   <!--
@@ -70,6 +70,17 @@
           Fiado, aún sin vencer
         }
       </p>
+      <!--
+        Esta casilla es venta fiada (solo producto), como el resto de la fila.
+        La pantalla de Cartera muestra una cifra mayor porque allí lo que
+        importa es cuánto hay que recoger, domicilio incluido. Sin esta nota,
+        ver dos números distintos para "lo mismo" parece un error de cálculo.
+      -->
+      @if (adminApi.carteraPorCobrar() !== adminApi.carteraTotal()) {
+        <p class="tabular mt-1 text-xs text-ink-muted">
+          {{ adminApi.carteraPorCobrar() | cop }} a cobrar con domicilios
+        </p>
+      }
     </div>
   }
 
@@ -90,13 +101,18 @@
   <div class="rounded-lg border border-sand bg-bone p-5">
     <p class="text-overline font-semibold uppercase text-ink-muted">Envíos cobrados</p>
     <p class="tabular mt-2 font-display text-h3 text-ink">{{ (adminApi.cashSummary()?.enviosCobrados ?? 0) | cop }}</p>
-    <p class="mt-1 text-xs text-ink-muted">No es venta de producto</p>
+    <!--
+      Sigue a la vista para cuadrar con quien reparte, pero el texto tiene que
+      dejar claro que está fuera de las ventas brutas de la izquierda: si no,
+      se lee como un sumando y alguien va a sumarlo a mano.
+    -->
+    <p class="mt-1 text-xs text-ink-muted">Aparte: no suma a las ventas</p>
   </div>
 
   <div class="rounded-lg border border-sand bg-bone p-5">
     <p class="text-overline font-semibold uppercase text-ink-muted">Ticket promedio</p>
     <p class="tabular mt-2 font-display text-h3 text-ink">{{ averageTicket() | cop }}</p>
-    <p class="mt-1 text-xs text-ink-muted">Por pedido cerrado</p>
+    <p class="mt-1 text-xs text-ink-muted">Producto por pedido cerrado</p>
   </div>
 </div>
 
@@ -118,8 +134,8 @@
       }
     </ul>
     <p class="mt-4 border-t border-sand pt-3 text-xs text-ink-muted">
-      Un pedido contra entrega solo cuenta aquí cuando ya está liquidado — ver
-      la sección de abajo mientras tanto.
+      Solo producto, sin el domicilio. Un pedido contra entrega solo cuenta
+      aquí cuando ya está liquidado — ver la sección de abajo mientras tanto.
     </p>
   </div>
 
@@ -190,7 +206,9 @@
     <h2 class="text-h3 text-ink">Efectivo contra entrega por liquidar</h2>
     <p class="mt-1 text-sm text-ink-soft">
       Ya lo cobró un domiciliario. No cuenta en el recaudo de arriba hasta que
-      confirmes que el dinero llegó a la finca.
+      confirmes que el dinero llegó a la finca. Las cifras son el efectivo que
+      trae en mano —domicilio incluido—, no la venta: por eso pueden ser
+      mayores que lo que este pedido suma en las ventas brutas.
     </p>
 
     <ul class="mt-4 flex flex-col divide-y divide-honey/30">
@@ -209,7 +227,15 @@
             </p>
           </div>
           <div class="flex items-center gap-3">
-            <p class="tabular text-sm font-semibold text-ink">{{ pendiente.total | cop }}</p>
+            <!-- El efectivo real que hay que recibir, no la venta. -->
+            <p class="tabular text-right text-sm font-semibold text-ink">
+              {{ pendiente.total + pendiente.envio | cop }}
+              @if (pendiente.envio > 0) {
+                <span class="block text-xs font-normal text-ink-muted">
+                  incluye {{ pendiente.envio | cop }} de domicilio
+                </span>
+              }
+            </p>
             <button
               type="button"
               class="rounded-full bg-moss px-4 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
@@ -547,8 +573,14 @@
                       <th scope="col" class="pb-2 font-medium">Pedido</th>
                       <th scope="col" class="pb-2 font-medium">Cliente</th>
                       <th scope="col" class="pb-2 text-right font-medium">Uds</th>
+                      <!--
+                        El envío se sigue mostrando, pero fuera de la columna
+                        que suma: "Producto" y no "Total" porque justamente NO
+                        lleva el envío dentro. Con el encabezado viejo, la
+                        fila se leía como una resta mal hecha.
+                      -->
                       <th scope="col" class="pb-2 text-right font-medium">Envío</th>
-                      <th scope="col" class="pb-2 text-right font-medium">Total</th>
+                      <th scope="col" class="pb-2 text-right font-medium">Producto</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-sand">

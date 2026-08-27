@@ -466,7 +466,11 @@ export interface ApiCarteraRow {
   readonly clienteNombre: string;
   readonly clienteTelefono: string;
   readonly clienteDireccion: string;
+  /** Solo producto: el domicilio va aparte, en `envio`. */
   readonly total: number;
+  /** Domicilio cobrado. No es venta, pero el mayorista sí lo debe: al cobrar
+   *  hay que pedir `total + envio`. */
+  readonly envio: number;
   readonly venceEn: string | null;
   readonly creadoEn: string;
   readonly estado: string;
@@ -480,7 +484,11 @@ export interface ApiCodPending {
   readonly id: string;
   readonly referencia: string;
   readonly clienteNombre: string;
+  /** Solo producto: el domicilio va aparte, en `envio`. */
   readonly total: number;
+  /** Domicilio cobrado. No es venta, pero el efectivo que trae el
+   *  domiciliario sí lo incluye: al cuadrar hay que contar `total + envio`. */
+  readonly envio: number;
   /** Quién y cuándo lo cobró. `null` si el pedido es de antes de este flujo. */
   readonly cobradoPor: string | null;
   readonly cobradoEn: string | null;

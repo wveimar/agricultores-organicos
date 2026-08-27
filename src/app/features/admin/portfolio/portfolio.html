@@ -26,9 +26,21 @@
 
     <!-- Resumen: el total y, aparte, lo que ya está vencido -->
     <div class="mb-6 flex flex-wrap gap-8">
+      <!--
+        Esta pantalla es para cobrar, así que la cifra grande es la que hay
+        que pedir: producto **más** domicilio. La venta fiada sin domicilio
+        (`carteraTotal`) va debajo en pequeño — es la que cuadra con las
+        ventas del cierre, y tenerla a la vista evita que alguien crea que
+        una de las dos está mal calculada.
+      -->
       <div>
-        <p class="tabular font-display text-h3 text-ink">{{ adminApi.carteraTotal() | cop }}</p>
+        <p class="tabular font-display text-h3 text-ink">{{ adminApi.carteraPorCobrar() | cop }}</p>
         <p class="text-sm text-ink-soft">por cobrar en total</p>
+        @if (adminApi.carteraPorCobrar() !== adminApi.carteraTotal()) {
+          <p class="tabular text-xs text-ink-muted">
+            {{ adminApi.carteraTotal() | cop }} de producto + domicilios
+          </p>
+        }
       </div>
       @if (adminApi.carteraVencida() > 0) {
         <div>
@@ -134,8 +146,19 @@
                 <p class="mt-1 truncate text-sm text-ink-soft">{{ deuda.clienteDireccion }}</p>
               </div>
 
-              <p class="tabular shrink-0 text-lg font-semibold text-ink">
-                {{ deuda.total | cop }}
+              <!--
+                Lo que hay que pedirle a este mayorista, domicilio incluido.
+                El desglose solo aparece cuando hay domicilio que cobrar: en
+                los pedidos que pasaron el umbral de envío gratis, repetir
+                «+ $0» sería ruido en cada fila.
+              -->
+              <p class="tabular shrink-0 text-right text-lg font-semibold text-ink">
+                {{ deuda.total + deuda.envio | cop }}
+                @if (deuda.envio > 0) {
+                  <span class="block text-xs font-normal text-ink-muted">
+                    incluye {{ deuda.envio | cop }} de domicilio
+                  </span>
+                }
               </p>
 
               <!-- Confirmación en el sitio: registrar un pago no se deshace -->

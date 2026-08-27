@@ -205,8 +205,13 @@ export async function cashSummary(env: Env, user: JwtPayload): Promise<Response>
   // Desglose real por método, con el mismo filtro que el resto del resumen:
   // un pedido contra entrega sin liquidar no aparece aquí tampoco, por la
   // misma razón que no aparece en el total.
+  //
+  // `subtotal` y no `total`: `total` lleva el envío dentro, y el envío no es
+  // venta de esta finca — ver la nota de `totalRecaudado` abajo. Si esta
+  // consulta sumara `total`, la lista por método no cuadraría con el KPI que
+  // tiene justo encima.
   const { results: porMetodo } = await env.DB.prepare(
-    `SELECT o.metodo_pago AS metodo, COUNT(DISTINCT o.id) AS pedidos, COALESCE(SUM(o.total), 0) AS total
+    `SELECT o.metodo_pago AS metodo, COUNT(DISTINCT o.id) AS pedidos, COALESCE(SUM(o.subtotal), 0) AS total
        FROM orders o
       WHERE ${RECAUDADO_WHERE}
       GROUP BY o.metodo_pago`,
@@ -215,7 +220,12 @@ export async function cashSummary(env: Env, user: JwtPayload): Promise<Response>
   return json({
     ...data,
     ganancia: data.ventaProducto - data.costoProducto,
-    totalRecaudado: data.ventaProducto + data.enviosCobrados,
+    // Solo producto: el cobro del domicilio NO entra en ninguna cifra de
+    // venta. Ese dinero pasa por la finca pero no se queda —va para quien
+    // reparte—, así que sumarlo inflaba las ventas brutas con plata que
+    // nunca fue ingreso. `enviosCobrados` se sigue devolviendo aparte, como
+    // dato operativo para cuadrar con el domiciliario, pero no suma aquí.
+    totalRecaudado: data.ventaProducto,
     porMetodo,
   });
 }
@@ -229,12 +239,21 @@ export async function cashSummary(env: Env, user: JwtPayload): Promise<Response>
  * orders.ts). "Quién cobró" no está denormalizado en `orders` — sale de
  * `order_status_log` con el mismo índice que ya usa el resto del panel para
  * la traza (`idx_status_log_order`), de sobra para el volumen de esta tienda.
+ *
+ * ── `total` aquí es solo producto ──
+ *
+ * Como en el resto de los informes, el domicilio no cuenta como venta. Pero
+ * el efectivo que el domiciliario trae en el bolsillo **sí** incluye el
+ * domicilio, así que `envio` viaja aparte y la pantalla muestra las dos
+ * cifras: sin eso, cuadrar lo que entrega contra lo que dice el panel daría
+ * de menos por exactamente el valor de los domicilios de esa jornada.
  */
 export async function codPending(env: Env, user: JwtPayload): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS');
 
   const { results } = await env.DB.prepare(
-    `SELECT o.id, o.referencia, o.cliente_nombre AS clienteNombre, o.total,
+    `SELECT o.id, o.referencia, o.cliente_nombre AS clienteNombre,
+            o.subtotal AS total, o.envio,
             (SELECT actor_nombre FROM order_status_log
               WHERE order_id = o.id AND estado = 'pago'
               ORDER BY creado_en DESC LIMIT 1) AS cobradoPor,
@@ -285,7 +304,12 @@ export async function cartera(env: Env, user: JwtPayload): Promise<Response> {
             o.cliente_nombre    AS clienteNombre,
             o.cliente_telefono  AS clienteTelefono,
             o.cliente_direccion AS clienteDireccion,
-            o.total,
+            -- Solo producto, como en el resto de los informes. Lo que el
+            -- mayorista debe de verdad es total + envio, así que el envío
+            -- viaja aparte y la pantalla lo suma al cobrar: sin él, la
+            -- gestión de cobro pediría de menos el valor del domicilio.
+            o.subtotal          AS total,
+            o.envio,
             o.vence_en          AS venceEn,
             o.creado_en         AS creadoEn,
             o.estado,
@@ -365,8 +389,11 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
       ventaProducto,
       costoProducto,
       ventaProducto - costoProducto,
+      // Se sigue congelando cuánto se cobró de domicilio: es el dato con el
+      // que se cuadra después con quien repartió. Lo que ya no hace es sumar
+      // al total — ver `envios_cobrados` en schema.sql y la migración 0019.
       totals.enviosCobrados,
-      ventaProducto + totals.enviosCobrados,
+      ventaProducto,
     ),
     // Marca exactamente el mismo conjunto que se acaba de sumar. Al ir en el
     // mismo batch, ningún pedido puede colarse entre el cálculo y el archivado.

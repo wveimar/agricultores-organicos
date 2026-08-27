@@ -72,15 +72,18 @@ export class Portfolio {
   });
 
   /** Suma de lo que se está viendo, que con un filtro puesto no es el total. */
+  /** Con domicilio: es lo que hay que cobrar de las facturas a la vista. */
   protected readonly totalVisible = computed(() =>
-    this.visible().reduce((suma, deuda) => suma + deuda.total, 0),
+    this.visible().reduce((suma, deuda) => suma + deuda.total + deuda.envio, 0),
   );
 
   /** Cuánto hay en cada tramo, para las pestañas. */
   protected readonly porTramo = computed<Record<string, number>>(() => {
     const totales: Record<string, number> = {};
     for (const deuda of this.adminApi.cartera()) {
-      totales[deuda.tramo] = (totales[deuda.tramo] ?? 0) + deuda.total;
+      // Con domicilio, igual que `totalVisible`: las pestañas y el pie de la
+      // lista tienen que sumar lo mismo o parece que una de las dos falla.
+      totales[deuda.tramo] = (totales[deuda.tramo] ?? 0) + deuda.total + deuda.envio;
     }
     return totales;
   });

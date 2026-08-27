@@ -155,7 +155,13 @@ CREATE TABLE cash_closings (
   -- `ganancia` es la única que puede ser negativa a propósito: vender por
   -- debajo del costo es una decisión comercial posible, no un error de datos.
   ganancia           INTEGER NOT NULL DEFAULT 0,
+  -- Cuánto se cobró de domicilio en la jornada. Dato operativo para cuadrar
+  -- con quien repartió: NO suma a `total_recaudado` ni a ninguna otra cifra
+  -- de venta. Ese dinero pasa por la finca pero no se queda. Ver 0019.
   envios_cobrados    INTEGER NOT NULL DEFAULT 0 CHECK (envios_cobrados    >= 0),
+  -- Solo venta de producto: es igual a `venta_producto`. Se conserva como
+  -- columna propia porque es lo que lee el recibo y la lista de cierres, y
+  -- porque un día podría volver a divergir (un descuento, un ajuste).
   total_recaudado    INTEGER NOT NULL DEFAULT 0 CHECK (total_recaudado    >= 0)
 );
 

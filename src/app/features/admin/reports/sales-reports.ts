@@ -185,9 +185,15 @@ export class SalesReports {
     });
   }
 
-  /** Total cobrado de un pedido dentro del cierre: producto + su envío. */
+  /**
+   * Lo que este pedido aportó al cierre: solo producto.
+   *
+   * El envío queda fuera a propósito — no es venta de la finca, es plata que
+   * va para quien reparte. Tiene que sumar igual que `totalRecaudado` del
+   * cierre, porque el aviso de descuadre de abajo compara las dos cifras.
+   */
   protected orderTotal(order: ApiClosingOrder): number {
-    return order.ventaProducto + order.envio;
+    return order.ventaProducto;
   }
 
   /**
@@ -267,8 +273,12 @@ export class SalesReports {
       `Venta de producto:  ${money(closing.ventaProducto)}`,
       `Costo de producto:  ${money(closing.costoProducto)}`,
       `Ganancia:           ${money(closing.ganancia)}`,
-      `Envíos cobrados:    ${money(closing.enviosCobrados)}`,
       `TOTAL RECAUDADO:    ${money(closing.totalRecaudado)}`,
+      '',
+      // Debajo del total y separado por una línea en blanco, no encima como
+      // antes: así se lee como lo que es —un dato aparte para cuadrar con el
+      // domiciliario— y no como un sumando del total.
+      `Domicilios cobrados: ${money(closing.enviosCobrados)} (no es venta, no suma al total)`,
       '',
       'Documento generado en el navegador. Sin valor fiscal.',
     ].join('\n');

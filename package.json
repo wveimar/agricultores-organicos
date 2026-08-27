@@ -67,6 +67,8 @@
     "db:migrate:credito:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0017_credito_mayoristas.sql",
     "db:migrate:entrega-confirmada": "wrangler d1 execute DB --local --file=worker/migrations/0018_entrega_confirmada.sql",
     "db:migrate:entrega-confirmada:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0018_entrega_confirmada.sql",
+    "db:migrate:envio-fuera": "wrangler d1 execute DB --local --file=worker/migrations/0019_envio_fuera_de_ventas.sql",
+    "db:migrate:envio-fuera:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0019_envio_fuera_de_ventas.sql",
     "qa:credito": "node worker/tests/qa-credito.mjs"
   },
   "private": true,
