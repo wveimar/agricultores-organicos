@@ -6,6 +6,8 @@ import * as products from './routes/products';
 import * as categories from './routes/categories';
 import * as orders from './routes/orders';
 import * as reports from './routes/reports';
+import * as expenses from './routes/expenses';
+import * as payouts from './routes/payouts';
 import * as users from './routes/users';
 import * as wholesale from './routes/wholesale';
 import * as components from './routes/components';
@@ -292,6 +294,31 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (pathname === '/api/admin/reports/closings' && method === 'GET') {
       return reports.closings(env, user);
+    }
+
+    // Gastos operativos. Entran en `ganancia` del cierre, así que van detrás
+    // del mismo rol que cierra la caja — ver expenses.ts.
+    if (pathname === '/api/admin/expenses' && method === 'GET') {
+      return expenses.list(env, user, url);
+    }
+    if (pathname === '/api/admin/expenses' && method === 'POST') {
+      return expenses.create(request, env, user);
+    }
+
+    const expenseMatch = pathname.match(/^\/api\/admin\/expenses\/([\w-]+)$/);
+    if (expenseMatch && method === 'DELETE') {
+      return expenses.remove(env, user, expenseMatch[1]);
+    }
+
+    // Liquidación a las fincas. Las filas las escribe el cierre de caja; aquí
+    // solo se consultan y se marcan giradas.
+    if (pathname === '/api/admin/payouts' && method === 'GET') {
+      return payouts.list(env, user, url);
+    }
+
+    const payoutMatch = pathname.match(/^\/api\/admin\/payouts\/([\w-]+)\/pagar$/);
+    if (payoutMatch && method === 'POST') {
+      return payouts.markPaid(env, user, payoutMatch[1]);
     }
     // Consolidado semanal: qué cosechar y a quién se le lleva.
     if (pathname === '/api/admin/reports/consolidation' && method === 'GET') {

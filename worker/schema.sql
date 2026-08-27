@@ -13,6 +13,11 @@
 
 PRAGMA foreign_keys = ON;
 
+-- Hijas antes que madres: con foreign_keys = ON, soltar primero una tabla
+-- referenciada deja huérfanas a las que apuntan a ella. `provider_payouts` y
+-- `expenses` van arriba del todo porque dependen de `cash_closings`.
+DROP TABLE IF EXISTS provider_payouts;
+DROP TABLE IF EXISTS expenses;
 DROP TABLE IF EXISTS order_status_log;
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
@@ -162,7 +167,12 @@ CREATE TABLE cash_closings (
   -- Solo venta de producto: es igual a `venta_producto`. Se conserva como
   -- columna propia porque es lo que lee el recibo y la lista de cierres, y
   -- porque un día podría volver a divergir (un descuento, un ajuste).
-  total_recaudado    INTEGER NOT NULL DEFAULT 0 CHECK (total_recaudado    >= 0)
+  total_recaudado    INTEGER NOT NULL DEFAULT 0 CHECK (total_recaudado    >= 0),
+
+  -- Gastos operativos de la jornada (transporte, empaque, servicios). Se
+  -- restan de `ganancia` junto con el costo de mercancía: es la diferencia
+  -- entre "cuánto margen dejó la fruta" y "cuánto quedó de verdad". Ver 0020.
+  total_gastos       INTEGER NOT NULL DEFAULT 0 CHECK (total_gastos       >= 0)
 );
 
 CREATE INDEX idx_closings_fecha ON cash_closings (cerrado_en DESC);
@@ -288,3 +298,43 @@ CREATE TABLE order_status_log (
 );
 
 CREATE INDEX idx_status_log_order ON order_status_log (order_id, creado_en);
+
+-- ─────────────────── Gastos operativos y pago a las fincas ───────────────────
+-- Lo que hace que `ganancia` sea la de verdad y no solo el margen de la fruta.
+-- Ver la migración 0020 para el porqué de cada decisión.
+
+CREATE TABLE expenses (
+  id          TEXT    PRIMARY KEY,
+  descripcion TEXT    NOT NULL,
+  -- Estrictamente positivo: un gasto de cero es ruido en el informe. Para
+  -- corregirse se borra, mientras la jornada siga abierta.
+  monto       INTEGER NOT NULL CHECK (monto > 0),
+  categoria   TEXT    NOT NULL CHECK (categoria IN ('transporte', 'empaque', 'servicios', 'otros')),
+  creado_por  TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  creado_en   TEXT    NOT NULL DEFAULT (datetime('now')),
+  -- NULL mientras la jornada sigue abierta; el cierre lo adopta, igual que a
+  -- los pedidos. Con cierre puesto ya no se puede borrar: es cuenta congelada.
+  closing_id  TEXT    REFERENCES cash_closings(id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_expenses_closing ON expenses (closing_id, creado_en DESC);
+
+-- Cuánto se le debe a cada finca por una jornada. `origen` es el texto de
+-- `products.origen` COPIADO al cerrar, no una referencia: si mañana renombran
+-- la finca en el catálogo, el giro de la semana pasada debe seguir diciendo a
+-- quién se le pagó.
+CREATE TABLE provider_payouts (
+  id          TEXT    PRIMARY KEY,
+  origen      TEXT    NOT NULL,
+  monto_pago  INTEGER NOT NULL CHECK (monto_pago >= 0),
+  estado      TEXT    NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'pagado')),
+  closing_id  TEXT    NOT NULL REFERENCES cash_closings(id) ON DELETE CASCADE,
+  pagado_por  TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  pagado_en   TEXT,
+  -- Una sola fila por finca y jornada: sin esto un cierre reintentado
+  -- duplicaría la deuda y nadie lo notaría hasta ir a girar.
+  UNIQUE (closing_id, origen)
+);
+
+CREATE INDEX idx_payouts_closing ON provider_payouts (closing_id);
+CREATE INDEX idx_payouts_estado  ON provider_payouts (estado, closing_id);

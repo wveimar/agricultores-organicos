@@ -329,6 +329,142 @@ export async function cartera(env: Env, user: JwtPayload): Promise<Response> {
   return json({ deudores: results });
 }
 
+/** Una línea de pedido tal como la necesita el reparto a fincas. */
+interface LineaParaReparto {
+  orderId: string;
+  productId: string;
+  /** Costo TOTAL de la línea, ya congelado: costo_unitario × cantidad. */
+  costoLinea: number;
+  /** `products.origen` del producto vendido. En una canasta, no sirve. */
+  origen: string;
+}
+
+/** Un componente de canasta, con lo que hace falta para repartir su costo. */
+interface ComponenteParaReparto {
+  orderId: string;
+  parentProductId: string;
+  origen: string;
+  /** Peso relativo: cuánto cuesta ese componente dentro de una canasta. */
+  peso: number;
+}
+
+/**
+ * Cuánto se le debe a cada finca por los pedidos de esta jornada.
+ *
+ * ── El problema de las canastas ──
+ *
+ * Agrupar `order_items` por `products.origen` a secas parece obvio y está
+ * mal: una canasta es un producto con su propio `origen` —hoy, literalmente,
+ * el texto "38 fincas asociadas"— y su costo entero se le acreditaría a ese
+ * proveedor inexistente, mientras las fincas cuyo producto iba dentro se
+ * quedan en cero.
+ *
+ * Por eso las líneas de canasta se expanden con `order_item_components`, que
+ * guarda la receta **congelada del pedido**: qué llevaba esa canasta el día
+ * que se vendió, no la de hoy.
+ *
+ * ── Por qué se reparte en proporción y no se suman costos ──
+ *
+ * Lo que hay que repartir es `costo_unitario × cantidad` de la línea, que es
+ * el número congelado y el que suma en `costo_producto`. Los componentes
+ * aportan solo el **peso** de cada finca dentro de la canasta, tomado de
+ * `precio_costo` actual. Así el total repartido cuadra al peso exacto con
+ * `costo_producto` aunque el catálogo haya cambiado de precio desde la venta:
+ * si sumáramos costos de componentes, las dos cifras divergirían y nadie
+ * sabría cuál creer.
+ *
+ * El sobrante de la división entera se le da a la finca de mayor peso (método
+ * del resto mayor). Sin eso se perderían pesos por el camino y la suma de los
+ * giros no daría igual al costo del cierre.
+ */
+async function calcularPagosAFincas(env: Env): Promise<Map<string, number>> {
+  const [lineasResult, componentesResult] = await env.DB.batch([
+    // Todas las líneas de los pedidos que entran a este cierre. Se usa
+    // RECAUDADO_WHERE, el mismo predicado que los totales y el archivado: si
+    // esta consulta se quedara con otra definición, se giraría por pedidos
+    // que el cierre no incluyó.
+    env.DB.prepare(
+      `SELECT i.order_id AS orderId, i.product_id AS productId,
+              i.costo_unitario * i.cantidad AS costoLinea,
+              p.origen
+         FROM order_items i
+         JOIN orders   o ON o.id = i.order_id
+         JOIN products p ON p.id = i.product_id
+        WHERE ${RECAUDADO_WHERE}`,
+    ),
+    // Los componentes de las canastas de esos mismos pedidos. `peso` es lo
+    // que cuesta ese componente dentro de UNA canasta; como el reparto es
+    // proporcional, la escala da igual mientras sea la misma para todos.
+    env.DB.prepare(
+      `SELECT c.order_id AS orderId, c.parent_product_id AS parentProductId,
+              hijo.origen,
+              c.cantidad_requerida * hijo.precio_costo AS peso
+         FROM order_item_components c
+         JOIN orders   o    ON o.id = c.order_id
+         JOIN products hijo ON hijo.id = c.child_product_id
+        WHERE ${RECAUDADO_WHERE}`,
+    ),
+  ]);
+
+  const lineas = lineasResult.results as unknown as LineaParaReparto[];
+  const componentes = componentesResult.results as unknown as ComponenteParaReparto[];
+
+  // Los componentes, agrupados por la línea de canasta a la que pertenecen.
+  const porCanasta = new Map<string, ComponenteParaReparto[]>();
+  for (const componente of componentes) {
+    const clave = `${componente.orderId}:${componente.parentProductId}`;
+    const grupo = porCanasta.get(clave) ?? [];
+    grupo.push(componente);
+    porCanasta.set(clave, grupo);
+  }
+
+  const porFinca = new Map<string, number>();
+  const sumar = (origen: string, monto: number) => {
+    porFinca.set(origen, (porFinca.get(origen) ?? 0) + monto);
+  };
+
+  for (const linea of lineas) {
+    const receta = porCanasta.get(`${linea.orderId}:${linea.productId}`);
+
+    // Producto suelto, o canasta sin receta guardada (las que ya existían
+    // antes de la 0014 y nadie llegó a describir). En el segundo caso se
+    // atribuye a su propio `origen`: no es ideal, pero es preferible a
+    // perder el costo y descuadrar el reparto contra `costo_producto`.
+    if (!receta || receta.length === 0) {
+      sumar(linea.origen, linea.costoLinea);
+      continue;
+    }
+
+    const pesoTotal = receta.reduce((suma, parte) => suma + parte.peso, 0);
+
+    // Receta con todos los componentes a costo cero: no hay proporción que
+    // calcular, así que se reparte en partes iguales y el resto va al primero.
+    const cuotas = receta.map((parte) =>
+      pesoTotal > 0
+        ? Math.floor((linea.costoLinea * parte.peso) / pesoTotal)
+        : Math.floor(linea.costoLinea / receta.length),
+    );
+
+    // Resto mayor: lo que se perdió al truncar va a la finca con más peso, que
+    // es donde menos se nota y la que más aporta. La suma vuelve a ser exacta.
+    const repartido = cuotas.reduce((suma, cuota) => suma + cuota, 0);
+    const sobrante = linea.costoLinea - repartido;
+    if (sobrante > 0) {
+      let mayor = 0;
+      for (let i = 1; i < receta.length; i += 1) {
+        if (receta[i].peso > receta[mayor].peso) {
+          mayor = i;
+        }
+      }
+      cuotas[mayor] += sobrante;
+    }
+
+    receta.forEach((parte, i) => sumar(parte.origen, cuotas[i]));
+  }
+
+  return porFinca;
+}
+
 /**
  * POST /api/admin/reports/cash/close — cierra la jornada.
  *
@@ -336,6 +472,10 @@ export async function cartera(env: Env, user: JwtPayload): Promise<Response> {
  * `closing_id` en la **misma transacción**. Si se hicieran en dos pasos y el
  * segundo fallara, quedarían pedidos cerrados sin cierre o un cierre sin
  * pedidos, y las dos cosas descuadran la caja.
+ *
+ * Desde la migración 0020 el mismo batch adopta los gastos huérfanos y escribe
+ * el reparto a las fincas: son tres cosas que describen la misma jornada, y
+ * que una se guarde sin las otras deja la contabilidad a medias.
  */
 export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS');
@@ -366,19 +506,43 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
   const unidades = productTotals?.unidades ?? 0;
   const ventaProducto = productTotals?.ventaProducto ?? 0;
   const costoProducto = productTotals?.costoProducto ?? 0;
+
+  // Gastos de la jornada: los huérfanos son, por definición, los que todavía
+  // no ha adoptado ningún cierre. El mismo batch de abajo se los queda, así
+  // que este número y las filas que se marcan describen el mismo conjunto.
+  const gastos = await env.DB.prepare(
+    `SELECT COALESCE(SUM(monto), 0) AS totalGastos FROM expenses WHERE closing_id IS NULL`,
+  ).first<{ totalGastos: number }>();
+
+  const totalGastos = gastos?.totalGastos ?? 0;
+
+  // Reparto a las fincas. Se calcula antes del batch —hay que leer líneas y
+  // recetas para hacerlo— y se escribe dentro de él, igual que los totales.
+  const pagosAFincas = await calcularPagosAFincas(env);
+
   const closingId = crypto.randomUUID();
+
+  /**
+   * La ganancia de verdad: lo que queda después de pagarle a la finca y de
+   * pagar lo que costó operar.
+   *
+   * El envío NO entra, aquí ni en ninguna otra cifra de venta — ver la
+   * migración 0019. `envios_cobrados` se congela aparte, como dato para
+   * cuadrar con quien reparte.
+   */
+  const ganancia = ventaProducto - costoProducto - totalGastos;
 
   const results = await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO cash_closings (
          id, referencia, cerrado_por, cerrado_por_nombre, cerrado_en,
          pedidos_count, unidades_count, venta_producto, costo_producto,
-         ganancia, envios_cobrados, total_recaudado
+         ganancia, envios_cobrados, total_recaudado, total_gastos
        ) VALUES (
          ?1,
          'CIERRE-' || printf('%04d',
            (SELECT COALESCE(MAX(CAST(substr(referencia, 8) AS INTEGER)), 0) + 1 FROM cash_closings)),
-         ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8, ?9, ?10
+         ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
        )`,
     ).bind(
       closingId,
@@ -388,12 +552,13 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
       unidades,
       ventaProducto,
       costoProducto,
-      ventaProducto - costoProducto,
+      ganancia,
       // Se sigue congelando cuánto se cobró de domicilio: es el dato con el
       // que se cuadra después con quien repartió. Lo que ya no hace es sumar
       // al total — ver `envios_cobrados` en schema.sql y la migración 0019.
       totals.enviosCobrados,
       ventaProducto,
+      totalGastos,
     ),
     // Marca exactamente el mismo conjunto que se acaba de sumar. Al ir en el
     // mismo batch, ningún pedido puede colarse entre el cálculo y el archivado.
@@ -415,19 +580,46 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
       `UPDATE orders AS o SET closing_id = ?1, comprobante_url = NULL
         WHERE ${RECAUDADO_WHERE}`,
     ).bind(closingId),
+
+    // Los gastos huérfanos pasan a ser de este cierre. Mismo predicado que la
+    // suma de `totalGastos` de arriba: en el batch nadie puede meter un gasto
+    // entre las dos, así que la cifra congelada y las filas marcadas
+    // coinciden siempre. A partir de aquí ya no se pueden borrar.
+    env.DB.prepare(
+      `UPDATE expenses SET closing_id = ?1 WHERE closing_id IS NULL`,
+    ).bind(closingId),
+
+    // El reparto a las fincas, una sentencia por origen. Van en el mismo
+    // batch que todo lo demás por la misma razón: un cierre cuyo reparto no
+    // se guardó deja plata que alguien cobró sin saber a quién pagarle.
+    ...[...pagosAFincas.entries()].map(([origen, monto]) =>
+      env.DB.prepare(
+        `INSERT INTO provider_payouts (id, origen, monto_pago, closing_id)
+         VALUES (?1, ?2, ?3, ?4)`,
+      ).bind(crypto.randomUUID(), origen, monto, closingId),
+    ),
   ]);
 
   const closing = await env.DB.prepare(
     `SELECT id, referencia, cerrado_en AS cerradoEn, cerrado_por_nombre AS cerradoPor,
             pedidos_count AS pedidos, unidades_count AS unidades,
             venta_producto AS ventaProducto, costo_producto AS costoProducto,
-            ganancia, envios_cobrados AS enviosCobrados, total_recaudado AS totalRecaudado
+            ganancia, envios_cobrados AS enviosCobrados, total_recaudado AS totalRecaudado,
+            total_gastos AS totalGastos
        FROM cash_closings WHERE id = ?1`,
   )
     .bind(closingId)
     .first();
 
-  return json({ closing, pedidosArchivados: results[1].meta.changes }, 201);
+  return json(
+    {
+      closing,
+      pedidosArchivados: results[1].meta.changes,
+      gastosArchivados: results[2].meta.changes,
+      fincasPorPagar: pagosAFincas.size,
+    },
+    201,
+  );
 }
 
 /**
@@ -738,7 +930,8 @@ export async function closings(env: Env, user: JwtPayload): Promise<Response> {
     `SELECT id, referencia, cerrado_en AS cerradoEn, cerrado_por_nombre AS cerradoPor,
             pedidos_count AS pedidos, unidades_count AS unidades,
             venta_producto AS ventaProducto, costo_producto AS costoProducto,
-            ganancia, envios_cobrados AS enviosCobrados, total_recaudado AS totalRecaudado
+            ganancia, envios_cobrados AS enviosCobrados, total_recaudado AS totalRecaudado,
+            total_gastos AS totalGastos
        FROM cash_closings
       ORDER BY cerrado_en DESC
       LIMIT 50`,
