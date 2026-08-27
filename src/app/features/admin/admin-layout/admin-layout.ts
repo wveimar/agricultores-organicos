@@ -51,6 +51,10 @@ export class AdminLayout {
     // Junto a Reportes: las dos hablan de dinero, y de la cartera se sale a
     // mirar la caja para ver qué falta por entrar.
     { path: '/admin/cartera', label: 'Cartera', roles: ['GESTOR_PEDIDOS'] },
+    // El bloque de plata que SALE, después del de la que entra: gastos se
+    // registra durante la jornada y pagos a fincas se resuelve tras cerrarla.
+    { path: '/admin/gastos', label: 'Gastos', roles: ['GESTOR_PEDIDOS'] },
+    { path: '/admin/pagos-fincas', label: 'Pago a fincas', roles: ['GESTOR_PEDIDOS'] },
     {
       path: '/admin/entregas',
       label: 'Entregas',

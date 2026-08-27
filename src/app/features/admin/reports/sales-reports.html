@@ -18,13 +18,40 @@
         </p>
       </div>
 
-      <div class="text-right">
-        <p class="text-xs text-ink-muted">Total recaudado</p>
-        <p class="tabular font-display text-h2 text-ink">{{ closing.totalRecaudado | cop }}</p>
-        <p class="tabular mt-1 text-sm font-medium text-moss">
-          Ganancia: {{ closing.ganancia | cop }}
-        </p>
-      </div>
+      <!--
+        El desglose completo y no solo el total: es la única forma de que
+        alguien pueda auditar de dónde sale la ganancia sin abrir la base.
+        Cada línea lleva su signo delante, para que se lea como la cuenta que
+        es y no como cuatro cifras sueltas.
+      -->
+      <dl class="tabular w-full max-w-xs text-sm sm:w-auto">
+        <div class="flex items-baseline justify-between gap-6 py-1">
+          <dt class="text-ink-soft">(+) Venta de productos</dt>
+          <dd class="font-medium text-ink">{{ closing.ventaProducto | cop }}</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-6 py-1">
+          <dt class="text-ink-soft">(−) Costo de cosecha</dt>
+          <dd class="font-medium text-ink">{{ closing.costoProducto | cop }}</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-6 py-1">
+          <dt class="text-ink-soft">(−) Gastos operativos</dt>
+          <dd class="font-medium text-ink">{{ closing.totalGastos | cop }}</dd>
+        </div>
+        <div class="mt-1 flex items-baseline justify-between gap-6 border-t border-moss/30 pt-2">
+          <dt class="font-semibold text-ink">= Ganancia real neta</dt>
+          <dd class="font-display text-h3 text-moss">{{ closing.ganancia | cop }}</dd>
+        </div>
+        <!--
+          Fuera de la cuenta y marcado como tal: el domicilio no es venta de
+          la finca, es plata que se le pasa a quien reparte. Ver migración 0019.
+        -->
+        @if (closing.enviosCobrados > 0) {
+          <div class="mt-2 flex items-baseline justify-between gap-6 border-t border-sand pt-2">
+            <dt class="text-xs text-ink-muted">Domicilios cobrados (aparte)</dt>
+            <dd class="text-xs text-ink-muted">{{ closing.enviosCobrados | cop }}</dd>
+          </div>
+        }
+      </dl>
     </div>
 
     @if (receiptPreview(); as receipt) {
@@ -535,6 +562,17 @@
                 </p>
                 <p class="tabular text-base font-medium text-ink">{{ closing.totalRecaudado | cop }}</p>
                 <p class="tabular text-xs text-moss-deep">+{{ closing.ganancia | cop }} ganancia</p>
+                <!--
+                  Solo si hubo: una línea de "$0 en gastos" en cada cierre
+                  viejo sería ruido, y los anteriores a la 0020 tienen 0 por
+                  definición — no porque no se gastara, sino porque no había
+                  dónde registrarlo.
+                -->
+                @if (closing.totalGastos > 0) {
+                  <p class="tabular text-xs text-ink-muted">
+                    −{{ closing.totalGastos | cop }} en gastos
+                  </p>
+                }
               </div>
 
               <div class="flex shrink-0 items-center gap-2">

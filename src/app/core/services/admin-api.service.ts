@@ -11,13 +11,16 @@ import {
   ApiConsolidation,
   ApiDelivery,
   ApiErrorBody,
+  ApiExpense,
   ApiOrder,
   ApiOrderStatusLogEntry,
+  ApiPayout,
   ApiProduct,
   ApiSalesRow,
   ApiUser,
   ApiWholesaleRow,
   ApiWholesaleTariff,
+  ExpenseCategory,
 } from '../api/api-client';
 import { UserRole, WholesaleRole } from '../models/user.model';
 
@@ -796,5 +799,94 @@ export class AdminApiService {
 
   loadCodPending(): void {
     this.api.codPending().subscribe({ next: (list) => this.codPending.set(list) });
+  }
+
+  // ──────────────── Gastos operativos y pago a las fincas ────────────────
+
+  /** Gastos de la jornada abierta: los que todavía no ha adoptado un cierre. */
+  readonly expenses = signal<readonly ApiExpense[]>([]);
+  readonly expensesLoading = signal(false);
+  readonly expensesError = signal<string | null>(null);
+
+  loadExpenses(): void {
+    this.expensesLoading.set(true);
+    this.expensesError.set(null);
+    this.api.expenses().subscribe({
+      next: (list) => {
+        this.expenses.set(list);
+        this.expensesLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.expensesError.set(error.message);
+        this.expensesLoading.set(false);
+      },
+    });
+  }
+
+  /**
+   * Lo que se lleva la operación esta jornada. Es lo que se restará de la
+   * ganancia al cerrar, así que se muestra antes de cerrar y no después.
+   */
+  readonly expensesTotal = computed(() =>
+    this.expenses().reduce((suma, gasto) => suma + gasto.monto, 0),
+  );
+
+  createExpense(gasto: {
+    descripcion: string;
+    monto: number;
+    categoria: ExpenseCategory;
+  }): Observable<ApiExpense> {
+    return this.api.createExpense(gasto).pipe(
+      tap((creado) => {
+        // Al principio: la lista va de más reciente a más antiguo, igual que
+        // la ordena el Worker. Sin esto habría que recargar para verlo.
+        this.expenses.update((list) => [creado, ...list]);
+      }),
+    );
+  }
+
+  deleteExpense(id: string): Observable<void> {
+    return this.api.deleteExpense(id).pipe(
+      tap(() => {
+        this.expenses.update((list) => list.filter((gasto) => gasto.id !== id));
+      }),
+    );
+  }
+
+  /** Lo que se le debe a las fincas. Qué trae depende de cómo se cargue. */
+  readonly payouts = signal<readonly ApiPayout[]>([]);
+  readonly payoutsLoading = signal(false);
+  readonly payoutsError = signal<string | null>(null);
+
+  loadPayouts(options?: { closingId?: string; soloPendientes?: boolean }): void {
+    this.payoutsLoading.set(true);
+    this.payoutsError.set(null);
+    this.api.payouts(options).subscribe({
+      next: (list) => {
+        this.payouts.set(list);
+        this.payoutsLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.payoutsError.set(error.message);
+        this.payoutsLoading.set(false);
+      },
+    });
+  }
+
+  /** Lo que falta girar de lo que hay cargado ahora mismo. */
+  readonly payoutsPendiente = computed(() =>
+    this.payouts()
+      .filter((pago) => pago.estado === 'pendiente')
+      .reduce((suma, pago) => suma + pago.montoPago, 0),
+  );
+
+  markPayoutPaid(id: string): Observable<ApiPayout> {
+    return this.api.markPayoutPaid(id).pipe(
+      tap((actualizado) => {
+        this.payouts.update((list) =>
+          list.map((pago) => (pago.id === id ? actualizado : pago)),
+        );
+      }),
+    );
   }
 }

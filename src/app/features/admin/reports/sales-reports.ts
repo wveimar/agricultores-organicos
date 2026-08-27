@@ -270,9 +270,13 @@ export class SalesReports {
       '--- RESUMEN ---',
       `Pedidos cerrados:   ${closing.pedidos}`,
       `Unidades vendidas:  ${closing.unidades}`,
-      `Venta de producto:  ${money(closing.ventaProducto)}`,
-      `Costo de producto:  ${money(closing.costoProducto)}`,
-      `Ganancia:           ${money(closing.ganancia)}`,
+      // La misma cuenta que se ve en pantalla, en el mismo orden: quien
+      // compara el .txt con el panel no debería tener que reordenar nada.
+      `(+) Venta de producto:  ${money(closing.ventaProducto)}`,
+      `(-) Costo de cosecha:   ${money(closing.costoProducto)}`,
+      `(-) Gastos operativos:  ${money(closing.totalGastos)}`,
+      `=   GANANCIA NETA:      ${money(closing.ganancia)}`,
+      '',
       `TOTAL RECAUDADO:    ${money(closing.totalRecaudado)}`,
       '',
       // Debajo del total y separado por una línea en blanco, no encima como

@@ -120,6 +120,17 @@ const gastosEsperados = (gastosAhora?.gastos ?? []).reduce((s, g) => s + g.monto
 seccion('Cerrar la jornada');
 
 const { status: sCierre, body: bCierre } = await post('/api/admin/reports/cash/close');
+
+// Este QA es destructivo por naturaleza: cierra la jornada de verdad. En una
+// segunda pasada ya no queda nada que cerrar, y eso no es un fallo del código
+// sino de la base — se dice claro y se sale, en vez de reportar 15 falsos
+// negativos en cascada.
+if (sCierre === 400 && bCierre?.error?.code === 'sin-ventas') {
+  console.log('\n  ⚠ No hay pedidos pendientes de cerrar: este QA ya se corrió.');
+  console.log('    Repuebla con `npm run db:reset` y vuelve a intentarlo.\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
 t(sCierre === 201, `cierra la caja (${sCierre})`);
 
 const cierre = bCierre?.closing;

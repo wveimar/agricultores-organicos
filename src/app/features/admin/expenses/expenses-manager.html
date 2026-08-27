@@ -1,0 +1,196 @@
+<div class="min-h-screen bg-linen px-5 py-12">
+  <div class="mx-auto max-w-4xl">
+    <header class="mb-8">
+      <h1 class="text-h2 text-ink">Gastos de la jornada</h1>
+      <p class="mt-2 max-w-2xl text-sm text-ink-soft">
+        Transporte, empaques, servicios: lo que cuesta operar, aparte de lo que
+        se le paga a las fincas. Al cerrar la caja estos gastos se restan de la
+        ganancia y quedan congelados con ese cierre.
+      </p>
+    </header>
+
+    @if (adminApi.expensesError(); as error) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4">
+        <p class="text-sm font-semibold text-berry">No se pudieron cargar</p>
+        <p class="mt-1 text-sm text-ink-soft">{{ error }}</p>
+      </div>
+    }
+
+    @if (formError(); as error) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4" role="alert">
+        <p class="text-sm text-ink-soft">{{ error }}</p>
+      </div>
+    }
+
+    @if (feedback(); as msg) {
+      <div class="mb-6 rounded-md border border-sage/40 bg-sage-light/40 px-5 py-4" role="status">
+        <p class="text-sm text-moss-deep">{{ msg }}</p>
+      </div>
+    }
+
+    <!--
+      El total va arriba y grande porque es la cifra que cambia la decisión:
+      es exactamente lo que se le va a restar a la ganancia al cerrar.
+    -->
+    <div class="mb-6 flex flex-wrap items-end gap-8">
+      <div>
+        <p class="tabular font-display text-h3 text-clay-deep">
+          {{ adminApi.expensesTotal() | cop }}
+        </p>
+        <p class="text-sm text-ink-soft">gastado en esta jornada</p>
+      </div>
+      <div>
+        <p class="tabular font-display text-h3 text-ink">{{ adminApi.expenses().length }}</p>
+        <p class="text-sm text-ink-soft">
+          {{ adminApi.expenses().length === 1 ? 'registro' : 'registros' }}
+        </p>
+      </div>
+
+      @for (grupo of porCategoria(); track grupo.value) {
+        <div>
+          <p class="tabular font-display text-lg text-ink-soft">{{ grupo.total | cop }}</p>
+          <p class="text-xs text-ink-muted">{{ grupo.label }}</p>
+        </div>
+      }
+    </div>
+
+    <!-- ─────────────────────── Registrar un gasto ─────────────────────── -->
+    <form
+      class="mb-8 rounded-lg border border-sand bg-bone p-6"
+      (submit)="$event.preventDefault(); guardar()"
+    >
+      <h2 class="text-h3 text-ink">Registrar un gasto</h2>
+
+      <div class="mt-4 grid gap-4 sm:grid-cols-[2fr_1fr_1fr]">
+        <div>
+          <label for="gasto-descripcion" class="block text-sm font-medium text-ink">
+            Descripción
+          </label>
+          <input
+            id="gasto-descripcion"
+            type="text"
+            maxlength="200"
+            placeholder="Flete del camión de Marinilla"
+            class="mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+            [value]="descripcion()"
+            (input)="onDescripcion($event)"
+          />
+        </div>
+
+        <div>
+          <label for="gasto-monto" class="block text-sm font-medium text-ink">Monto</label>
+          <!--
+            `min=1` acompaña al CHECK de la tabla (monto > 0) y `step=1` al
+            hecho de que el COP no tiene decimales: el dinero se guarda como
+            entero en todo el proyecto.
+          -->
+          <input
+            id="gasto-monto"
+            type="number"
+            min="1"
+            step="1"
+            inputmode="numeric"
+            placeholder="45000"
+            class="tabular mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+            [value]="monto() ?? ''"
+            (input)="onMonto($event)"
+          />
+        </div>
+
+        <div>
+          <label for="gasto-categoria" class="block text-sm font-medium text-ink">Categoría</label>
+          <select
+            id="gasto-categoria"
+            class="mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+            [value]="categoria()"
+            (change)="onCategoria($event)"
+          >
+            @for (c of categorias; track c.value) {
+              <option [value]="c.value">{{ c.label }}</option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        class="mt-5 rounded-full bg-moss px-6 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-50"
+        [disabled]="!puedeGuardar() || guardando()"
+      >
+        {{ guardando() ? 'Guardando…' : 'Registrar gasto' }}
+      </button>
+    </form>
+
+    <!-- ─────────────────────────── La lista ─────────────────────────── -->
+    @if (adminApi.expensesLoading() && adminApi.expenses().length === 0) {
+      <div class="rounded-lg border border-dashed border-sand py-16 text-center">
+        <p class="text-sm text-ink-soft">Cargando gastos…</p>
+      </div>
+    } @else if (adminApi.expenses().length === 0) {
+      <div class="rounded-lg border border-dashed border-sand py-16 text-center">
+        <p class="text-h3 text-ink">Sin gastos esta jornada</p>
+        <p class="mt-2 text-sm text-ink-soft">
+          Lo que registres aquí se descontará de la ganancia del próximo cierre.
+        </p>
+      </div>
+    } @else {
+      <ul class="flex flex-col gap-3">
+        @for (gasto of adminApi.expenses(); track gasto.id) {
+          @let borrando = borrandoId() === gasto.id;
+
+          <li class="flex flex-wrap items-center gap-4 rounded-lg border border-sand bg-bone p-5">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-3">
+                <p class="truncate text-sm font-semibold text-ink">{{ gasto.descripcion }}</p>
+                <span
+                  class="text-overline rounded-full px-3 py-1 font-semibold uppercase"
+                  [class]="chipFor(gasto.categoria)"
+                >
+                  {{ labelFor(gasto.categoria) }}
+                </span>
+              </div>
+              <p class="tabular mt-1 text-xs text-ink-muted">
+                {{ formatDate(gasto.creadoEn) }}
+                @if (gasto.creadoPor) {
+                  · {{ gasto.creadoPor }}
+                }
+              </p>
+            </div>
+
+            <p class="tabular shrink-0 text-lg font-semibold text-ink">{{ gasto.monto | cop }}</p>
+
+            <!--
+              Borrar es posible solo mientras la jornada siga abierta. El
+              servidor aplica la misma regla, que es la que cuenta: aquí el
+              botón desaparece para no ofrecer algo que va a fallar.
+            -->
+            @if (gasto.closingId === null) {
+              <button
+                type="button"
+                class="flex size-9 shrink-0 items-center justify-center rounded-full border border-sand text-ink-muted transition-colors duration-200 hover:border-red-400 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                [disabled]="borrando"
+                [attr.aria-label]="'Eliminar ' + gasto.descripcion"
+                (click)="borrar(gasto)"
+              >
+                <svg
+                  class="size-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M4 7h16M10 11v6M14 11v6" />
+                  <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" />
+                  <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                </svg>
+              </button>
+            }
+          </li>
+        }
+      </ul>
+    }
+  </div>
+</div>

@@ -71,7 +71,8 @@
     "db:migrate:envio-fuera:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0019_envio_fuera_de_ventas.sql",
     "db:migrate:gastos": "wrangler d1 execute DB --local --file=worker/migrations/0020_gastos_y_pagos.sql",
     "db:migrate:gastos:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0020_gastos_y_pagos.sql",
-    "qa:credito": "node worker/tests/qa-credito.mjs"
+    "qa:credito": "node worker/tests/qa-credito.mjs",
+    "qa:gastos-pagos": "node worker/tests/qa-gastos-pagos.mjs"
   },
   "private": true,
   "packageManager": "npm@11.12.1",

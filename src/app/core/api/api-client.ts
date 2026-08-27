@@ -439,6 +439,47 @@ export interface ApiClosingOrder {
   readonly costoProducto: number;
 }
 
+/** Categorías del CHECK de `expenses`. Fuera de estas, D1 rechaza la fila. */
+export type ExpenseCategory = 'transporte' | 'empaque' | 'servicios' | 'otros';
+
+/**
+ * Un gasto operativo de la jornada.
+ *
+ * `closingId` es toda la máquina de estados que tiene: `null` mientras la
+ * jornada está abierta —y entonces se puede borrar— y con valor una vez el
+ * cierre lo adoptó, cuando ya es parte de una cuenta congelada.
+ */
+export interface ApiExpense {
+  readonly id: string;
+  readonly descripcion: string;
+  readonly monto: number;
+  readonly categoria: ExpenseCategory;
+  readonly creadoEn: string;
+  readonly creadoPor: string | null;
+  readonly closingId: string | null;
+}
+
+/**
+ * Lo que se le debe a una finca por una jornada.
+ *
+ * Las filas las escribe el cierre de caja, no el panel: el reparto es una
+ * consecuencia de lo que se vendió, no algo que alguien teclee. Ver
+ * `calcularPagosAFincas()` en el Worker.
+ */
+export interface ApiPayout {
+  readonly id: string;
+  /** Texto de `products.origen`, copiado al cerrar. No es una referencia. */
+  readonly origen: string;
+  readonly montoPago: number;
+  readonly estado: 'pendiente' | 'pagado';
+  readonly closingId: string;
+  readonly pagadoEn: string | null;
+  readonly pagadoPor: string | null;
+  /** De qué jornada viene. Una lista de fincas sin esto no dice de qué semana es. */
+  readonly closingReferencia: string;
+  readonly closingCerradoEn: string;
+}
+
 export interface ApiClosing {
   readonly id: string;
   readonly referencia: string;
@@ -448,9 +489,13 @@ export interface ApiClosing {
   readonly unidades: number;
   readonly ventaProducto: number;
   readonly costoProducto: number;
+  /** Venta − costo de mercancía − gastos. Lo que quedó de verdad. */
   readonly ganancia: number;
+  /** Congelado como dato operativo. No suma a nada — ver migración 0019. */
   readonly enviosCobrados: number;
   readonly totalRecaudado: number;
+  /** Gastos operativos de la jornada. Ya restados en `ganancia`. */
+  readonly totalGastos: number;
 }
 
 /**
@@ -1054,6 +1099,67 @@ export class ApiClient {
     return this.http
       .get<{ pendientes: ApiCodPending[] }>('/api/admin/reports/cod-pendiente')
       .pipe(map((res) => res.pendientes), catchError(handleError));
+  }
+
+  // ──────────────── Gastos operativos y pago a las fincas ────────────────
+
+  /**
+   * Gastos de un cierre, o los de la jornada abierta si no se pasa `closingId`.
+   *
+   * Sin cierre son los que todavía se pueden borrar y los que entrarán al
+   * próximo; con cierre, los ya archivados, para auditar su `totalGastos`.
+   */
+  expenses(closingId?: string): Observable<readonly ApiExpense[]> {
+    const query = closingId ? `?closing_id=${encodeURIComponent(closingId)}` : '';
+    return this.http
+      .get<{ gastos: ApiExpense[] }>(`/api/admin/expenses${query}`)
+      .pipe(map((res) => res.gastos), catchError(handleError));
+  }
+
+  createExpense(gasto: {
+    descripcion: string;
+    monto: number;
+    categoria: ExpenseCategory;
+  }): Observable<ApiExpense> {
+    return this.http
+      .post<{ gasto: ApiExpense }>('/api/admin/expenses', gasto)
+      .pipe(map((res) => res.gasto), catchError(handleError));
+  }
+
+  /** Solo funciona mientras el gasto siga sin cierre. El Worker manda. */
+  deleteExpense(id: string): Observable<void> {
+    return this.http
+      .delete<{ ok: true }>(`/api/admin/expenses/${id}`)
+      .pipe(map(() => undefined), catchError(handleError));
+  }
+
+  /**
+   * Lo que se le debe a cada finca.
+   *
+   * Sin argumentos trae lo pendiente de todas las jornadas ("¿a quién le
+   * debo?"); con `closingId`, el reparto completo de una ("¿qué pasó con este
+   * cierre?"), pagados incluidos.
+   */
+  payouts(options?: { closingId?: string; soloPendientes?: boolean }): Observable<readonly ApiPayout[]> {
+    const params = new URLSearchParams();
+    if (options?.closingId) {
+      params.set('closing_id', options.closingId);
+    }
+    if (options?.soloPendientes) {
+      params.set('estado', 'pendiente');
+    }
+    const query = params.toString() ? `?${params}` : '';
+
+    return this.http
+      .get<{ pagos: ApiPayout[] }>(`/api/admin/payouts${query}`)
+      .pipe(map((res) => res.pagos), catchError(handleError));
+  }
+
+  /** Se le giró a la finca. No tiene vuelta atrás — ver payouts.ts. */
+  markPayoutPaid(id: string): Observable<ApiPayout> {
+    return this.http
+      .post<{ pago: ApiPayout }>(`/api/admin/payouts/${id}/pagar`, {})
+      .pipe(map((res) => res.pago), catchError(handleError));
   }
 }
 

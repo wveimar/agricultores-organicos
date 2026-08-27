@@ -95,6 +95,25 @@ export const ADMIN_ROUTES: Routes = [
         loadComponent: () => import('./portfolio/portfolio').then((m) => m.Portfolio),
       },
       {
+        path: 'gastos',
+        // Un gasto se resta de la ganancia del cierre: lo maneja quien
+        // responde por la caja, no quien maneja catálogo. El servidor aplica
+        // la misma regla.
+        canActivate: [roleGuard('GESTOR_PEDIDOS')],
+        title: 'Gastos · Panel',
+        loadComponent: () =>
+          import('./expenses/expenses-manager').then((m) => m.ExpensesManager),
+      },
+      {
+        path: 'pagos-fincas',
+        // Girar a un proveedor es sacar plata de la caja: mismo rol que cierra
+        // la jornada y que cobra la cartera.
+        canActivate: [roleGuard('GESTOR_PEDIDOS')],
+        title: 'Pago a fincas · Panel',
+        loadComponent: () =>
+          import('./payouts/provider-payouts').then((m) => m.ProviderPayouts),
+      },
+      {
         path: 'entregas',
         canActivate: [roleGuard('DOMICILIARIO')],
         title: 'Entregas · Panel',

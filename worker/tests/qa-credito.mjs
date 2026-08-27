@@ -207,9 +207,13 @@ t(cobrado?.order?.estado === 'pago', `estado = ${cobrado?.order?.estado}`);
 
 const { body: resumen2 } = await api('/api/admin/reports/cash');
 const subio = (resumen2?.totalRecaudado ?? 0) - (resumen1?.totalRecaudado ?? 0);
+// `subtotal` y no `total`: desde la migración 0019 el domicilio no cuenta como
+// venta en ninguna cifra del panel, así que el recaudado sube solo lo que se
+// vendió de producto. Este test esperaba `total` —producto + envío— y era la
+// regla vieja, no un fallo del cobro.
 t(
-  subio === a.total,
-  `el recaudado sube exactamente el total del pedido: +${subio} (esperado ${a.total})`,
+  subio === a.subtotal,
+  `el recaudado sube el producto del pedido, sin domicilio: +${subio} (esperado ${a.subtotal})`,
 );
 
 const { body: cartera2 } = await api('/api/admin/reports/cartera');

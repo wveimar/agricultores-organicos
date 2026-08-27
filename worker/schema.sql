@@ -13,18 +13,31 @@
 
 PRAGMA foreign_keys = ON;
 
--- Hijas antes que madres: con foreign_keys = ON, soltar primero una tabla
--- referenciada deja huérfanas a las que apuntan a ella. `provider_payouts` y
--- `expenses` van arriba del todo porque dependen de `cash_closings`.
+-- Hijas antes que madres. Con foreign_keys = ON, soltar una tabla que todavía
+-- tiene filas apuntándole revienta con FOREIGN KEY constraint failed y deja el
+-- fichero a medio aplicar.
+--
+-- Esta lista tiene que nombrarlas TODAS. Durante varias migraciones se quedó
+-- corta —le faltaban las cinco que llegaron después de la 0006— y el efecto
+-- era que `npm run db:reset` fallaba en seco al llegar a `DROP TABLE products`,
+-- porque `product_components` seguía referenciándolo. Si mañana se agrega una
+-- tabla nueva, va aquí arriba y en su sitio más abajo, o el reset vuelve a
+-- romperse.
 DROP TABLE IF EXISTS provider_payouts;
 DROP TABLE IF EXISTS expenses;
+DROP TABLE IF EXISTS order_item_components;
 DROP TABLE IF EXISTS order_status_log;
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS cash_closings;
+DROP TABLE IF EXISTS product_components;
+DROP TABLE IF EXISTS product_wholesale_discounts;
+DROP TABLE IF EXISTS password_resets;
 DROP TABLE IF EXISTS user_roles;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS products;
+DROP TABLE IF EXISTS categories;
+DROP TABLE IF EXISTS login_attempts;
 
 -- ────────────────────────────── Usuarios y roles ──────────────────────────────
 
@@ -37,7 +50,14 @@ CREATE TABLE users (
   -- PBKDF2-SHA256 sí lo está vía WebCrypto.
   password_hash TEXT    NOT NULL,
   activo        INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
-  creado_en     TEXT    NOT NULL DEFAULT (datetime('now'))
+  creado_en     TEXT    NOT NULL DEFAULT (datetime('now')),
+
+  -- Crédito a mayoristas (migración 0017). 0 = esta cuenta no compra fiado,
+  -- que es lo que le toca a todo el mundo salvo a quien se le abra cupo
+  -- expresamente desde el panel.
+  cupo_credito  INTEGER NOT NULL DEFAULT 0 CHECK (cupo_credito >= 0),
+  -- A cuántos días vence lo que se le fía. De aquí sale `orders.vence_en`.
+  dias_credito  INTEGER NOT NULL DEFAULT 0 CHECK (dias_credito >= 0)
 );
 
 -- Tabla puente en vez de una columna con roles separados por comas: permite
@@ -63,6 +83,43 @@ CREATE TABLE login_attempts (
   intentos  INTEGER NOT NULL DEFAULT 0 CHECK (intentos >= 0),
   ultimo_en TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Enlaces de recuperación de contraseña (migración 0006).
+--
+-- Se guarda el HASH del token, no el token: quien lea la base no puede
+-- suplantar a nadie con lo que hay aquí. `usado_en` lo invalida tras el primer
+-- uso, para que un enlace reenviado por correo no sirva dos veces.
+CREATE TABLE password_resets (
+  token_hash TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  creado_en  TEXT NOT NULL DEFAULT (datetime('now')),
+  expira_en  TEXT NOT NULL,
+  usado_en   TEXT
+);
+
+CREATE INDEX idx_resets_user ON password_resets (user_id);
+
+-- ─────────────────────────────── Categorías ───────────────────────────────
+-- Las secciones de la vitrina (migración 0013). `products.categoria_id` apunta
+-- aquí por convención, sin FK: la restricción se añadiría recreando `products`
+-- entera y no compensa — el panel es el único que escribe esa columna.
+
+CREATE TABLE categories (
+  id             TEXT    PRIMARY KEY,
+  nombre         TEXT    NOT NULL,
+  descripcion    TEXT    NOT NULL DEFAULT '',
+  grupo_admin    TEXT    NOT NULL DEFAULT 'agroindustriales'
+                         CHECK (grupo_admin IN ('frutas', 'verduras', 'agroindustriales')),
+  -- Posición del chip en la vitrina. Menor va antes.
+  orden          INTEGER NOT NULL DEFAULT 100,
+  activo         INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
+  -- Silueta del chip: 'hoja', 'panal', 'espiga'… Vacío = la de por defecto.
+  -- Llegó en la 0016.
+  icono          TEXT    NOT NULL DEFAULT '',
+  actualizado_en TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_categories_orden ON categories (activo, orden);
 
 -- ──────────────────────────────── Productos ────────────────────────────────
 
@@ -140,6 +197,48 @@ CREATE INDEX idx_products_stock     ON products (stock_actual, stock_seguridad) 
 CREATE INDEX idx_products_parent    ON products (parent_id) WHERE parent_id IS NOT NULL;
 -- La portada pide solo los destacados activos: se resuelve sin recorrer nada más.
 CREATE INDEX idx_products_destacado ON products (destacado) WHERE activo = 1 AND destacado = 1;
+
+-- ─────────────── Canastas: qué lleva dentro cada una (0014) ───────────────
+-- La receta VIGENTE. Es lo que se descuenta del inventario al vender una
+-- canasta, y lo que el cierre de caja usa para saber a qué finca pagarle por
+-- lo que iba dentro (ver `calcularPagosAFincas()` en routes/reports.ts).
+
+CREATE TABLE product_components (
+  -- La canasta. Al borrarla se lleva su receta: sin canasta, la lista de lo
+  -- que llevaba dentro no significa nada.
+  parent_product_id  TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+
+  -- El producto que la llena. RESTRICT y no CASCADE: borrar la papa mientras
+  -- tres canastas la incluyen las dejaría prometiendo algo que ya no existe.
+  child_product_id   TEXT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+
+  -- Cuánto entra de ese producto en UNA canasta, en sus propias
+  -- presentaciones: 2 si lleva dos bolsas de 500 gr de las que ya se venden
+  -- sueltas. No son gramos — es "cuántas de esas" — para que el descuento sea
+  -- la misma resta que hace una venta normal, sin convertir unidades.
+  cantidad_requerida INTEGER NOT NULL CHECK (cantidad_requerida > 0),
+
+  PRIMARY KEY (parent_product_id, child_product_id),
+
+  -- Una canasta no se contiene a sí misma.
+  CHECK (parent_product_id <> child_product_id)
+);
+
+CREATE INDEX idx_components_child ON product_components (child_product_id);
+
+-- ──────────────── Tarifas de mayorista por producto (0011) ────────────────
+
+CREATE TABLE product_wholesale_discounts (
+  product_id            TEXT    NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  role                  TEXT    NOT NULL CHECK (role IN ('MAYORISTA_N1', 'MAYORISTA_N2', 'MAYORISTA_N3')),
+  porcentaje_descuento  INTEGER NOT NULL CHECK (porcentaje_descuento > 0 AND porcentaje_descuento <= 100),
+  actualizado_en        TEXT    NOT NULL DEFAULT (datetime('now')),
+
+  -- Un solo trato por producto y nivel.
+  PRIMARY KEY (product_id, role)
+);
+
+CREATE INDEX idx_wholesale_role ON product_wholesale_discounts (role);
 
 -- ───────────────────────────── Cierres de caja ─────────────────────────────
 
@@ -230,8 +329,16 @@ CREATE TABLE orders (
 
   -- Cómo se paga. 'transferencia' es el default: es la única forma que existió
   -- hasta que se agregó pago contra entrega.
+  --
+  -- 'credito' vive aquí y no en `estado` a propósito: fiar no es una fase del
+  -- pedido, es de dónde sale el dinero. Un pedido fiado sigue recorriendo
+  -- aprobado → enviado como cualquier otro. Ver la migración 0017.
   metodo_pago        TEXT    NOT NULL DEFAULT 'transferencia'
-                             CHECK (metodo_pago IN ('transferencia', 'contraentrega')),
+                             CHECK (metodo_pago IN ('transferencia', 'contraentrega', 'credito')),
+
+  -- Cuándo vence la deuda. NULL en todo lo que no sea 'credito': no hay nada
+  -- que vencer donde el dinero ya entró o se cobra en la puerta.
+  vence_en           TEXT,
 
   -- Si el efectivo cobrado por el domiciliario ya está en la caja de la
   -- finca. Solo importa para 'contraentrega' — ver la migración 0015 para el
@@ -252,6 +359,9 @@ CREATE TABLE orders (
 CREATE INDEX idx_orders_estado  ON orders (estado, creado_en DESC);
 CREATE INDEX idx_orders_closing ON orders (closing_id);
 CREATE INDEX idx_orders_user    ON orders (user_id);
+-- La cartera pregunta siempre lo mismo: fiados, sin pagar, ordenados por
+-- vencimiento. Los tres campos en el índice la resuelven sin tocar la tabla.
+CREATE INDEX idx_orders_credito ON orders (metodo_pago, estado, vence_en);
 
 CREATE TABLE order_items (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -276,6 +386,29 @@ CREATE TABLE order_items (
 
 CREATE INDEX idx_items_order   ON order_items (order_id);
 CREATE INDEX idx_items_product ON order_items (product_id);
+
+-- La receta CONGELADA de las canastas de un pedido (migración 0014).
+--
+-- Copia de `product_components` en el momento de comprar, por lo mismo que
+-- `order_items` copia `producto_nombre` y `precio_unitario`: el pedido es el
+-- documento de lo que pasó, no una vista de lo que hay ahora. Si mañana se le
+-- quita el tomate a la canasta, la devolución de stock de un pedido viejo
+-- tiene que devolver el tomate que de verdad salió.
+--
+-- Es también lo que permite pagarle a la finca correcta: sin esto, el costo de
+-- una canasta se le acreditaría entero a su propio `origen` —un texto como
+-- "38 fincas asociadas"— en vez de repartirse entre quienes pusieron la fruta.
+CREATE TABLE order_item_components (
+  order_id           TEXT    NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  parent_product_id  TEXT    NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  child_product_id   TEXT    NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  -- Por canasta, no el total: multiplicado por las canastas de la línea da lo
+  -- que se descontó. Guardar el total obligaría a rehacer la cuenta al editar
+  -- la cantidad del pedido.
+  cantidad_requerida INTEGER NOT NULL CHECK (cantidad_requerida > 0),
+
+  PRIMARY KEY (order_id, parent_product_id, child_product_id)
+);
 
 -- ───────────────────────── Trazabilidad de pedidos ─────────────────────────
 -- Cada cambio de estado queda registrado aquí, en la MISMA transacción que lo

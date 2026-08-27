@@ -23,8 +23,38 @@ register('./resolve-ts.mjs', import.meta.url);
 const load = (relative) => import(pathToFileURL(join(root, relative)).href);
 
 const { PRODUCTS } = await load('src/app/core/data/mock-catalog.ts');
-const { ADMIN_GROUP_OF } = await load('src/app/core/models/product.model.ts');
 const { ORDERS } = await load('src/app/core/data/mock-orders.ts');
+
+/**
+ * Las secciones de la vitrina, con su grupo de compras.
+ *
+ * Viven aquí y no en el frontend porque allí ya no existen: `CATEGORIES` y
+ * `ADMIN_GROUP_OF` se mudaron a la tabla `categories` en la migración 0013,
+ * que es la que el panel edita. El frontend las pide al servidor.
+ *
+ * Esto es la copia del **sembrado**, el equivalente para una base nueva de lo
+ * que la 0013 hace sobre una existente: una actualiza lo que ya hay, la otra
+ * puebla desde cero, y las dos tienen que decir lo mismo. Si se toca una,
+ * tócase la otra — son diez filas que no cambian casi nunca.
+ *
+ * Antes esto no estaba, y el efecto era que tras un `db:reset` la tienda
+ * quedaba con 25 productos y cero categorías: ni un chip en la vitrina.
+ */
+const CATEGORIES = [
+  ['verduras', 'Verduras y raíces', 'Recolectadas al amanecer del domingo, en tu casa esa misma tarde.', 'verduras', 10],
+  ['frutas', 'Frutas frescas', 'Maduradas en el árbol, nunca en cámara.', 'frutas', 20],
+  ['lacteos', 'Leche de cabra', 'De un hato pequeño en el altiplano, ordeñado a mano.', 'agroindustriales', 30],
+  ['mieles', 'Mieles y apicultura', 'Miel, polen y propóleo de colmenares propios, sin pasteurizar.', 'agroindustriales', 40],
+  ['listos', 'Listos para comer', 'Preparados cada mañana con la cosecha del día.', 'agroindustriales', 50],
+  ['fermentos', 'Fermentos', 'Kambuchas y fermentados vivos, embotellados sin pasteurizar.', 'agroindustriales', 60],
+  ['panaderia', 'Panadería', 'Horneado el mismo día con harinas molidas en el altiplano.', 'agroindustriales', 70],
+  ['granos', 'Granos y semillas', 'Molidos en piedra y empacados en lotes pequeños.', 'agroindustriales', 80],
+  ['despensa', 'Despensa', 'Lo que sostiene la cocina durante todo el mes.', 'agroindustriales', 90],
+  ['canastas', 'Canastas', 'La compra semanal resuelta en una sola caja.', 'agroindustriales', 100],
+];
+
+/** `categoria_id` → `grupo_admin`, que es lo que `products` guarda copiado. */
+const GRUPO_DE = new Map(CATEGORIES.map(([id, , , grupo]) => [id, grupo]));
 
 // ─────────────────── PBKDF2, idéntico al del Worker ───────────────────
 // 100.000: tope duro del runtime real de Cloudflare Workers, no una elección
@@ -94,10 +124,31 @@ for (const user of USERS) {
   }
 }
 
+lines.push('', '-- ─────────────────────────── Categorías ───────────────────────────');
+
+// Antes que los productos: `products.categoria_id` apunta aquí (por
+// convención, sin FK), y una vitrina con productos y sin categorías no
+// muestra ni un chip.
+for (const [id, nombre, descripcion, grupo, orden] of CATEGORIES) {
+  lines.push(
+    `INSERT INTO categories (id, nombre, descripcion, grupo_admin, orden) VALUES (` +
+      [q(id), q(nombre), q(descripcion), q(grupo), orden].join(', ') +
+      ');',
+  );
+}
+
 lines.push('', '-- ─────────────────────────── Productos ───────────────────────────');
 
 for (const p of PRODUCTS) {
-  const grupo = ADMIN_GROUP_OF[p.categoryId];
+  const grupo = GRUPO_DE.get(p.categoryId);
+  if (!grupo) {
+    // Un producto con una categoría que no está sembrada entraría con
+    // `grupo_admin` NULL y violaría el NOT NULL de la tabla — mejor un
+    // mensaje que diga cuál, que un error de SQLite a mitad del seed.
+    throw new Error(
+      `El producto ${p.id} usa la categoría "${p.categoryId}", que no está en CATEGORIES.`,
+    );
+  }
   lines.push(
     `INSERT INTO products (id, slug, nombre, tagline, categoria_id, grupo_admin, precio, precio_costo, precio_anterior, unidad, origen, rating, review_count, badge, stock_actual, stock_seguridad, imagen, imagen_hover, imagen_alt) VALUES (` +
       [

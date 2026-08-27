@@ -1,0 +1,192 @@
+<div class="min-h-screen bg-linen px-5 py-12">
+  <div class="mx-auto max-w-5xl">
+    <header class="mb-8">
+      <h1 class="text-h2 text-ink">Pago a las fincas</h1>
+      <p class="mt-2 max-w-2xl text-sm text-ink-soft">
+        Lo que se le debe a cada finca por lo que puso en los pedidos de cada
+        jornada. Sale del costo congelado de cada línea, así que la suma de una
+        jornada es exactamente su costo de cosecha.
+      </p>
+    </header>
+
+    @if (adminApi.payoutsError(); as msg) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4">
+        <p class="text-sm font-semibold text-berry">No se pudo cargar</p>
+        <p class="mt-1 text-sm text-ink-soft">{{ msg }}</p>
+      </div>
+    }
+
+    @if (error(); as msg) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4" role="alert">
+        <p class="text-sm text-ink-soft">{{ msg }}</p>
+      </div>
+    }
+
+    @if (feedback(); as msg) {
+      <div class="mb-6 rounded-md border border-sage/40 bg-sage-light/40 px-5 py-4" role="status">
+        <p class="text-sm text-moss-deep">{{ msg }}</p>
+      </div>
+    }
+
+    <div class="mb-6 flex flex-wrap items-end justify-between gap-6">
+      <div class="flex flex-wrap gap-8">
+        <div>
+          <p class="tabular font-display text-h3 text-clay-deep">
+            {{ adminApi.payoutsPendiente() | cop }}
+          </p>
+          <p class="text-sm text-ink-soft">por girar</p>
+        </div>
+        <div>
+          <p class="tabular font-display text-h3 text-ink">{{ fincasPendientes() }}</p>
+          <p class="text-sm text-ink-soft">
+            {{ fincasPendientes() === 1 ? 'finca esperando' : 'fincas esperando' }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Pendientes primero: es la vista con la que se trabaja. -->
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200"
+          [class]="
+            soloPendientes()
+              ? 'bg-moss text-bone'
+              : 'border border-sand text-ink-soft hover:border-stone hover:text-ink'
+          "
+          (click)="alternarFiltro(true)"
+        >
+          Por girar
+        </button>
+        <button
+          type="button"
+          class="rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200"
+          [class]="
+            !soloPendientes()
+              ? 'bg-moss text-bone'
+              : 'border border-sand text-ink-soft hover:border-stone hover:text-ink'
+          "
+          (click)="alternarFiltro(false)"
+        >
+          Todo el historial
+        </button>
+      </div>
+    </div>
+
+    @if (adminApi.payoutsLoading() && adminApi.payouts().length === 0) {
+      <div class="rounded-lg border border-dashed border-sand py-16 text-center">
+        <p class="text-sm text-ink-soft">Cargando…</p>
+      </div>
+    } @else if (porCierre().length === 0) {
+      <div class="rounded-lg border border-dashed border-sand py-16 text-center">
+        <p class="text-h3 text-ink">
+          {{ soloPendientes() ? 'No hay nada por girar' : 'Todavía no hay repartos' }}
+        </p>
+        <p class="mt-2 text-sm text-ink-soft">
+          @if (soloPendientes()) {
+            Todas las fincas están al día.
+          } @else {
+            El reparto se calcula al cerrar la caja de una jornada.
+          }
+        </p>
+      </div>
+    } @else {
+      <div class="flex flex-col gap-5">
+        @for (grupo of porCierre(); track grupo.closingId) {
+          <section class="overflow-hidden rounded-lg border border-sand bg-bone">
+            <header class="flex flex-wrap items-center justify-between gap-4 border-b border-sand px-6 py-4">
+              <div>
+                <p class="tabular text-sm font-semibold text-ink">{{ grupo.referencia }}</p>
+                <p class="text-xs text-ink-muted">{{ formatDate(grupo.cerradoEn) }}</p>
+              </div>
+              <div class="flex gap-6 text-right">
+                @if (grupo.totalPendiente > 0) {
+                  <div>
+                    <p class="tabular text-base font-semibold text-clay-deep">
+                      {{ grupo.totalPendiente | cop }}
+                    </p>
+                    <p class="text-xs text-ink-muted">por girar</p>
+                  </div>
+                }
+                @if (grupo.totalPagado > 0) {
+                  <div>
+                    <p class="tabular text-base font-medium text-moss-deep">
+                      {{ grupo.totalPagado | cop }}
+                    </p>
+                    <p class="text-xs text-ink-muted">ya girado</p>
+                  </div>
+                }
+              </div>
+            </header>
+
+            <ul class="divide-y divide-sand">
+              @for (pago of grupo.pagos; track pago.id) {
+                @let pagando = pagandoId() === pago.id;
+
+                <li class="flex flex-wrap items-center gap-4 px-6 py-4">
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-medium text-ink">{{ pago.origen }}</p>
+                    @if (pago.estado === 'pagado') {
+                      <p class="text-xs text-ink-muted">
+                        Girado {{ pago.pagadoEn ? formatDate(pago.pagadoEn) : '' }}
+                        @if (pago.pagadoPor) {
+                          · {{ pago.pagadoPor }}
+                        }
+                      </p>
+                    }
+                  </div>
+
+                  <p
+                    class="tabular shrink-0 text-lg font-semibold"
+                    [class]="pago.estado === 'pagado' ? 'text-ink-muted' : 'text-ink'"
+                  >
+                    {{ pago.montoPago | cop }}
+                  </p>
+
+                  @if (pago.estado === 'pendiente') {
+                    <button
+                      type="button"
+                      class="shrink-0 rounded-full bg-moss px-5 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
+                      [disabled]="pagando"
+                      (click)="pagar(pago)"
+                    >
+                      {{ pagando ? 'Marcando…' : 'Marcar pagado' }}
+                    </button>
+                  } @else {
+                    <span
+                      class="text-overline shrink-0 rounded-full bg-sage-light px-3 py-1 font-semibold uppercase text-moss-deep"
+                    >
+                      Pagado
+                    </span>
+                  }
+                </li>
+              }
+            </ul>
+          </section>
+        }
+      </div>
+
+      <!--
+        Se dice una sola vez, al pie: repetirlo en cada botón lo volvería
+        ruido, pero callarlo dejaría a alguien marcando por error sin saber
+        que no hay deshacer.
+      -->
+      <p class="mt-6 text-xs text-ink-muted">
+        Marcar un giro no tiene vuelta atrás. Si se marca por error, corrígelo
+        contra el comprobante real de la transferencia.
+      </p>
+      <!--
+        Sin esto, una canasta sin receta se lee como una finca real a la que
+        girarle: su origen es un texto como "3 fincas asociadas", que no es
+        nadie. Decir de dónde sale el agrupamiento es lo que permite
+        reconocer ese caso y arreglarlo donde se arregla.
+      -->
+      <p class="mt-2 text-xs text-ink-muted">
+        Cada línea agrupa por el origen de los productos vendidos. Una canasta
+        reparte su costo entre las fincas de lo que lleva dentro, siempre que
+        tenga su receta definida en Inventario; si no la tiene, el costo queda
+        a nombre del origen de la canasta.
+      </p>
+    }
+  </div>
+</div>
