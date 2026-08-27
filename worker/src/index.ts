@@ -8,6 +8,7 @@ import * as orders from './routes/orders';
 import * as reports from './routes/reports';
 import * as expenses from './routes/expenses';
 import * as purchases from './routes/purchases';
+import * as contacts from './routes/contacts';
 import * as users from './routes/users';
 import * as wholesale from './routes/wholesale';
 import * as components from './routes/components';
@@ -308,6 +309,22 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     const expenseMatch = pathname.match(/^\/api\/admin\/expenses\/([\w-]+)$/);
     if (expenseMatch && method === 'DELETE') {
       return expenses.remove(env, user, expenseMatch[1]);
+    }
+
+    // Agenda: proveedores y clientes en una sola lista, con banderas.
+    if (pathname === '/api/admin/contacts' && method === 'GET') {
+      return contacts.list(env, user, url);
+    }
+    if (pathname === '/api/admin/contacts' && method === 'POST') {
+      return contacts.create(request, env, user);
+    }
+
+    const contactMatch = pathname.match(/^\/api\/admin\/contacts\/([\w-]+)$/);
+    if (contactMatch && method === 'PATCH') {
+      return contacts.update(request, env, user, contactMatch[1]);
+    }
+    if (contactMatch && method === 'DELETE') {
+      return contacts.remove(env, user, contactMatch[1]);
     }
 
     // Compras a las fincas: registrarlas sube el inventario y fija el costo.

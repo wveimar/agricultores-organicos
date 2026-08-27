@@ -1,0 +1,539 @@
+<div class="min-h-screen bg-linen px-5 py-12">
+  <div class="mx-auto max-w-5xl">
+    <header class="mb-8 flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <h1 class="text-h2 text-ink">Contactos</h1>
+        <p class="mt-2 max-w-2xl text-sm text-ink-soft">
+          Proveedores y clientes en una sola agenda. La misma persona puede ser
+          las dos cosas: a una vereda se le compra lechuga y esa misma vereda
+          compra huevos.
+        </p>
+      </div>
+
+      @if (!abierto()) {
+        <button
+          type="button"
+          class="shrink-0 rounded-full bg-moss px-6 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep"
+          (click)="nuevo(vista() !== 'cliente')"
+        >
+          Agregar contacto
+        </button>
+      }
+    </header>
+
+    @if (adminApi.contactsError(); as msg) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4">
+        <p class="text-sm font-semibold text-berry">No se pudo cargar</p>
+        <p class="mt-1 text-sm text-ink-soft">{{ msg }}</p>
+      </div>
+    }
+
+    @if (formError(); as msg) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4" role="alert">
+        <p class="text-sm text-ink-soft">{{ msg }}</p>
+      </div>
+    }
+
+    @if (feedback(); as msg) {
+      <div class="mb-6 rounded-md border border-sage/40 bg-sage-light/40 px-5 py-4" role="status">
+        <p class="text-sm text-moss-deep">{{ msg }}</p>
+      </div>
+    }
+
+    <!-- ═════════════════════ Ficha ═════════════════════ -->
+    @if (abierto()) {
+      <section class="mb-8 rounded-lg border border-moss/30 bg-bone p-6">
+        <h2 class="text-h3 text-ink">
+          {{ editandoId() ? 'Editar contacto' : 'Nuevo contacto' }}
+        </h2>
+
+        <div class="mt-5 grid gap-4 sm:grid-cols-2">
+          <div class="sm:col-span-2">
+            <label for="c-nombre" class="block text-sm font-medium text-ink">Nombre</label>
+            <input
+              id="c-nombre"
+              type="text"
+              maxlength="160"
+              placeholder="Finca Los Nogales · Antioquia"
+              class="mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+              [value]="nombre()"
+              (input)="onTexto('nombre', $event)"
+            />
+          </div>
+
+          <!--
+            Dos casillas y no un desplegable de tipo: las dos pueden estar
+            marcadas a la vez, que es justo lo que motivó una sola agenda.
+          -->
+          <fieldset class="sm:col-span-2">
+            <legend class="text-sm font-medium text-ink">¿Qué es?</legend>
+            <div class="mt-2 flex flex-wrap gap-5">
+              <label class="flex cursor-pointer items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  class="size-4 rounded border-sand text-moss focus:ring-moss"
+                  [checked]="esProveedor()"
+                  (change)="esProveedor.set(!esProveedor())"
+                />
+                Proveedor <span class="text-ink-muted">(le compro)</span>
+              </label>
+              <label class="flex cursor-pointer items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  class="size-4 rounded border-sand text-moss focus:ring-moss"
+                  [checked]="esCliente()"
+                  (change)="esCliente.set(!esCliente())"
+                />
+                Cliente <span class="text-ink-muted">(me compra)</span>
+              </label>
+              <label class="flex cursor-pointer items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  class="size-4 rounded border-sand text-moss focus:ring-moss"
+                  [checked]="activo()"
+                  (change)="activo.set(!activo())"
+                />
+                Activo
+              </label>
+            </div>
+            @if (!esProveedor() && !esCliente()) {
+              <p class="mt-2 text-xs text-clay-deep">
+                Marca al menos una: si no, no aparecería en ninguna lista.
+              </p>
+            }
+          </fieldset>
+
+          <div>
+            <label for="c-telefono" class="block text-sm font-medium text-ink">Teléfono</label>
+            <input
+              id="c-telefono"
+              type="tel"
+              maxlength="40"
+              placeholder="3001234567"
+              class="tabular mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+              [value]="telefono()"
+              (input)="onTexto('telefono', $event)"
+            />
+            <!--
+              El teléfono es lo que hace que un cliente que vuelve a comprar se
+              reconozca sin cuenta. Decirlo aquí explica por qué no se puede
+              repetir entre dos fichas.
+            -->
+            <p class="mt-1 text-xs text-ink-muted">
+              Es la llave del cliente: con él se le reconoce entre compras.
+            </p>
+          </div>
+
+          <div>
+            <label for="c-direccion" class="block text-sm font-medium text-ink">Dirección</label>
+            <input
+              id="c-direccion"
+              type="text"
+              maxlength="240"
+              placeholder="Vereda El Roble, km 4"
+              class="mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+              [value]="direccion()"
+              (input)="onTexto('direccion', $event)"
+            />
+          </div>
+        </div>
+
+        <!-- Datos de giro: solo tienen sentido para un proveedor -->
+        @if (esProveedor()) {
+          <fieldset class="mt-6 rounded-md border border-sand p-4">
+            <legend class="px-2 text-sm font-medium text-ink">
+              Para girarle
+              <span class="font-normal text-ink-muted">(opcional)</span>
+            </legend>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label for="c-banco" class="block text-sm text-ink-soft">Banco</label>
+                <input
+                  id="c-banco"
+                  type="text"
+                  maxlength="80"
+                  placeholder="Bancolombia"
+                  class="mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+                  [value]="banco()"
+                  (input)="onTexto('banco', $event)"
+                />
+              </div>
+
+              <div>
+                <label for="c-tipo" class="block text-sm text-ink-soft">Tipo de cuenta</label>
+                <select
+                  id="c-tipo"
+                  class="mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+                  [value]="tipoCuenta()"
+                  (change)="onTipoCuenta($event)"
+                >
+                  <option value="">Sin especificar</option>
+                  @for (tipo of tiposCuenta; track tipo.value) {
+                    <option [value]="tipo.value">{{ tipo.label }}</option>
+                  }
+                </select>
+              </div>
+
+              <div>
+                <label for="c-cuenta" class="block text-sm text-ink-soft">Número de cuenta</label>
+                <input
+                  id="c-cuenta"
+                  type="text"
+                  maxlength="40"
+                  class="tabular mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+                  [value]="numeroCuenta()"
+                  (input)="onTexto('numeroCuenta', $event)"
+                />
+              </div>
+
+              <div>
+                <label for="c-titular" class="block text-sm text-ink-soft">Titular</label>
+                <input
+                  id="c-titular"
+                  type="text"
+                  maxlength="160"
+                  placeholder="Si la cuenta está a otro nombre"
+                  class="mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+                  [value]="titular()"
+                  (input)="onTexto('titular', $event)"
+                />
+              </div>
+
+              <div>
+                <label for="c-documento" class="block text-sm text-ink-soft">Cédula o NIT</label>
+                <input
+                  id="c-documento"
+                  type="text"
+                  maxlength="40"
+                  class="tabular mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+                  [value]="documento()"
+                  (input)="onTexto('documento', $event)"
+                />
+              </div>
+            </div>
+          </fieldset>
+        }
+
+        <div class="mt-5">
+          <label for="c-notas" class="block text-sm font-medium text-ink">
+            Notas <span class="font-normal text-ink-muted">(opcional)</span>
+          </label>
+          <textarea
+            id="c-notas"
+            rows="2"
+            maxlength="1000"
+            placeholder="Días de cosecha, qué productos maneja, acuerdos de precio…"
+            class="mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+            [value]="notas()"
+            (input)="onNotas($event)"
+          ></textarea>
+        </div>
+
+        <div class="mt-6 flex flex-wrap gap-3">
+          <button
+            type="button"
+            class="rounded-full bg-moss px-6 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-50"
+            [disabled]="!puedeGuardar() || guardando()"
+            (click)="guardar()"
+          >
+            {{ guardando() ? 'Guardando…' : editandoId() ? 'Guardar cambios' : 'Agregar' }}
+          </button>
+          <button
+            type="button"
+            class="rounded-full border border-sand px-5 py-2.5 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
+            (click)="cerrar()"
+          >
+            Cancelar
+          </button>
+        </div>
+      </section>
+    }
+
+    <!-- ═════════════════════ Filtros ═════════════════════ -->
+    <div class="mb-5 flex flex-wrap items-end justify-between gap-6">
+      <div class="flex gap-2">
+        @for (opcion of [
+          { valor: 'todos', label: 'Todos' },
+          { valor: 'proveedor', label: 'Proveedores' },
+          { valor: 'cliente', label: 'Clientes' }
+        ]; track opcion.valor) {
+          <button
+            type="button"
+            class="rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200"
+            [class]="
+              vista() === opcion.valor
+                ? 'bg-moss text-bone'
+                : 'border border-sand text-ink-soft hover:border-stone hover:text-ink'
+            "
+            (click)="cambiarVista($any(opcion.valor))"
+          >
+            {{ opcion.label }}
+            <span class="tabular ml-1 opacity-70">
+              {{ opcion.valor === 'todos' ? conteos().todos : opcion.valor === 'proveedor' ? conteos().proveedor : conteos().cliente }}
+            </span>
+          </button>
+        }
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <input
+          type="search"
+          placeholder="Buscar por nombre, teléfono…"
+          class="min-w-[14rem] rounded-full border border-sand bg-bone px-4 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none"
+          aria-label="Buscar contacto"
+          [value]="busqueda()"
+          (input)="onBusqueda($event)"
+        />
+        <label class="flex cursor-pointer items-center gap-2 text-sm text-ink-soft">
+          <input
+            type="checkbox"
+            class="size-4 rounded border-sand text-moss focus:ring-moss"
+            [checked]="verInactivos()"
+            (change)="alternarInactivos()"
+          />
+          Ver inactivos
+        </label>
+      </div>
+    </div>
+
+    @if (conteos().ambos > 0 || porPagarTotal() > 0) {
+      <div class="mb-5 flex flex-wrap gap-8">
+        @if (porPagarTotal() > 0) {
+          <div>
+            <p class="tabular font-display text-h3 text-clay-deep">{{ porPagarTotal() | cop }}</p>
+            <p class="text-sm text-ink-soft">pendiente de pagar a proveedores</p>
+          </div>
+        }
+        @if (conteos().ambos > 0) {
+          <div>
+            <p class="tabular font-display text-h3 text-moss">{{ conteos().ambos }}</p>
+            <p class="text-sm text-ink-soft">
+              {{ conteos().ambos === 1 ? 'es proveedor y cliente' : 'son proveedor y cliente' }}
+            </p>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- ═════════════════════ Lista ═════════════════════ -->
+    @if (adminApi.contactsLoading() && adminApi.contacts().length === 0) {
+      <div class="rounded-lg border border-dashed border-sand py-16 text-center">
+        <p class="text-sm text-ink-soft">Cargando…</p>
+      </div>
+    } @else if (visibles().length === 0) {
+      <div class="rounded-lg border border-dashed border-sand py-16 text-center">
+        <p class="text-h3 text-ink">
+          {{ adminApi.contacts().length === 0 ? 'La agenda está vacía' : 'Nada con ese filtro' }}
+        </p>
+        <p class="mt-2 text-sm text-ink-soft">
+          @if (adminApi.contacts().length === 0) {
+            Agrega tus proveedores. Los clientes se van fichando solos cuando compran.
+          } @else {
+            Prueba con otra búsqueda o mira los inactivos.
+          }
+        </p>
+      </div>
+    } @else {
+      <ul class="flex flex-col gap-3">
+        @for (contacto of visibles(); track contacto.id) {
+          @let ocupado = ocupadoId() === contacto.id;
+          @let desplegado = expandido() === contacto.id;
+
+          <li
+            class="overflow-hidden rounded-lg border bg-bone"
+            [class]="contacto.activo === 1 ? 'border-sand' : 'border-sand/60 opacity-70'"
+          >
+            <div class="flex flex-wrap items-center gap-4 p-5">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="truncate text-sm font-semibold text-ink">{{ contacto.nombre }}</p>
+
+                  @if (contacto.esProveedor === 1) {
+                    <span class="text-overline rounded-full bg-clay/15 px-2.5 py-0.5 font-semibold uppercase text-clay-deep">
+                      Proveedor
+                    </span>
+                  }
+                  @if (contacto.esCliente === 1) {
+                    <span class="text-overline rounded-full bg-sage-light px-2.5 py-0.5 font-semibold uppercase text-moss-deep">
+                      Cliente
+                    </span>
+                  }
+                  @if (contacto.activo === 0) {
+                    <span class="text-overline rounded-full bg-linen px-2.5 py-0.5 font-semibold uppercase text-ink-muted">
+                      Inactivo
+                    </span>
+                  }
+                </div>
+
+                <p class="tabular mt-1 text-xs text-ink-muted">
+                  {{ contacto.telefono || 'Sin teléfono' }}
+                  @if (contacto.direccion) {
+                    · {{ contacto.direccion }}
+                  }
+                </p>
+              </div>
+
+              <!-- El resumen que convierte una lista de nombres en algo útil -->
+              <div class="flex shrink-0 flex-wrap gap-5 text-right">
+                @if (contacto.esProveedor === 1 && (contacto.compras ?? 0) > 0) {
+                  <div>
+                    <p class="tabular text-sm font-medium text-ink">
+                      {{ (contacto.compradoTotal ?? 0) | cop }}
+                    </p>
+                    <p class="text-xs text-ink-muted">
+                      en {{ contacto.compras }}
+                      {{ contacto.compras === 1 ? 'compra' : 'compras' }}
+                    </p>
+                  </div>
+                }
+                @if ((contacto.porPagar ?? 0) > 0) {
+                  <div>
+                    <p class="tabular text-sm font-semibold text-clay-deep">
+                      {{ (contacto.porPagar ?? 0) | cop }}
+                    </p>
+                    <p class="text-xs text-ink-muted">le debo</p>
+                  </div>
+                }
+                @if (contacto.esCliente === 1 && (contacto.pedidos ?? 0) > 0) {
+                  <div>
+                    <p class="tabular text-sm font-medium text-ink">
+                      {{ (contacto.compradoPorEl ?? 0) | cop }}
+                    </p>
+                    <p class="text-xs text-ink-muted">
+                      en {{ contacto.pedidos }}
+                      {{ contacto.pedidos === 1 ? 'pedido' : 'pedidos' }}
+                    </p>
+                  </div>
+                }
+              </div>
+
+              <div class="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+                  [attr.aria-expanded]="desplegado"
+                  (click)="alternar(contacto)"
+                >
+                  {{ desplegado ? 'Ocultar' : 'Ver ficha' }}
+                </button>
+                <button
+                  type="button"
+                  class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss disabled:opacity-50"
+                  [disabled]="ocupado"
+                  (click)="editar(contacto)"
+                >
+                  Editar
+                </button>
+                <button
+                  type="button"
+                  class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink disabled:opacity-50"
+                  [disabled]="ocupado"
+                  (click)="alternarActivo(contacto)"
+                >
+                  {{ ocupado ? '…' : contacto.activo === 1 ? 'Desactivar' : 'Reactivar' }}
+                </button>
+              </div>
+            </div>
+
+            @if (desplegado) {
+              <div class="border-t border-sand bg-linen/50 px-5 py-4">
+                <dl class="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+                  @if (contacto.esProveedor === 1) {
+                    <div class="flex justify-between gap-4 sm:col-span-2">
+                      <dt class="text-ink-muted">Para girarle</dt>
+                      <dd class="tabular text-right text-ink">
+                        @if (tieneCuenta(contacto)) {
+                          {{ contacto.banco }}
+                          @if (contacto.tipoCuenta) {
+                            · {{ contacto.tipoCuenta }}
+                          }
+                          · {{ contacto.numeroCuenta }}
+                          @if (contacto.titular) {
+                            <span class="block text-xs text-ink-muted">
+                              a nombre de {{ contacto.titular }}
+                            </span>
+                          }
+                        } @else {
+                          <span class="text-clay-deep">
+                            Sin cuenta registrada — se le paga en efectivo o falta completarla
+                          </span>
+                        }
+                      </dd>
+                    </div>
+                    @if (contacto.documento) {
+                      <div class="flex justify-between gap-4">
+                        <dt class="text-ink-muted">Cédula / NIT</dt>
+                        <dd class="tabular text-ink">{{ contacto.documento }}</dd>
+                      </div>
+                    }
+                  }
+
+                  @if (contacto.esCliente === 1) {
+                    <div class="flex justify-between gap-4">
+                      <dt class="text-ink-muted">Último pedido</dt>
+                      <dd class="tabular text-ink">{{ formatDate(contacto.ultimoPedido) }}</dd>
+                    </div>
+                  }
+
+                  <div class="flex justify-between gap-4">
+                    <dt class="text-ink-muted">En la agenda desde</dt>
+                    <dd class="tabular text-ink">{{ formatDate(contacto.creadoEn) }}</dd>
+                  </div>
+                </dl>
+
+                @if (contacto.notas) {
+                  <p class="mt-3 rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink-soft">
+                    {{ contacto.notas }}
+                  </p>
+                }
+
+                <!--
+                  Borrar solo se ofrece aquí dentro y sin historial detrás: la
+                  vía normal de "quitar" es desactivar, que conserva de dónde
+                  salió cada compra y cada pedido.
+                -->
+                @if ((contacto.compras ?? 0) === 0 && (contacto.pedidos ?? 0) === 0) {
+                  @if (confirmandoBorrado() === contacto.id) {
+                    <div class="mt-3 flex flex-wrap items-center gap-3">
+                      <p class="text-sm text-ink">¿Borrar a {{ contacto.nombre }} de la agenda?</p>
+                      <button
+                        type="button"
+                        class="rounded-full bg-red-600 px-4 py-1.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-red-700 disabled:opacity-60"
+                        [disabled]="ocupado"
+                        (click)="borrar(contacto)"
+                      >
+                        {{ ocupado ? 'Borrando…' : 'Sí, borrar' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="text-sm text-ink-soft transition-colors duration-200 hover:text-ink"
+                        (click)="cancelarBorrado()"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  } @else {
+                    <button
+                      type="button"
+                      class="mt-3 text-sm text-ink-muted transition-colors duration-200 hover:text-red-600"
+                      (click)="pedirBorrado(contacto)"
+                    >
+                      Borrar de la agenda
+                    </button>
+                  }
+                } @else {
+                  <p class="mt-3 text-xs text-ink-muted">
+                    Tiene historial, así que no se puede borrar. Desactívalo para
+                    que deje de salir en las listas sin perder de dónde salió
+                    cada movimiento.
+                  </p>
+                }
+              </div>
+            }
+          </li>
+        }
+      </ul>
+    }
+  </div>
+</div>

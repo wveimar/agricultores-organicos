@@ -9,17 +9,18 @@
 
 DELETE FROM order_items;
 DELETE FROM orders;
+DELETE FROM contacts;
 DELETE FROM cash_closings;
 DELETE FROM user_roles;
 DELETE FROM users;
 DELETE FROM products;
 
 -- ─────────────────────────── Usuarios ───────────────────────────
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-01', 'inventario@agricultores.co', 'Sara Villamil', 'pbkdf2$100000$6rIxdjoj3veA8ztLZVS7jA$5asFakxc38n0BhP3SmyAmqZaRmduaJdU9Wj1wHfqepc');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-01', 'inventario@agricultores.co', 'Sara Villamil', 'pbkdf2$100000$HeKIg1g2Q22aZABcD0CvzQ$yCmzQCI29t7H9WLyBfh5xTzSYLEytLrSsRTba5yJTAM');
 INSERT INTO user_roles (user_id, role) VALUES ('u-01', 'ADMIN_INVENTARIO');
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-02', 'pedidos@agricultores.co', 'Diana Cardona', 'pbkdf2$100000$DP7vL4Mc2qctXcSDNBcmDQ$vm8pzesLDFTDkNUJVO0VrCo643WcymwI9XLXQZUzhdI');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-02', 'pedidos@agricultores.co', 'Diana Cardona', 'pbkdf2$100000$_yR4LGDOfOxz_bOJSjq1ug$K2glPpAFt1Rg3QV2M7MuuVVLs5Ox1NknSCnasMQ1nhI');
 INSERT INTO user_roles (user_id, role) VALUES ('u-02', 'GESTOR_PEDIDOS');
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-03', 'admin@agricultores.co', 'Nicolás Ruiz', 'pbkdf2$100000$gY_Dzum4XvuRUdCiW1HrMA$L0xHv6RUwZk6V0hMPsm-HtAPAehbCjgP6v2y4Mp9xmo');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-03', 'admin@agricultores.co', 'Nicolás Ruiz', 'pbkdf2$100000$Fo-2lCAhHBgLt2ukfS4cmg$VEAMKfWKtDcajpT-CXpl4dVU-1Doii9CC2I0Xw_SXz8');
 INSERT INTO user_roles (user_id, role) VALUES ('u-03', 'SUPER_ADMIN');
 
 -- ─────────────────────────── Categorías ───────────────────────────
@@ -61,22 +62,51 @@ INSERT INTO products (id, slug, nombre, tagline, categoria_id, grupo_admin, prec
 INSERT INTO products (id, slug, nombre, tagline, categoria_id, grupo_admin, precio, precio_costo, precio_anterior, unidad, origen, rating, review_count, badge, stock_actual, stock_seguridad, imagen, imagen_hover, imagen_alt) VALUES ('p-24', 'canasta-semanal-familiar', 'Canasta Semanal Familiar', 'Fruta y verdura para cuatro personas, sin repetir a la semana siguiente', 'canastas', 'agroindustriales', 89000, 66800, 105000, 'canasta', '10 fincas asociadas', 4.8, 619, 'bestseller', 25, 8, 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?auto=format&fit=crop&w=900&h=1125&q=80', 'https://images.unsplash.com/photo-1550989460-0adf9ea622e2?auto=format&fit=crop&w=900&h=1125&q=80', 'Frutas y verduras dispuestas en círculo alrededor de una tabla de madera');
 INSERT INTO products (id, slug, nombre, tagline, categoria_id, grupo_admin, precio, precio_costo, precio_anterior, unidad, origen, rating, review_count, badge, stock_actual, stock_seguridad, imagen, imagen_hover, imagen_alt) VALUES ('p-25', 'canasta-del-mercado-grande', 'Canasta del Mercado · Grande', 'La compra completa del mes, en una sola entrega', 'canastas', 'agroindustriales', 146000, 109500, NULL, 'canasta', '3 fincas asociadas', 4.7, 208, NULL, 42, 12, 'https://images.unsplash.com/photo-1550989460-0adf9ea622e2?auto=format&fit=crop&w=900&h=1125&q=80', 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?auto=format&fit=crop&w=900&h=1125&q=80', 'Puesto de mercado rebosante de frutas y verduras de todos los colores');
 
+-- ─────────────────────────── Contactos ───────────────────────────
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-1', '10 fincas asociadas', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-2', '3 fincas asociadas', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-3', 'Apiario Flor de Monte · Cauca', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-4', 'Asoc. Sumapaz · Cundinamarca', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-5', 'Asociación El Zulia · Santander', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-6', 'Cocina Agricultores · Bogotá', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-7', 'Colectivo Tierra Viva · Boyacá', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-8', 'Coop. del Valle · V. del Cauca', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-9', 'Coop. La Sierra · S. Nevada', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-10', 'Finca Alto Verde · Antioquia', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-11', 'Finca El Encanto · Antioquia', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-12', 'Finca El Manantial · Nariño', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-13', 'Finca El Mirador · Huila', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-14', 'Finca El Palmar · Tolima', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-15', 'Finca La Aurora · Boyacá', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-16', 'Finca La Esperanza · Cundinamarca', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-17', 'Finca Los Nogales · Antioquia', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-18', 'Finca Villa Clara · Huila', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-19', 'Huerto San Isidro · Boyacá', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-20', 'Molino San Rafael · Boyacá', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES ('prov-21', 'Vereda El Roble · Cundinamarca', 1, 'Creado desde el origen del catálogo. Completa teléfono y cuenta.');
+INSERT INTO contacts (id, nombre, telefono, direccion, es_cliente) VALUES ('cli-1', 'Marcela Ospina', '300 214 5588', 'Calle 127 # 15-40, Bogotá', 1);
+INSERT INTO contacts (id, nombre, telefono, direccion, es_cliente) VALUES ('cli-2', 'Julián Restrepo', '312 809 3321', 'Carrera 43A # 12-30, Medellín', 1);
+INSERT INTO contacts (id, nombre, telefono, direccion, es_cliente) VALUES ('cli-3', 'Restaurante La Huerta', '601 745 2210', 'Carrera 9 # 68-30, Bogotá', 1);
+INSERT INTO contacts (id, nombre, telefono, direccion, es_cliente) VALUES ('cli-4', 'Ana Lucía Peña', '318 662 7745', 'Avenida 6N # 23-18, Cali', 1);
+INSERT INTO contacts (id, nombre, telefono, direccion, es_cliente) VALUES ('cli-5', 'Hotel Campestre El Roble', '310 455 9012', 'Km 3 vía Arcabuco, Villa de Leyva', 1);
+INSERT INTO contacts (id, nombre, telefono, direccion, es_cliente) VALUES ('cli-6', 'Camilo Vargas', '317 990 4423', 'Calle 36 # 27-15, Bucaramanga', 1);
+
 -- ─────────────────────────── Pedidos ───────────────────────────
-INSERT INTO orders (id, referencia, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-01', 'ORD-1041', 'Marcela Ospina', '300 214 5588', 'Calle 127 # 15-40, Bogotá', 'pendiente', 0, 153000, 0, 153000, NULL, NULL, '2026-08-09T08:14:00.000Z');
+INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-01', 'ORD-1041', 'cli-1', 'Marcela Ospina', '300 214 5588', 'Calle 127 # 15-40, Bogotá', 'pendiente', 0, 153000, 0, 153000, NULL, NULL, '2026-08-09T08:14:00.000Z');
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-01', 'p-24', 'Canasta Semanal Familiar', 89000, 66800, 1);
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-01', 'p-22', 'Café de Origen · Tueste Medio', 32000, 19800, 2);
-INSERT INTO orders (id, referencia, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-02', 'ORD-1042', 'Julián Restrepo', '312 809 3321', 'Carrera 43A # 12-30, Medellín', 'pendiente', 0, 96000, 0, 96000, NULL, NULL, '2026-08-09T09:02:00.000Z');
+INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-02', 'ORD-1042', 'cli-2', 'Julián Restrepo', '312 809 3321', 'Carrera 43A # 12-30, Medellín', 'pendiente', 0, 96000, 0, 96000, NULL, NULL, '2026-08-09T09:02:00.000Z');
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-02', 'p-09', 'Fresa de Temporada', 12900, 9700, 3);
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-02', 'p-23', 'Miel de Abeja Cruda', 28500, 17700, 1);
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-02', 'p-03', 'Papa Nativa de Páramo', 7200, 5600, 4);
-INSERT INTO orders (id, referencia, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-03', 'ORD-1043', 'Restaurante La Huerta', '601 745 2210', 'Carrera 9 # 68-30, Bogotá', 'pendiente', 0, 107800, 0, 107800, NULL, NULL, '2026-08-09T10:35:00.000Z');
+INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-03', 'ORD-1043', 'cli-3', 'Restaurante La Huerta', '601 745 2210', 'Carrera 9 # 68-30, Bogotá', 'pendiente', 0, 107800, 0, 107800, NULL, NULL, '2026-08-09T10:35:00.000Z');
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-03', 'p-05', 'Aguacate Hass', 4900, 3800, 12);
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-03', 'p-01', 'Tomate Chonto en Rama', 9800, 7600, 5);
-INSERT INTO orders (id, referencia, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-04', 'ORD-1039', 'Ana Lucía Peña', '318 662 7745', 'Avenida 6N # 23-18, Cali', 'aprobado', 0, 53800, 0, 53800, 'u-02', '2026-08-08T17:05:00.000Z', '2026-08-08T16:20:00.000Z');
+INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-04', 'ORD-1039', 'cli-4', 'Ana Lucía Peña', '318 662 7745', 'Avenida 6N # 23-18, Cali', 'aprobado', 0, 53800, 0, 53800, 'u-02', '2026-08-08T17:05:00.000Z', '2026-08-08T16:20:00.000Z');
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-04', 'p-13', 'Cítricos y Tropicales', 26900, 20200, 2);
-INSERT INTO orders (id, referencia, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-05', 'ORD-1038', 'Hotel Campestre El Roble', '310 455 9012', 'Km 3 vía Arcabuco, Villa de Leyva', 'enviado', 0, 203600, 0, 203600, 'u-02', '2026-08-08T12:30:00.000Z', '2026-08-08T11:48:00.000Z');
+INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-05', 'ORD-1038', 'cli-5', 'Hotel Campestre El Roble', '310 455 9012', 'Km 3 vía Arcabuco, Villa de Leyva', 'enviado', 0, 203600, 0, 203600, 'u-02', '2026-08-08T12:30:00.000Z', '2026-08-08T11:48:00.000Z');
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-05', 'p-25', 'Canasta del Mercado · Grande', 146000, 109500, 1);
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-05', 'p-20', 'Trigo Integral Molido en Piedra', 9600, 6500, 6);
-INSERT INTO orders (id, referencia, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-06', 'ORD-1044', 'Camilo Vargas', '317 990 4423', 'Calle 36 # 27-15, Bucaramanga', 'pendiente', 0, 56200, 0, 56200, NULL, NULL, '2026-08-09T11:12:00.000Z');
+INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-06', 'ORD-1044', 'cli-6', 'Camilo Vargas', '317 990 4423', 'Calle 36 # 27-15, Bucaramanga', 'pendiente', 0, 56200, 0, 56200, NULL, NULL, '2026-08-09T11:12:00.000Z');
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-06', 'p-15', 'Ensalada Arcoíris', 16900, 9300, 2);
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-06', 'p-18', 'Smoothie de Fresa y Chía', 11200, 6200, 2);

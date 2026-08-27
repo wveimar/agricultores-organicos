@@ -2,6 +2,7 @@ import { ApiError, json, readJson, requireInt, requireString } from '../http';
 import { Env, JwtPayload } from '../types';
 import { optionalAuth, requireRole } from '../auth/middleware';
 import { discountedPrice, loadDiscounts, loadUserRoles } from '../pricing';
+import { encontrarOCrearCliente } from './contacts';
 import { decodeDataUrl, validateDataUrl } from '../receipts';
 import {
   contenidoDePedidos,
@@ -252,19 +253,31 @@ export async function create(request: Request, env: Env): Promise<Response> {
   // no "pendiente de comprobante" — el comprobante siempre fue opcional.
   const metodoPago = readMetodoPago(body.metodoPago);
 
+  // Ficha en la agenda, buscada por teléfono o creada (ver contacts.ts). Va
+  // FUERA del batch a propósito: es un dato de conveniencia, no parte del
+  // pedido. Si fallara dentro, tumbaría una compra que por lo demás está bien
+  // — y el pedido ya guarda su propia copia del nombre, teléfono y dirección,
+  // que es lo único que hace falta para entregarlo.
+  const contactId = await encontrarOCrearCliente(env, {
+    nombre: clienteNombre,
+    telefono: clienteTelefono,
+    direccion: clienteDireccion,
+  });
+
   const statements: D1PreparedStatement[] = [
     // La referencia se calcula dentro de la propia transacción: leerla antes y
     // escribirla después dejaría una ventana para asignar el mismo número dos
     // veces. El UNIQUE de la columna es la red de seguridad.
     env.DB.prepare(
       `INSERT INTO orders (
-         id, referencia, user_id, cliente_nombre, cliente_telefono, cliente_direccion,
+         id, referencia, user_id, contact_id,
+         cliente_nombre, cliente_telefono, cliente_direccion,
          estado, stock_reservado, subtotal, envio, total,
          comprobante_nombre, comprobante_url, metodo_pago
        ) VALUES (
          ?1,
          'ORD-' || (SELECT COALESCE(MAX(CAST(substr(referencia, 5) AS INTEGER)), 1000) + 1 FROM orders),
-         ?2, ?3, ?4, ?5, 'verificacion', 1, ?6, ?7, ?8, ?9, ?10, ?11
+         ?2, ?3, ?4, ?5, ?6, 'verificacion', 1, ?7, ?8, ?9, ?10, ?11, ?12
        )`,
     ).bind(
       orderId,
@@ -273,6 +286,7 @@ export async function create(request: Request, env: Env): Promise<Response> {
       // lista: sin esto, un pedido con descuento sería indistinguible de un
       // error de precios.
       session?.sub ?? null,
+      contactId,
       clienteNombre,
       clienteTelefono,
       clienteDireccion,

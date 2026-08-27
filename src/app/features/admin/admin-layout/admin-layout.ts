@@ -59,6 +59,12 @@ export class AdminLayout {
       label: 'Compras',
       roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'],
     },
+    // Pegada a Compras: el proveedor al que se le compra sale de aquí.
+    {
+      path: '/admin/contactos',
+      label: 'Contactos',
+      roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'],
+    },
     {
       path: '/admin/entregas',
       label: 'Entregas',

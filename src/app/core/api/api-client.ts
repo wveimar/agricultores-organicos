@@ -469,6 +469,62 @@ export interface ApiExpense {
   readonly closingId: string | null;
 }
 
+/** Cómo se le gira a un proveedor. `null` = se le paga en efectivo. */
+export type AccountType = 'ahorros' | 'corriente' | 'nequi' | 'daviplata';
+
+/**
+ * Una ficha de la agenda: proveedor, cliente, o las dos cosas.
+ *
+ * `esProveedor` y `esCliente` son banderas independientes porque la misma
+ * persona puede vender y comprar — a una vereda se le compra lechuga y esa
+ * misma vereda compra huevos.
+ *
+ * Los contadores (`compras`, `pedidos`, …) los calcula el servidor sobre el
+ * historial: son de solo lectura y no se mandan al guardar.
+ */
+export interface ApiContact {
+  readonly id: string;
+  readonly nombre: string;
+  readonly esProveedor: number;
+  readonly esCliente: number;
+  readonly telefono: string | null;
+  readonly direccion: string | null;
+  readonly notas: string | null;
+  readonly banco: string | null;
+  readonly tipoCuenta: AccountType | null;
+  readonly numeroCuenta: string | null;
+  readonly titular: string | null;
+  readonly documento: string | null;
+  readonly activo: number;
+  readonly creadoEn: string;
+
+  /** Resumen del historial. Solo en el listado. */
+  readonly compras?: number;
+  readonly compradoTotal?: number;
+  /** Lo que se le debe todavía a este proveedor. */
+  readonly porPagar?: number;
+  readonly pedidos?: number;
+  /** Cuánto ha comprado él, sin domicilios. */
+  readonly compradoPorEl?: number;
+  readonly ultimoPedido?: string | null;
+}
+
+/** Lo que el formulario de la agenda manda. Los contadores no viajan. */
+export interface ContactInput {
+  readonly nombre: string;
+  readonly esProveedor: boolean;
+  readonly esCliente: boolean;
+  readonly telefono: string | null;
+  readonly direccion: string | null;
+  readonly notas: string | null;
+  readonly banco: string | null;
+  readonly tipoCuenta: AccountType | null;
+  readonly numeroCuenta: string | null;
+  readonly titular: string | null;
+  readonly documento: string | null;
+  readonly activo: boolean;
+}
+
 /** Una línea de compra: qué producto, cuánto y a qué costo se negoció. */
 export interface ApiPurchaseItem {
   readonly productId: string;
@@ -489,8 +545,20 @@ export interface ApiPurchaseItem {
  */
 export interface ApiPurchase {
   readonly id: string;
-  /** Texto de `products.origen`, copiado al comprar. No es una referencia. */
+  /** La ficha del proveedor en la agenda. `null` en compras sin enlazar. */
+  readonly contactId: string | null;
+  /**
+   * El nombre del proveedor COPIADO al comprar. No es redundante con
+   * `contactId`: si mañana se corrige la ficha, esta compra sigue diciendo a
+   * quién se le compró ese día.
+   */
   readonly origen: string;
+  /** Datos vivos de la ficha, para saber a dónde girarle. */
+  readonly proveedorTelefono: string | null;
+  readonly proveedorBanco: string | null;
+  readonly proveedorTipoCuenta: AccountType | null;
+  readonly proveedorNumeroCuenta: string | null;
+  readonly proveedorTitular: string | null;
   /** Suma del detalle, calculada por el servidor. */
   readonly totalPago: number;
   /** 'pendiente' = la mercancía entró pero al agricultor no se le ha girado. */
@@ -508,6 +576,18 @@ export interface PurchaseItemInput {
   readonly productId: string;
   readonly cantidad: number;
   readonly costoUnitario: number;
+}
+
+/**
+ * Lo que el formulario de compra manda.
+ *
+ * Se manda `contactId` y el servidor saca el nombre de la agenda, para que una
+ * compra no pueda quedar a nombre de un proveedor que no existe.
+ */
+export interface PurchaseInput {
+  readonly contactId: string;
+  readonly notas: string | null;
+  readonly items: readonly PurchaseItemInput[];
 }
 
 export interface ApiClosing {
@@ -1163,6 +1243,51 @@ export class ApiClient {
       .pipe(map(() => undefined), catchError(handleError));
   }
 
+  // ───────────── Agenda: proveedores y clientes ─────────────
+
+  /**
+   * La agenda. `tipo` filtra por bandera; sin él vienen todos.
+   *
+   * Cada ficha trae su resumen de historial calculado por el servidor: cuántas
+   * compras y pedidos, por cuánto, y qué se le debe.
+   */
+  contacts(options?: {
+    tipo?: 'proveedor' | 'cliente';
+    incluirInactivos?: boolean;
+  }): Observable<readonly ApiContact[]> {
+    const params = new URLSearchParams();
+    if (options?.tipo) {
+      params.set('tipo', options.tipo);
+    }
+    if (options?.incluirInactivos) {
+      params.set('inactivos', '1');
+    }
+    const query = params.toString() ? `?${params}` : '';
+
+    return this.http
+      .get<{ contactos: ApiContact[] }>(`/api/admin/contacts${query}`)
+      .pipe(map((res) => res.contactos), catchError(handleError));
+  }
+
+  createContact(contacto: ContactInput): Observable<ApiContact> {
+    return this.http
+      .post<{ contacto: ApiContact }>('/api/admin/contacts', contacto)
+      .pipe(map((res) => res.contacto), catchError(handleError));
+  }
+
+  updateContact(id: string, contacto: ContactInput): Observable<ApiContact> {
+    return this.http
+      .patch<{ contacto: ApiContact }>(`/api/admin/contacts/${id}`, contacto)
+      .pipe(map((res) => res.contacto), catchError(handleError));
+  }
+
+  /** Solo funciona sin historial detrás; si lo hay, el servidor responde 409. */
+  deleteContact(id: string): Observable<void> {
+    return this.http
+      .delete<{ ok: true }>(`/api/admin/contacts/${id}`)
+      .pipe(map(() => undefined), catchError(handleError));
+  }
+
   // ─────────────────────── Compras a las fincas ───────────────────────
 
   /** Historial de compras, con su detalle dentro. Filtros opcionales. */
@@ -1185,11 +1310,7 @@ export class ApiClient {
   }
 
   /** Registra la compra: sube el inventario y fija el costo del catálogo. */
-  createPurchase(compra: {
-    origen: string;
-    notas: string | null;
-    items: readonly PurchaseItemInput[];
-  }): Observable<ApiPurchase> {
+  createPurchase(compra: PurchaseInput): Observable<ApiPurchase> {
     return this.http
       .post<{ compra: ApiPurchase }>('/api/admin/providers/purchases', compra)
       .pipe(map((res) => res.compra), catchError(handleError));
@@ -1199,10 +1320,7 @@ export class ApiClient {
    * Corrige una compra. El servidor devuelve al inventario lo anterior y suma
    * lo nuevo; si lo anterior ya se vendió, responde `stock-ya-vendido`.
    */
-  updatePurchase(
-    id: string,
-    compra: { origen: string; notas: string | null; items: readonly PurchaseItemInput[] },
-  ): Observable<ApiPurchase> {
+  updatePurchase(id: string, compra: PurchaseInput): Observable<ApiPurchase> {
     return this.http
       .patch<{ compra: ApiPurchase }>(`/api/admin/providers/purchases/${id}`, compra)
       .pipe(map((res) => res.compra), catchError(handleError));

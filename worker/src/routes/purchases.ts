@@ -32,6 +32,48 @@ interface ItemEntrada {
   costoUnitario: number;
 }
 
+/**
+ * Resuelve a qué proveedor es la compra.
+ *
+ * Se manda `contactId` y el servidor saca el nombre de la agenda: así una
+ * compra no puede quedar a nombre de un proveedor que no existe. El nombre se
+ * **copia** a `origen` en vez de leerse siempre por JOIN, para que corregir la
+ * ficha mañana no reescriba lo que se compró ayer.
+ *
+ * Se sigue aceptando `origen` suelto sin `contactId` por las compras que ya
+ * existían antes de la agenda (migración 0022), y para no bloquear el registro
+ * si alguien todavía no ha creado la ficha del proveedor.
+ */
+async function resolverProveedor(
+  env: Env,
+  body: { contactId?: unknown; origen?: unknown },
+): Promise<{ contactId: string | null; origen: string }> {
+  if (body.contactId !== undefined && body.contactId !== null && body.contactId !== '') {
+    const contactId = requireString(body.contactId, 'contactId', 64);
+
+    const proveedor = await env.DB.prepare(
+      `SELECT id, nombre, es_proveedor AS esProveedor, activo FROM contacts WHERE id = ?1`,
+    )
+      .bind(contactId)
+      .first<{ id: string; nombre: string; esProveedor: number; activo: number }>();
+
+    if (!proveedor) {
+      throw ApiError.badRequest('proveedor-inexistente', 'Ese proveedor no está en la agenda.');
+    }
+    if (!proveedor.esProveedor) {
+      throw ApiError.badRequest(
+        'no-es-proveedor',
+        `"${proveedor.nombre}" está en la agenda como cliente. Márcalo también como proveedor para poder comprarle.`,
+      );
+    }
+
+    return { contactId: proveedor.id, origen: proveedor.nombre };
+  }
+
+  // Sin ficha: se guarda el texto tal cual y la compra queda sin enlazar.
+  return { contactId: null, origen: requireString(body.origen, 'origen', 160) };
+}
+
 /** Fila de producto con lo necesario para decidir si puede recibir stock. */
 interface ProductoDestino {
   id: string;
@@ -143,14 +185,29 @@ async function cargarDestinos(
   return porId;
 }
 
-/** SELECT compartido: la cabecera con el nombre de quien la registró. */
+/**
+ * SELECT compartido.
+ *
+ * `origen` sale de la compra —el nombre copiado ese día— y no de la ficha del
+ * proveedor: si mañana se corrige el nombre en la agenda, esta compra debe
+ * seguir diciendo a quién se le compró entonces. La ficha viaja aparte, para
+ * poder enlazar a ella y mostrar sus datos bancarios al ir a girar.
+ */
 const SELECT_COMPRA = `
-  SELECT c.id, c.origen, c.total_pago AS totalPago, c.estado, c.notas,
+  SELECT c.id, c.contact_id AS contactId, c.origen,
+         c.total_pago AS totalPago, c.estado, c.notas,
          c.creado_en AS creadoEn, c.pagado_en AS pagadoEn,
-         autor.nombre AS creadoPor, pagador.nombre AS pagadoPor
+         autor.nombre AS creadoPor, pagador.nombre AS pagadoPor,
+         prov.nombre        AS proveedorNombre,
+         prov.telefono      AS proveedorTelefono,
+         prov.banco         AS proveedorBanco,
+         prov.tipo_cuenta   AS proveedorTipoCuenta,
+         prov.numero_cuenta AS proveedorNumeroCuenta,
+         prov.titular       AS proveedorTitular
     FROM provider_purchases c
-    LEFT JOIN users autor   ON autor.id   = c.creado_por
-    LEFT JOIN users pagador ON pagador.id = c.pagado_por`;
+    LEFT JOIN users    autor   ON autor.id   = c.creado_por
+    LEFT JOIN users    pagador ON pagador.id = c.pagado_por
+    LEFT JOIN contacts prov    ON prov.id    = c.contact_id`;
 
 /** Carga las líneas de varias compras de una vez, para no hacer N+1. */
 async function cargarItems(
@@ -192,12 +249,19 @@ async function cargarItems(
 export async function list(env: Env, user: JwtPayload, url: URL): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS', 'ADMIN_INVENTARIO');
 
+  const contactId = url.searchParams.get('contact_id');
   const origen = url.searchParams.get('origen');
   const estado = url.searchParams.get('estado');
 
   const filtros: string[] = [];
   const bindings: unknown[] = [];
 
+  // Por ficha cuando se tiene (la vista del proveedor en la agenda) y por
+  // texto para las compras viejas que nunca se enlazaron.
+  if (contactId) {
+    bindings.push(contactId);
+    filtros.push(`c.contact_id = ?${bindings.length}`);
+  }
   if (origen) {
     bindings.push(origen);
     filtros.push(`c.origen = ?${bindings.length}`);
@@ -233,8 +297,14 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
 export async function create(request: Request, env: Env, user: JwtPayload): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS', 'ADMIN_INVENTARIO');
 
-  const body = await readJson<{ origen?: unknown; notas?: unknown; items?: unknown }>(request);
-  const origen = requireString(body.origen, 'origen', 160);
+  const body = await readJson<{
+    contactId?: unknown;
+    origen?: unknown;
+    notas?: unknown;
+    items?: unknown;
+  }>(request);
+
+  const { contactId, origen } = await resolverProveedor(env, body);
   const notas = body.notas === undefined || body.notas === null || body.notas === ''
     ? null
     : requireString(body.notas, 'notas', 500);
@@ -246,9 +316,9 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
 
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO provider_purchases (id, origen, total_pago, notas, creado_por)
-       VALUES (?1, ?2, ?3, ?4, ?5)`,
-    ).bind(purchaseId, origen, total, notas, user.sub),
+      `INSERT INTO provider_purchases (id, contact_id, origen, total_pago, notas, creado_por)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+    ).bind(purchaseId, contactId, origen, total, notas, user.sub),
 
     ...items.flatMap((item) => [
       env.DB.prepare(
@@ -320,8 +390,14 @@ export async function update(
     );
   }
 
-  const body = await readJson<{ origen?: unknown; notas?: unknown; items?: unknown }>(request);
-  const origen = requireString(body.origen, 'origen', 160);
+  const body = await readJson<{
+    contactId?: unknown;
+    origen?: unknown;
+    notas?: unknown;
+    items?: unknown;
+  }>(request);
+
+  const { contactId, origen } = await resolverProveedor(env, body);
   const notas = body.notas === undefined || body.notas === null || body.notas === ''
     ? null
     : requireString(body.notas, 'notas', 500);
@@ -334,8 +410,10 @@ export async function update(
 
   await env.DB.batch([
     env.DB.prepare(
-      `UPDATE provider_purchases SET origen = ?2, total_pago = ?3, notas = ?4 WHERE id = ?1`,
-    ).bind(purchaseId, origen, total, notas),
+      `UPDATE provider_purchases
+          SET contact_id = ?2, origen = ?3, total_pago = ?4, notas = ?5
+        WHERE id = ?1`,
+    ).bind(purchaseId, contactId, origen, total, notas),
 
     // Devolver lo viejo antes de sumar lo nuevo. El orden importa dentro del
     // batch: al revés, un producto que sube y baja podría pasar por un estado

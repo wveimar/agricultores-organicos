@@ -30,6 +30,8 @@ DROP TABLE IF EXISTS order_item_components;
 DROP TABLE IF EXISTS order_status_log;
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
+-- Después de `orders` y `provider_purchases`, que le apuntan.
+DROP TABLE IF EXISTS contacts;
 DROP TABLE IF EXISTS cash_closings;
 DROP TABLE IF EXISTS product_components;
 DROP TABLE IF EXISTS product_wholesale_discounts;
@@ -99,6 +101,56 @@ CREATE TABLE password_resets (
 );
 
 CREATE INDEX idx_resets_user ON password_resets (user_id);
+
+-- ──────────────────── Contactos: proveedores y clientes (0022) ────────────────────
+--
+-- Una sola tabla para los dos porque son la misma clase de cosa y porque la
+-- misma persona puede ser ambas: a una vereda se le compra lechuga y esa misma
+-- vereda compra huevos. `es_proveedor` y `es_cliente` son banderas
+-- independientes, no un tipo excluyente.
+--
+-- `products.origen` NO apunta aquí a propósito: el mismo producto se le puede
+-- comprar a varias fincas, y una columna en el producto no puede decir eso.
+-- Quién puso la mercancía se responde por compra (`provider_purchases`).
+
+CREATE TABLE contacts (
+  id             TEXT    PRIMARY KEY,
+  nombre         TEXT    NOT NULL,
+
+  es_proveedor   INTEGER NOT NULL DEFAULT 0 CHECK (es_proveedor IN (0, 1)),
+  es_cliente     INTEGER NOT NULL DEFAULT 0 CHECK (es_cliente   IN (0, 1)),
+
+  telefono       TEXT,
+  direccion      TEXT,
+  notas          TEXT,
+
+  -- Para girarle a un proveedor. Opcionales: a un vecino se le paga en efectivo.
+  banco          TEXT,
+  tipo_cuenta    TEXT    CHECK (tipo_cuenta IS NULL OR tipo_cuenta IN ('ahorros', 'corriente', 'nequi', 'daviplata')),
+  numero_cuenta  TEXT,
+  titular        TEXT,
+  documento      TEXT,
+
+  -- Desactivar en vez de borrar: compras y pedidos lo siguen nombrando.
+  activo         INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
+
+  creado_en      TEXT    NOT NULL DEFAULT (datetime('now')),
+  actualizado_en TEXT    NOT NULL DEFAULT (datetime('now')),
+
+  -- Al final, no junto a las banderas: SQLite no admite volver a definir
+  -- columnas después de una restricción de tabla. Un contacto que no es ni
+  -- proveedor ni cliente no tendría pantalla donde aparecer.
+  CHECK (es_proveedor = 1 OR es_cliente = 1)
+);
+
+-- El teléfono es la llave del cliente: el checkout de invitado no pide cuenta,
+-- así que es lo único estable entre dos compras de la misma persona. Parcial
+-- porque un proveedor puede no tener teléfono y varios NULL no chocan.
+CREATE UNIQUE INDEX idx_contacts_telefono
+  ON contacts (telefono) WHERE telefono IS NOT NULL AND telefono <> '';
+
+CREATE INDEX idx_contacts_proveedor ON contacts (es_proveedor, activo, nombre);
+CREATE INDEX idx_contacts_cliente   ON contacts (es_cliente,   activo, nombre);
 
 -- ─────────────────────────────── Categorías ───────────────────────────────
 -- Las secciones de la vitrina (migración 0013). `products.categoria_id` apunta
@@ -284,6 +336,15 @@ CREATE TABLE orders (
   referencia         TEXT    NOT NULL UNIQUE,
   -- Cliente registrado. NULL cuando la compra fue de un invitado.
   user_id            TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  -- Ficha del cliente en la agenda, encontrada o creada por teléfono al
+  -- comprar (ver 0022). SET NULL: borrar un contacto nunca puede llevarse un
+  -- pedido por delante.
+  --
+  -- Las tres columnas de abajo NO son redundantes con ella: son la copia de lo
+  -- que el cliente escribió ESE día. Si mañana se muda, el pedido viejo tiene
+  -- que seguir diciendo a dónde se llevó. Mismo criterio que
+  -- `order_items.producto_nombre`.
+  contact_id         TEXT    REFERENCES contacts(id) ON DELETE SET NULL,
   cliente_nombre     TEXT    NOT NULL,
   cliente_telefono   TEXT    NOT NULL,
   cliente_direccion  TEXT    NOT NULL,
@@ -363,6 +424,8 @@ CREATE INDEX idx_orders_user    ON orders (user_id);
 -- La cartera pregunta siempre lo mismo: fiados, sin pagar, ordenados por
 -- vencimiento. Los tres campos en el índice la resuelven sin tocar la tabla.
 CREATE INDEX idx_orders_credito ON orders (metodo_pago, estado, vence_en);
+-- "Todos los pedidos de este cliente", que es la ficha de la agenda.
+CREATE INDEX idx_orders_contact ON orders (contact_id);
 
 CREATE TABLE order_items (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -463,8 +526,12 @@ CREATE INDEX idx_expenses_closing ON expenses (closing_id, creado_en DESC);
 
 CREATE TABLE provider_purchases (
   id          TEXT    PRIMARY KEY,
-  -- Copia del `products.origen` al comprar, no una referencia: si renombran la
-  -- finca en el catálogo, esta compra debe seguir diciendo a quién se le compró.
+  -- El proveedor en la agenda. SET NULL para que desactivar o borrar una ficha
+  -- no borre la compra: para eso está `origen`, que conserva el nombre.
+  contact_id  TEXT    REFERENCES contacts(id) ON DELETE SET NULL,
+  -- El nombre del proveedor COPIADO al comprar. No es redundante con
+  -- `contact_id`: si mañana se corrige la ficha, esta compra debe seguir
+  -- diciendo a quién se le compró ese día.
   origen      TEXT    NOT NULL,
   -- Suma del detalle, verificada por el servidor antes de escribirla.
   total_pago  INTEGER NOT NULL CHECK (total_pago >= 0),
@@ -478,7 +545,9 @@ CREATE TABLE provider_purchases (
 );
 
 CREATE INDEX idx_purchases_origen ON provider_purchases (origen, creado_en DESC);
-CREATE INDEX idx_purchases_estado ON provider_purchases (estado, creado_en DESC);
+CREATE INDEX idx_purchases_estado  ON provider_purchases (estado, creado_en DESC);
+-- "Todo lo que le he comprado a este proveedor", que es su ficha en la agenda.
+CREATE INDEX idx_purchases_contact ON provider_purchases (contact_id);
 
 CREATE TABLE provider_purchase_items (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,

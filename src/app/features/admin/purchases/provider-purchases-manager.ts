@@ -37,9 +37,12 @@ export class ProviderPurchasesManager {
   protected readonly abierto = signal(false);
   /** Con valor = estamos corrigiendo esa compra, no creando una. */
   protected readonly editandoId = signal<string | null>(null);
-  protected readonly origen = signal('');
+  /** La ficha del proveedor en la agenda, no un texto suelto. */
+  protected readonly contactId = signal('');
   protected readonly notas = signal('');
   protected readonly lineas = signal<readonly LineaBorrador[]>([]);
+  /** Filtra el desplegable de productos, que ahora los ofrece todos. */
+  protected readonly busqueda = signal('');
 
   protected readonly guardando = signal(false);
   protected readonly formError = signal<string | null>(null);
@@ -54,9 +57,9 @@ export class ProviderPurchasesManager {
 
   constructor() {
     this.adminApi.loadPurchases();
-    // El selector de productos sale del catálogo: hace falta para saber qué
-    // fincas hay y qué vende cada una.
     this.adminApi.loadProducts();
+    // Los proveedores salen de la agenda, no de `products.origen`.
+    this.adminApi.loadContacts();
   }
 
   // ─────────────────────────── Catálogo ───────────────────────────
@@ -73,21 +76,37 @@ export class ProviderPurchasesManager {
     this.adminApi.products().filter((p) => !p.tieneVariantes && !p.esCanasta),
   );
 
-  /** Las fincas que hay, sacadas del catálogo. Ordenadas para poder buscarlas. */
-  protected readonly origenes = computed<readonly string[]>(() =>
-    [...new Set(this.comprables().map((p) => p.origen).filter(Boolean))].sort((a, b) =>
-      a.localeCompare(b, 'es'),
-    ),
-  );
+  /** Proveedores de la agenda, activos. Es lo que ofrece el paso 1. */
+  protected readonly proveedores = computed(() => this.adminApi.proveedoresActivos());
 
-  /** Lo que vende la finca elegida, menos lo que ya está en el borrador. */
+  /**
+   * Lo que se puede añadir a la compra: **todo** el catálogo, menos lo que ya
+   * está en el borrador.
+   *
+   * No se filtra por `products.origen` a propósito. La misma lechuga se le
+   * compra a una vereda esta semana y a otra la siguiente, así que filtrar por
+   * el origen del catálogo dejaría fuera justo la compra que se quiere
+   * registrar. `origen` es de dónde se dice que viene el producto de cara al
+   * cliente; quién lo puso esta vez lo dice la compra.
+   *
+   * Como la lista es entonces larga, el desplegable se filtra por texto.
+   */
   protected readonly disponibles = computed<readonly ApiProduct[]>(() => {
-    const finca = this.origen();
-    if (!finca) {
-      return [];
-    }
     const yaPuestos = new Set(this.lineas().map((l) => l.productId));
-    return this.comprables().filter((p) => p.origen === finca && !yaPuestos.has(p.id));
+    const termino = this.busqueda().trim().toLowerCase();
+
+    return this.comprables().filter((p) => {
+      if (yaPuestos.has(p.id)) {
+        return false;
+      }
+      if (!termino) {
+        return true;
+      }
+      return (
+        p.nombre.toLowerCase().includes(termino) ||
+        (p.origen ?? '').toLowerCase().includes(termino)
+      );
+    });
   });
 
   // ─────────────────────────── Totales ───────────────────────────
@@ -106,7 +125,7 @@ export class ProviderPurchasesManager {
 
   protected readonly puedeGuardar = computed(
     () =>
-      this.origen().trim().length > 0 &&
+      this.contactId().length > 0 &&
       this.lineas().length > 0 &&
       this.lineas().every((l) => l.cantidad > 0 && l.costoUnitario >= 0),
   );
@@ -115,9 +134,10 @@ export class ProviderPurchasesManager {
 
   protected nuevaCompra(): void {
     this.editandoId.set(null);
-    this.origen.set('');
+    this.contactId.set('');
     this.notas.set('');
     this.lineas.set([]);
+    this.busqueda.set('');
     this.formError.set(null);
     this.feedback.set(null);
     this.abierto.set(true);
@@ -126,8 +146,12 @@ export class ProviderPurchasesManager {
   /** Carga una compra existente en el formulario para corregirla. */
   protected editar(compra: ApiPurchase): void {
     this.editandoId.set(compra.id);
-    this.origen.set(compra.origen);
+    // Las compras anteriores a la agenda no tienen ficha: el selector queda
+    // vacío y hay que elegir proveedor para poder guardar. Es lo correcto —
+    // así se van enlazando a medida que se tocan.
+    this.contactId.set(compra.contactId ?? '');
     this.notas.set(compra.notas ?? '');
+    this.busqueda.set('');
     this.lineas.set(
       compra.items.map((item) => ({
         productId: item.productId,
@@ -149,15 +173,20 @@ export class ProviderPurchasesManager {
   }
 
   /**
-   * Cambiar de finca vacía el detalle: los productos ya elegidos son de la
-   * anterior, y una compra mezcla de dos fincas no se le puede girar a nadie.
+   * Cambiar de proveedor NO vacía el detalle.
+   *
+   * Antes sí lo hacía, cuando los productos se filtraban por finca y los ya
+   * elegidos dejaban de tener sentido. Ahora cualquier producto se le puede
+   * comprar a cualquiera, así que corregir el proveedor de una compra ya
+   * escrita es un caso normal —te equivocaste de vereda— y borrar el detalle
+   * sería castigar la corrección.
    */
-  protected onOrigen(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    if (value !== this.origen()) {
-      this.lineas.set([]);
-    }
-    this.origen.set(value);
+  protected onContacto(event: Event): void {
+    this.contactId.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected onBusqueda(event: Event): void {
+    this.busqueda.set((event.target as HTMLInputElement).value);
   }
 
   protected onNotas(event: Event): void {
@@ -222,7 +251,7 @@ export class ProviderPurchasesManager {
     this.formError.set(null);
 
     const payload = {
-      origen: this.origen().trim(),
+      contactId: this.contactId(),
       notas: this.notas().trim() || null,
       items: this.lineas().map((l) => ({
         productId: l.productId,

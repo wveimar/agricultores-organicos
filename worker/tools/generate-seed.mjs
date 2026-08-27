@@ -106,6 +106,7 @@ const lines = [
   '',
   'DELETE FROM order_items;',
   'DELETE FROM orders;',
+  'DELETE FROM contacts;',
   'DELETE FROM cash_closings;',
   'DELETE FROM user_roles;',
   'DELETE FROM users;',
@@ -176,6 +177,63 @@ for (const p of PRODUCTS) {
   );
 }
 
+lines.push('', '-- ─────────────────────────── Contactos ───────────────────────────');
+
+// La agenda: proveedores y clientes en una sola tabla (migración 0022).
+//
+// Es el equivalente para una base nueva de lo que la 0022 hace sobre una
+// existente. Sin esto, tras un `db:reset` la agenda queda vacía aunque haya 25
+// productos y 6 pedidos, y el selector de proveedores del formulario de
+// compras no ofrece nada — que es justo lo que pasó la primera vez.
+//
+// Los ids son fijos (`prov-1`, `cli-1`) y no aleatorios: así el seed es
+// reproducible y dos ejecuciones dan exactamente el mismo fichero, que es lo
+// que permite ver en un diff si algo cambió de verdad.
+
+/** Un proveedor por cada `origen` distinto del catálogo. */
+const ORIGENES = [...new Set(PRODUCTS.map((p) => p.origin).filter(Boolean))].sort((a, b) =>
+  a.localeCompare(b, 'es'),
+);
+
+const contactIdByOrigen = new Map();
+ORIGENES.forEach((origen, i) => {
+  const id = `prov-${i + 1}`;
+  contactIdByOrigen.set(origen, id);
+  lines.push(
+    `INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES (` +
+      [
+        q(id),
+        q(origen),
+        1,
+        q('Creado desde el origen del catálogo. Completa teléfono y cuenta.'),
+      ].join(', ') +
+      ');',
+  );
+});
+
+/**
+ * Un cliente por cada teléfono distinto de los pedidos de demo.
+ *
+ * El teléfono es la llave —el checkout de invitado no pide cuenta— así que dos
+ * pedidos con el mismo número son la misma persona. Se queda con los datos del
+ * último pedido de ese número, igual que hace la migración.
+ */
+const contactIdByPhone = new Map();
+const clientePorTelefono = new Map();
+for (const order of ORDERS) {
+  clientePorTelefono.set(order.customerPhone, order);
+}
+
+[...clientePorTelefono.entries()].forEach(([telefono, order], i) => {
+  const id = `cli-${i + 1}`;
+  contactIdByPhone.set(telefono, id);
+  lines.push(
+    `INSERT INTO contacts (id, nombre, telefono, direccion, es_cliente) VALUES (` +
+      [q(id), q(order.customerName), q(telefono), q(order.customerAddress), 1].join(', ') +
+      ');',
+  );
+});
+
 lines.push('', '-- ─────────────────────────── Pedidos ───────────────────────────');
 
 // Mapea "Diana Cardona" -> 'u-02': los pedidos de demo aprobados registran
@@ -187,10 +245,13 @@ for (const order of ORDERS) {
   const aprobadoPor = order.approvedBy ? (userIdByName.get(order.approvedBy) ?? 'NULL') : 'NULL';
 
   lines.push(
-    `INSERT INTO orders (id, referencia, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES (` +
+    `INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES (` +
       [
         q(order.id),
         q(order.reference),
+        // La ficha en la agenda. Las tres columnas siguientes NO son
+        // redundantes: son la copia de lo que el cliente escribió ese día.
+        q(contactIdByPhone.get(order.customerPhone)),
         q(order.customerName),
         q(order.customerPhone),
         q(order.customerAddress),

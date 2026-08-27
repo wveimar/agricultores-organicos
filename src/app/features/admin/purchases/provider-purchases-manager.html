@@ -47,50 +47,65 @@
           {{ editandoId() ? 'Corregir compra' : 'Nueva compra' }}
         </h2>
 
-        <!-- Paso 1: la finca -->
+        <!-- Paso 1: el proveedor, de la agenda -->
         <div class="mt-5">
-          <label for="compra-origen" class="block text-sm font-medium text-ink">
-            1 · ¿A qué finca le compras?
+          <label for="compra-proveedor" class="block text-sm font-medium text-ink">
+            1 · ¿A quién le compras?
           </label>
           <select
-            id="compra-origen"
+            id="compra-proveedor"
             class="mt-1.5 w-full max-w-md rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
-            [value]="origen()"
-            (change)="onOrigen($event)"
+            [value]="contactId()"
+            (change)="onContacto($event)"
           >
-            <option value="">Elige una finca…</option>
-            @for (finca of origenes(); track finca) {
-              <option [value]="finca">{{ finca }}</option>
+            <option value="">Elige un proveedor…</option>
+            @for (proveedor of proveedores(); track proveedor.id) {
+              <option [value]="proveedor.id">{{ proveedor.nombre }}</option>
             }
           </select>
-          @if (lineas().length > 0) {
-            <p class="mt-1.5 text-xs text-ink-muted">
-              Cambiar de finca vacía el detalle: una compra es a un solo productor.
+          @if (proveedores().length === 0) {
+            <p class="mt-1.5 text-xs text-clay-deep">
+              No hay proveedores en la agenda. Créalos en Contactos y vuelve.
             </p>
           }
         </div>
 
-        <!-- Paso 2: los productos de esa finca -->
-        @if (origen()) {
+        <!-- Paso 2: cualquier producto del catálogo -->
+        @if (contactId()) {
           <div class="mt-6">
             <label for="compra-producto" class="block text-sm font-medium text-ink">
               2 · Añade lo que le compraste
             </label>
-            <select
-              id="compra-producto"
-              class="mt-1.5 w-full max-w-md rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
-              (change)="agregar($event)"
-            >
-              <option value="">Añadir un producto…</option>
-              @for (producto of disponibles(); track producto.id) {
-                <option [value]="producto.id">
-                  {{ producto.nombre }} · hay {{ producto.stock }}
-                </option>
-              }
-            </select>
+            <!--
+              El catálogo entero, no solo lo que dice venir de esta finca: la
+              misma lechuga se le compra a una vereda esta semana y a otra la
+              siguiente. Por eso hay buscador — la lista es larga.
+            -->
+            <div class="mt-1.5 flex max-w-2xl flex-wrap gap-3">
+              <input
+                type="search"
+                placeholder="Buscar producto…"
+                class="min-w-[12rem] flex-1 rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+                aria-label="Buscar producto para añadir"
+                [value]="busqueda()"
+                (input)="onBusqueda($event)"
+              />
+              <select
+                id="compra-producto"
+                class="min-w-[14rem] flex-1 rounded-md border border-sand bg-bone px-3 py-2.5 text-sm text-ink focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+                (change)="agregar($event)"
+              >
+                <option value="">Añadir un producto…</option>
+                @for (producto of disponibles(); track producto.id) {
+                  <option [value]="producto.id">
+                    {{ producto.nombre }} · hay {{ producto.stock }}
+                  </option>
+                }
+              </select>
+            </div>
             @if (disponibles().length === 0) {
               <p class="mt-1.5 text-xs text-ink-muted">
-                No queda nada más de esta finca por añadir.
+                {{ busqueda() ? 'Nada coincide con esa búsqueda.' : 'Ya añadiste todo el catálogo.' }}
               </p>
             }
           </div>

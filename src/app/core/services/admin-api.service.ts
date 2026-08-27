@@ -6,6 +6,7 @@ import {
   ApiClient,
   ApiClosing,
   ApiClosingOrder,
+  ApiContact,
   ApiCarteraRow,
   ApiCodPending,
   ApiConsolidation,
@@ -20,7 +21,9 @@ import {
   ApiUser,
   ApiWholesaleRow,
   ApiWholesaleTariff,
+  ContactInput,
   ExpenseCategory,
+  PurchaseInput,
   PurchaseItemInput,
 } from '../api/api-client';
 import { UserRole, WholesaleRole } from '../models/user.model';
@@ -854,6 +857,65 @@ export class AdminApiService {
     );
   }
 
+  // ───────────── Agenda: proveedores y clientes ─────────────
+
+  /** La agenda completa, activos e inactivos. El filtrado va en la vista. */
+  readonly contacts = signal<readonly ApiContact[]>([]);
+  readonly contactsLoading = signal(false);
+  readonly contactsError = signal<string | null>(null);
+
+  loadContacts(): void {
+    this.contactsLoading.set(true);
+    this.contactsError.set(null);
+    this.api.contacts({ incluirInactivos: true }).subscribe({
+      next: (list) => {
+        this.contacts.set(list);
+        this.contactsLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.contactsError.set(error.message);
+        this.contactsLoading.set(false);
+      },
+    });
+  }
+
+  /** Proveedores activos, que es lo que ofrece el selector de compras. */
+  readonly proveedoresActivos = computed(() =>
+    this.contacts().filter((c) => c.esProveedor === 1 && c.activo === 1),
+  );
+
+  createContact(contacto: ContactInput): Observable<ApiContact> {
+    return this.api.createContact(contacto).pipe(
+      tap((creado) => {
+        this.contacts.update((list) =>
+          [...list, creado].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
+        );
+      }),
+    );
+  }
+
+  updateContact(id: string, contacto: ContactInput): Observable<ApiContact> {
+    return this.api.updateContact(id, contacto).pipe(
+      tap((actualizado) => {
+        // Se conservan los contadores del listado: la respuesta del PATCH trae
+        // solo la ficha, y perderlos dejaría la fila diciendo "0 pedidos".
+        this.contacts.update((list) =>
+          list
+            .map((c) => (c.id === id ? { ...c, ...actualizado } : c))
+            .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
+        );
+      }),
+    );
+  }
+
+  deleteContact(id: string): Observable<void> {
+    return this.api.deleteContact(id).pipe(
+      tap(() => {
+        this.contacts.update((list) => list.filter((c) => c.id !== id));
+      }),
+    );
+  }
+
   // ─────────────────────── Compras a las fincas ───────────────────────
 
   /** Historial completo de compras. El filtrado por finca/estado va en la vista. */
@@ -888,11 +950,7 @@ export class AdminApiService {
    * en la lista hay que refrescar el catálogo: los productos que se ven en el
    * panel acaban de cambiar de stock y de `precioCosto`.
    */
-  createPurchase(compra: {
-    origen: string;
-    notas: string | null;
-    items: readonly PurchaseItemInput[];
-  }): Observable<ApiPurchase> {
+  createPurchase(compra: PurchaseInput): Observable<ApiPurchase> {
     return this.api.createPurchase(compra).pipe(
       tap((creada) => {
         this.purchases.update((list) => [creada, ...list]);
@@ -901,10 +959,7 @@ export class AdminApiService {
     );
   }
 
-  updatePurchase(
-    id: string,
-    compra: { origen: string; notas: string | null; items: readonly PurchaseItemInput[] },
-  ): Observable<ApiPurchase> {
+  updatePurchase(id: string, compra: PurchaseInput): Observable<ApiPurchase> {
     return this.api.updatePurchase(id, compra).pipe(
       tap((actualizada) => {
         this.purchases.update((list) => list.map((c) => (c.id === id ? actualizada : c)));

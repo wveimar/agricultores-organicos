@@ -105,6 +105,15 @@ export const ADMIN_ROUTES: Routes = [
           import('./expenses/expenses-manager').then((m) => m.ExpensesManager),
       },
       {
+        path: 'contactos',
+        // La agenda la usan los dos lados: quien compra necesita al proveedor
+        // y quien gestiona pedidos necesita al cliente.
+        canActivate: [roleGuard('GESTOR_PEDIDOS', 'ADMIN_INVENTARIO')],
+        title: 'Contactos · Panel',
+        loadComponent: () =>
+          import('./contacts/contacts-manager').then((m) => m.ContactsManager),
+      },
+      {
         path: 'compras',
         // Los dos roles: una compra mueve inventario (ADMIN_INVENTARIO) y
         // genera una deuda con el agricultor (GESTOR_PEDIDOS). El servidor
