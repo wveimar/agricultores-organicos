@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { Observable, Subject, of } from 'rxjs';
 import { CatalogService } from './catalog.service';
-import { ApiCategory, ApiClient, ApiProduct } from '../api/api-client';
+import { ApiCategory, ApiClient, ApiProduct, ApiPublicGroup } from '../api/api-client';
 import { TokenStore } from '../api/token-store';
 
 /** Fila de la API con lo mínimo válido; cada prueba pisa lo que le importa. */
@@ -64,6 +64,7 @@ const SEMBRADAS = [
 class ApiStub {
   productos: Observable<ApiProduct[]> = of([]);
   categorias: Observable<ApiCategory[]> = of([]);
+  grupos: Observable<ApiPublicGroup[]> = of([]);
 
   products(): Observable<ApiProduct[]> {
     return this.productos;
@@ -71,6 +72,10 @@ class ApiStub {
 
   categories(): Observable<ApiCategory[]> {
     return this.categorias;
+  }
+
+  groups(): Observable<ApiPublicGroup[]> {
+    return this.grupos;
   }
 }
 
@@ -223,5 +228,108 @@ describe('CatalogService · isFiltering', () => {
     // `visible` también los ignora: si esto contara como filtro, los más
     // vendidos desaparecerían sin que nadie hubiera buscado nada.
     expect(catalog.isFiltering()).toBe(false);
+  });
+
+  it('es cierto con una solapa abierta', () => {
+    const catalog = build([makeApiProduct()]);
+    catalog.selectGroup('legumbreria');
+
+    // Es lo que esconde los «Más vendidos» de la portada: con un grupo abierto
+    // la rejilla ya no enseña la tienda entera.
+    expect(catalog.isFiltering()).toBe(true);
+  });
+});
+
+describe('CatalogService · solapas de grupo', () => {
+  /** Dos grupos con categorías dentro, y un tercero que se queda vacío. */
+  function conGrupos(productos: ApiProduct[]): CatalogService {
+    const api = new ApiStub();
+    api.productos = of(productos);
+    api.categorias = of([
+      makeApiCategory('verduras', { grupoAdmin: 'legumbreria' }),
+      makeApiCategory('frutas', { grupoAdmin: 'legumbreria' }),
+      makeApiCategory('mieles', { grupoAdmin: 'agroindustriales' }),
+    ]);
+    api.grupos = of([
+      { id: 'legumbreria', nombre: 'Legumbrería', icono: 'zanahoria', orden: 10 },
+      { id: 'agroindustriales', nombre: 'Agroindustriales', icono: 'canasta', orden: 20 },
+      { id: 'lacteos', nombre: 'Lácteos', icono: 'queso', orden: 30 },
+    ]);
+    return inject_(api);
+  }
+
+  const conMieles = [
+    makeApiProduct({ id: 'p-1', categoriaId: 'verduras' }),
+    makeApiProduct({ id: 'p-2', categoriaId: 'frutas' }),
+    makeApiProduct({ id: 'p-3', categoriaId: 'mieles' }),
+  ];
+
+  const idsDeGrupo = (catalog: CatalogService) => catalog.visibleGroups().map((g) => g.id);
+
+  it('pone «Todo» delante, sin que sea una fila de la tabla', () => {
+    expect(idsDeGrupo(conGrupos(conMieles))[0]).toBe('todos');
+  });
+
+  it('esconde los grupos sin un solo producto', () => {
+    // 'lacteos' existe en `admin_groups` pero no tiene ninguna categoría
+    // colgando: su solapa se abriría para no enseñar nada.
+    expect(idsDeGrupo(conGrupos(conMieles))).toEqual([
+      'todos',
+      'legumbreria',
+      'agroindustriales',
+    ]);
+  });
+
+  it('acota los chips al grupo abierto', () => {
+    const catalog = conGrupos(conMieles);
+    catalog.selectGroup('legumbreria');
+
+    expect(ids(catalog)).toEqual(['todos', 'verduras', 'frutas']);
+  });
+
+  it('acota la rejilla por el grupo de la CATEGORÍA, no por el del producto', () => {
+    // El caso real que había en producción: el producto dice 'verduras' y su
+    // categoría cuelga de 'legumbreria'. Manda la categoría — si mandara el
+    // producto, la solapa enseñaría chips que no llevan a ningún sitio.
+    const catalog = conGrupos([
+      makeApiProduct({ id: 'p-1', categoriaId: 'verduras', grupoAdmin: 'verduras' }),
+      makeApiProduct({ id: 'p-2', categoriaId: 'mieles', grupoAdmin: 'agroindustriales' }),
+    ]);
+
+    catalog.selectGroup('legumbreria');
+    expect(catalog.visible().map((p) => p.id)).toEqual(['p-1']);
+  });
+
+  it('suelta el chip al cambiar de solapa', () => {
+    const catalog = conGrupos(conMieles);
+    catalog.selectGroup('legumbreria');
+    catalog.selectCategory('verduras');
+
+    catalog.selectGroup('agroindustriales');
+
+    // Dejarlo puesto daría una rejilla vacía y un chip marcado que ya ni
+    // siquiera está en la fila.
+    expect(catalog.activeCategory()).toBe('todos');
+    expect(catalog.visible().map((p) => p.id)).toEqual(['p-3']);
+  });
+
+  it('titula la rejilla con el grupo abierto, no con «Todo el huerto»', () => {
+    const catalog = conGrupos(conMieles);
+    catalog.selectGroup('legumbreria');
+
+    expect(catalog.activeCategoryMeta().name).toBe('Legumbrería');
+  });
+
+  it('si la tabla de grupos falla, la tienda sigue en pie', () => {
+    const api = new ApiStub();
+    api.productos = of([makeApiProduct()]);
+    api.categorias = of(SEMBRADAS.map((id) => makeApiCategory(id)));
+    api.grupos = new Observable((subscriber) => subscriber.error(new Error('500')));
+    const catalog = inject_(api);
+
+    // Sin solapas queda «Todo» sola, que es exactamente la tienda de antes —y
+    // es lo que responde un Worker al que aún no le han desplegado la ruta.
+    expect(idsDeGrupo(catalog)).toEqual(['todos']);
+    expect(catalog.visible()).toHaveLength(1);
   });
 });

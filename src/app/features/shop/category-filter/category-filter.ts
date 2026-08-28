@@ -7,7 +7,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { CatalogService } from '../../../core/services/catalog.service';
-import { CategoryId } from '../../../core/models/product.model';
+import { AdminGroup, CategoryId } from '../../../core/models/product.model';
 import { CategoryIcon } from '../../../shared/category-icon/category-icon';
 
 @Component({
@@ -26,6 +26,7 @@ export class CategoryFilter {
 
   private readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('buscador');
   private readonly chips = viewChild<ElementRef<HTMLElement>>('chips');
+  private readonly solapas = viewChild<ElementRef<HTMLElement>>('solapas');
 
   constructor() {
     // El primer ajuste no se anima: es la posición de partida, no un
@@ -70,6 +71,37 @@ export class CategoryFilter {
 
       primera = false;
     });
+
+    /**
+     * Lo mismo con las solapas, y por el mismo motivo: en cuanto hay cuatro
+     * grupos la fila deja de caber en un teléfono y se desplaza. Recargar
+     * dentro de un grupo que quedó a la derecha dejaría la carpeta con
+     * ninguna solapa abierta a la vista.
+     *
+     * Lleva su propia bandera y no la de los chips: las dos filas se pintan y
+     * se recolocan por su cuenta, y compartir el «ya no es la primera vez»
+     * haría que la segunda en llegar se deslizara sola al cargar.
+     */
+    let primeraSolapa = true;
+
+    afterRenderEffect(() => {
+      const abierto = this.catalog.activeGroup();
+      this.catalog.visibleGroups();
+
+      const fila = this.solapas()?.nativeElement;
+      const solapa = fila?.querySelector<HTMLElement>(`[data-grupo="${abierto}"]`);
+      if (!solapa) {
+        return;
+      }
+
+      solapa.scrollIntoView({
+        inline: 'nearest',
+        block: 'nearest',
+        behavior: primeraSolapa || this.prefiereMenosMovimiento() ? 'instant' : 'smooth',
+      });
+
+      primeraSolapa = false;
+    });
   }
 
   /** `doc/plan.md §6`: el movimiento es discreto, y opcional si el sistema lo pide. */
@@ -79,6 +111,11 @@ export class CategoryFilter {
 
   protected select(id: CategoryId | 'todos'): void {
     this.catalog.selectCategory(id);
+  }
+
+  /** Abre una solapa. El servicio se encarga de soltar el chip que había puesto. */
+  protected selectGroup(id: AdminGroup | 'todos'): void {
+    this.catalog.selectGroup(id);
   }
 
   protected onQuery(event: Event): void {

@@ -98,6 +98,24 @@ export interface ApiCategory {
 }
 
 /**
+ * Un grupo tal como lo ve la tienda: solo lo que hace falta para pintar su
+ * solapa.
+ *
+ * Deliberadamente más pobre que `ApiAdminGroup`. `mostrarFiltroFino` y
+ * `activo` describen cómo se comporta el panel, y el endpoint público ni
+ * siquiera los manda: la vitrina no tiene por qué enterarse de la forma
+ * interna del inventario.
+ */
+export interface ApiPublicGroup {
+  readonly id: string;
+  readonly nombre: string;
+  /** Clave de la silueta (`CategoryIcon`). Vacío = la de por defecto. */
+  readonly icono: string;
+  /** Posición de la solapa. Menor va antes. */
+  readonly orden: number;
+}
+
+/**
  * Un grupo del panel de compras ("Frutas", "Verduras", "Agroindustriales"...).
  *
  * Eran tres literales fijos; desde la migración 0025 son filas de
@@ -808,6 +826,13 @@ export class ApiClient {
     return this.http
       .get<{ categories: ApiCategory[] }>('/api/categories')
       .pipe(map((res) => res.categories), catchError(handleError));
+  }
+
+  /** Las solapas de la vitrina. Solo los grupos activos. */
+  groups(): Observable<readonly ApiPublicGroup[]> {
+    return this.http
+      .get<{ grupos: ApiPublicGroup[] }>('/api/groups')
+      .pipe(map((res) => res.grupos), catchError(handleError));
   }
 
   /** Todas, con cuántos productos cuelgan de cada una. */

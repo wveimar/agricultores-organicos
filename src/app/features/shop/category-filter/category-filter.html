@@ -17,6 +17,70 @@
 <div
   class="sticky top-16 z-40 border-b border-sand/70 bg-bone/90 backdrop-blur-md"
 >
+  <!--
+    Solapas de grupo — el primer nivel: grupo → categorías → productos.
+
+    Van pegadas al borde de la ventana (fuera del `container-shell`) porque una
+    carpeta que empieza con margen no parece una carpeta. El `border-b` de la
+    fila es el lomo: no se desplaza con el scroll horizontal porque los bordes
+    se pintan sobre la caja del elemento, no sobre su contenido.
+
+    Solo aparecen si hay más de un grupo con producto. Con «Todo» a secas la
+    banda sería una barra decorativa que no filtra nada.
+  -->
+  @if (catalog.visibleGroups().length > 1) {
+    <div class="relative bg-sand pt-2">
+      <div
+        #solapas
+        class="no-scrollbar flex items-end gap-0.5 overflow-x-auto border-b-[3px] border-moss px-2"
+        role="tablist"
+        aria-label="Grupos del catálogo"
+      >
+        @for (grupo of catalog.visibleGroups(); track grupo.id) {
+          @let abierto = catalog.activeGroup() === grupo.id;
+
+          <!--
+            `grow basis-auto` + `min-w-[5.5rem]`: con tres solapas se reparten
+            el ancho a partes iguales; a partir de cuatro dejan de crecer y la
+            fila pasa a desplazarse. Un solo par de reglas cubre los dos casos.
+
+            La abierta es más alta y comparte color con el lomo — eso es lo que
+            la hace leer como una carpeta abierta y no como un botón más.
+          -->
+          <button
+            type="button"
+            role="tab"
+            [attr.aria-selected]="abierto"
+            [attr.data-grupo]="grupo.id"
+            class="flex min-w-[5.5rem] shrink-0 grow basis-auto items-center justify-center gap-2 whitespace-nowrap rounded-t-[0.875rem] border border-b-0 px-3.5 text-sm transition-all duration-300 ease-[cubic-bezier(.22,1,.36,1)]"
+            [class]="
+              abierto
+                ? 'h-13 border-moss bg-moss font-semibold text-bone'
+                : 'h-11 border-sand bg-linen font-medium text-ink-soft hover:bg-bone hover:text-ink'
+            "
+            (click)="selectGroup(grupo.id)"
+          >
+            <app-category-icon [name]="grupo.icon" svgClass="size-[18px] shrink-0" />
+            <span>{{ grupo.name }}</span>
+          </button>
+        }
+      </div>
+
+      <!--
+        Misma pista que en los chips: sin ella la última solapa queda cortada a
+        hueso contra el borde y parece el final de la lista.
+
+        `bottom-[3px]` para no taparle el lomo de la carpeta — si el degradado
+        lo cubriera, la línea verde se desvanecería justo en el borde y la
+        carpeta se vería rota por la derecha.
+      -->
+      <div
+        class="pointer-events-none absolute bottom-[3px] right-0 top-2 w-8 bg-gradient-to-l from-sand"
+        aria-hidden="true"
+      ></div>
+    </div>
+  }
+
   <div
     class="container-shell flex flex-col gap-3 py-3.5 lg:flex-row-reverse lg:items-center lg:justify-between lg:gap-6 lg:py-4"
   >

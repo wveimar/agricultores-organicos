@@ -259,6 +259,27 @@ export function marginPercentOf(product: Product): number {
  */
 export type AdminGroup = string;
 
+/**
+ * Un grupo tal como lo pinta la solapa de la vitrina.
+ *
+ * Los grupos eran internos del panel de compras. Al subirlos a la tienda hacen
+ * de primer nivel de navegación: **grupo → categorías → productos**. Esa es la
+ * única jerarquía que usa la vitrina, y sale de `categories.grupo_admin_id`.
+ *
+ * `products.grupo_admin` NO se usa aquí, aunque exista y diga otra cosa: hoy
+ * en producción las dos columnas se contradicen —los productos de «Verduras y
+ * raíces» siguen marcados como `verduras` mientras su categoría cuelga de
+ * `legumbreria`—, y si la solapa mirase el producto y los círculos la
+ * categoría, tocar una solapa enseñaría círculos que no llevan a ningún sitio.
+ * Con una sola fuente eso no puede pasar.
+ */
+export interface Group {
+  readonly id: AdminGroup | 'todos';
+  readonly name: string;
+  /** Clave de la silueta, igual que en `Category.icon`. */
+  readonly icon: string;
+}
+
 // `ADMIN_GROUP_LABELS` vivía aquí: un array fijo con las tres opciones y sus
 // etiquetas. Ahora la lista sale de `adminApi.groupOptions()`, que lee la
 // tabla `admin_groups` — es lo único que puede cubrir un grupo creado o

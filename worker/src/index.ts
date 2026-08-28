@@ -91,6 +91,12 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return categories.listPublic(env);
   }
 
+  // Las solapas de la vitrina. Sin sesión, por lo mismo que las categorías:
+  // los grupos son la estantería, no el precio.
+  if (pathname === '/api/groups' && method === 'GET') {
+    return adminGroups.listPublic(env);
+  }
+
   if (pathname === '/api/orders' && method === 'POST') {
     return orders.create(request, env);
   }

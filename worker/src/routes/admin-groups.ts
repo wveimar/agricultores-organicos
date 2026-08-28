@@ -77,6 +77,35 @@ function slugify(texto: string): string {
 }
 
 /**
+ * GET /api/groups — las solapas de la vitrina.
+ *
+ * Los grupos nacieron como agrupación interna del panel de compras («no lo ve
+ * el cliente», decía la pantalla que los administra). Al subirlos a solapas de
+ * la tienda pasan a ser navegación pública, así que necesitan una lista sin
+ * sesión — la misma idea que `categories.listPublic`: la estructura del
+ * catálogo es igual para todo el mundo, lo que cambia según quién mire son los
+ * precios.
+ *
+ * Devuelve menos columnas que la de administración a propósito.
+ * `mostrarFiltroFino` es una preferencia de cómo se pinta Inventario y no le
+ * dice nada a quien compra; mandarla sería filtrar la forma del panel a la
+ * tienda sin ninguna necesidad.
+ *
+ * Solo las activas: desactivar un grupo es dejar de ofrecerlo, y sus productos
+ * se siguen encontrando por búsqueda y bajo «Todo el huerto».
+ */
+export async function listPublic(env: Env): Promise<Response> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, nombre, icono, orden
+       FROM admin_groups
+      WHERE activo = 1
+      ORDER BY orden, nombre COLLATE NOCASE`,
+  ).all();
+
+  return json({ grupos: results });
+}
+
+/**
  * GET /api/admin/admin-groups — todos, con cuántas categorías y productos
  * cuelgan de cada uno.
  *

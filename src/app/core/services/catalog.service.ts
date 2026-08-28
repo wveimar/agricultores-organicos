@@ -1,6 +1,14 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
-import { Category, CategoryId, Product, SortOption, isInStock } from '../models/product.model';
-import { ApiCategory, ApiClient, ApiErrorBody, toProduct } from '../api/api-client';
+import {
+  AdminGroup,
+  Category,
+  CategoryId,
+  Group,
+  Product,
+  SortOption,
+  isInStock,
+} from '../models/product.model';
+import { ApiCategory, ApiClient, ApiErrorBody, ApiPublicGroup, toProduct } from '../api/api-client';
 import { TokenStore } from '../api/token-store';
 import { topWholesaleRole } from '../models/user.model';
 
@@ -30,7 +38,22 @@ export class CatalogService {
     icon: 'brote',
   };
 
+  /**
+   * «Todo» — la solapa que significa "no acotes a ningún grupo".
+   *
+   * Es la que abre por defecto: la tienda sigue arrancando con el catálogo
+   * entero, como siempre, y las solapas acotan desde ahí. Sin ella, entrar a
+   * la tienda te dejaría dentro de un grupo elegido por el `orden` de una
+   * tabla, sin haber visto nunca todo junto.
+   */
+  private static readonly TODOS_GRUPO: Group = {
+    id: 'todos',
+    name: 'Todo',
+    icon: 'brote',
+  };
+
   private readonly loadedCategories = signal<readonly Category[]>([]);
+  private readonly loadedGroups = signal<readonly Group[]>([]);
 
   /**
    * Las categorías del catálogo, leídas de `GET /api/categories`.
@@ -42,6 +65,12 @@ export class CatalogService {
   readonly categories = computed<readonly Category[]>(() => [
     CatalogService.TODOS,
     ...this.loadedCategories(),
+  ]);
+
+  /** Las solapas, leídas de `GET /api/groups`. «Todo» siempre va delante. */
+  readonly groups = computed<readonly Group[]>(() => [
+    CatalogService.TODOS_GRUPO,
+    ...this.loadedGroups(),
   ]);
 
   /**
@@ -68,6 +97,7 @@ export class CatalogService {
   readonly all = this.products.asReadonly();
 
   readonly activeCategory = signal<CategoryId | 'todos'>('todos');
+  readonly activeGroup = signal<AdminGroup | 'todos'>('todos');
   readonly sort = signal<SortOption>('destacados');
   readonly query = signal('');
 
@@ -122,6 +152,10 @@ export class CatalogService {
     };
   }
 
+  private static toGroup(row: ApiPublicGroup): Group {
+    return { id: row.id, name: row.nombre, icon: row.icono ?? '' };
+  }
+
   /**
    * Carga las categorías. Va aparte del catálogo a propósito: si la tabla
    * fallara, la tienda sigue vendiendo con «Todo el huerto» y el buscador — sin
@@ -134,10 +168,24 @@ export class CatalogService {
     });
   }
 
+  /**
+   * Carga las solapas. Aparte por lo mismo que las categorías, y con una razón
+   * más: un Worker sin desplegar todavía `/api/groups` responde 404, y ahí lo
+   * correcto es quedarse sin solapas y seguir vendiendo — no romper la vitrina.
+   * Con la lista vacía solo queda «Todo», que es exactamente la tienda de antes.
+   */
+  private loadGroups(): void {
+    this.api.groups().subscribe({
+      next: (rows) => this.loadedGroups.set(rows.map(CatalogService.toGroup)),
+      error: () => this.loadedGroups.set([]),
+    });
+  }
+
   load(): void {
     this.loading.set(true);
     this.loadError.set(null);
     this.loadCategories();
+    this.loadGroups();
 
     this.api.products().subscribe({
       next: (list) => {
@@ -216,14 +264,39 @@ export class CatalogService {
   });
 
   /**
+   * A qué grupo pertenece cada categoría.
+   *
+   * Es **la** tabla de la que cuelga toda la navegación de la vitrina. Se
+   * arma una vez por carga en lugar de recorrer las categorías en cada
+   * producto filtrado: con 40 tarjetas eso serían 40 búsquedas lineales por
+   * repintado.
+   */
+  private readonly groupByCategory = computed<ReadonlyMap<CategoryId, AdminGroup>>(() => {
+    const map = new Map<CategoryId, AdminGroup>();
+    for (const category of this.loadedCategories()) {
+      if (category.adminGroup) {
+        map.set(category.id, category.adminGroup);
+      }
+    }
+    return map;
+  });
+
+  /**
    * Rejilla visible. Todo el filtrado ocurre en el cliente sobre un `computed`:
-   * cambiar de categoría no navega ni recarga, solo recalcula la señal.
+   * cambiar de solapa o de chip no navega ni recarga, solo recalcula la señal.
    */
   readonly visible = computed<readonly Product[]>(() => {
     const category = this.activeCategory();
+    const group = this.activeGroup();
+    const grupoDe = this.groupByCategory();
     const term = this.query().trim().toLowerCase();
 
     const filtered = this.topLevel().filter((product) => {
+      // La solapa acota por el grupo de la CATEGORÍA del producto, nunca por
+      // `product.adminGroup`: ver la nota de `Group` en product.model.ts.
+      if (group !== 'todos' && grupoDe.get(product.categoryId) !== group) {
+        return false;
+      }
       if (category !== 'todos' && product.categoryId !== category) {
         return false;
       }
@@ -286,27 +359,108 @@ export class CatalogService {
 
     const counts = this.counts();
     const active = this.activeCategory();
+    const group = this.activeGroup();
 
-    return this.categories().filter(
-      (category) =>
-        category.id === 'todos' ||
-        category.id === active ||
-        (counts[category.id] ?? 0) > 0,
+    return this.categories().filter((category) => {
+      if (category.id === 'todos') {
+        return true;
+      }
+      // Los chips son el segundo nivel: dentro de una solapa solo se ven las
+      // categorías de ese grupo.
+      if (group !== 'todos' && category.adminGroup !== group) {
+        return false;
+      }
+      return category.id === active || (counts[category.id] ?? 0) > 0;
+    });
+  });
+
+  /**
+   * Nº de productos por grupo, contando por la categoría de cada uno.
+   *
+   * Es lo que decide qué solapas se pintan, así que tiene que contar lo mismo
+   * que luego enseña la rejilla: tarjetas de `topLevel`, no filas.
+   */
+  readonly groupCounts = computed<Record<string, number>>(() => {
+    const grupoDe = this.groupByCategory();
+    const totals: Record<string, number> = { todos: this.topLevel().length };
+
+    for (const product of this.topLevel()) {
+      const grupo = grupoDe.get(product.categoryId);
+      if (grupo) {
+        totals[grupo] = (totals[grupo] ?? 0) + 1;
+      }
+    }
+
+    return totals;
+  });
+
+  /**
+   * Las solapas que se pintan: «Todo» y los grupos que tienen algo dentro.
+   *
+   * Un grupo vacío es una solapa que se abre para no enseñar nada. Hoy tres de
+   * los cinco están así —«Frutas», «Verduras» y «Lácteos y Fermentados» no
+   * tienen ninguna categoría colgando—, y esconderlos es lo que evita que el
+   * cliente los encuentre. Aparecen solas el día que alguien les cuelgue una
+   * categoría con producto, sin tocar código.
+   *
+   * La activa se conserva aunque se quede en cero, por lo mismo que en los
+   * chips: que la solapa donde estás parado desaparezca bajo el dedo es peor
+   * que una rejilla vacía.
+   */
+  readonly visibleGroups = computed<readonly Group[]>(() => {
+    if (this.loading()) {
+      return this.groups();
+    }
+
+    const counts = this.groupCounts();
+    const active = this.activeGroup();
+
+    return this.groups().filter(
+      (group) =>
+        group.id === 'todos' || group.id === active || (counts[group.id] ?? 0) > 0,
     );
   });
 
-  /** Descripción de la categoría activa, usada como subtítulo de la rejilla. */
-  readonly activeCategoryMeta = computed<Category>(
-    () =>
-      this.categories().find((category) => category.id === this.activeCategory()) ??
-      CatalogService.TODOS,
-  );
+  /**
+   * Encabezado de la rejilla: qué se está mirando ahora mismo.
+   *
+   * Manda el chip cuando hay uno puesto, porque es el filtro más fino. Si solo
+   * hay una solapa abierta, titula el grupo — sin esto, abrir «Legumbrería»
+   * dejaba la rejilla encabezada por «Todo el huerto» mientras enseñaba 21 de
+   * 42 productos, que es decirle al cliente que está viendo todo cuando no.
+   *
+   * El grupo no tiene descripción propia (`admin_groups` no guarda ninguna:
+   * nació como agrupación interna del panel), así que se conserva la de «Todo
+   * el huerto», que habla de la tienda entera y encaja bajo cualquier grupo.
+   */
+  readonly activeCategoryMeta = computed<Category>(() => {
+    const category = this.activeCategory();
+
+    if (category !== 'todos') {
+      return (
+        this.categories().find((item) => item.id === category) ?? CatalogService.TODOS
+      );
+    }
+
+    const group = this.activeGroup();
+    if (group === 'todos') {
+      return CatalogService.TODOS;
+    }
+
+    const abierto = this.groups().find((item) => item.id === group);
+    return abierto
+      ? { ...CatalogService.TODOS, id: 'todos', name: abierto.name, icon: abierto.icon }
+      : CatalogService.TODOS;
+  });
 
   readonly hasResults = computed(() => this.visible().length > 0);
 
-  /** `true` cuando una categoría o una búsqueda están acotando la vitrina. */
+  /** `true` cuando una solapa, un chip o una búsqueda están acotando la vitrina. */
   readonly isFiltering = computed(
-    () => this.activeCategory() !== 'todos' || this.query().trim().length > 0,
+    () =>
+      this.activeCategory() !== 'todos' ||
+      this.activeGroup() !== 'todos' ||
+      this.query().trim().length > 0,
   );
 
   /**
@@ -332,6 +486,18 @@ export class CatalogService {
     this.activeCategory.set(id);
   }
 
+  /**
+   * Abre una solapa.
+   *
+   * Suelta el chip a propósito: la categoría activa pertenece al grupo que se
+   * acaba de abandonar, así que dejarla puesta daría una rejilla vacía y —peor—
+   * un chip marcado que ya ni siquiera está en la fila.
+   */
+  selectGroup(id: AdminGroup | 'todos'): void {
+    this.activeGroup.set(id);
+    this.activeCategory.set('todos');
+  }
+
   setSort(option: SortOption): void {
     this.sort.set(option);
   }
@@ -342,6 +508,7 @@ export class CatalogService {
 
   clearFilters(): void {
     this.activeCategory.set('todos');
+    this.activeGroup.set('todos');
     this.query.set('');
     this.sort.set('destacados');
   }
