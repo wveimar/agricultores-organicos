@@ -449,50 +449,49 @@
             </div>
 
             <!--
-              Cupo de crédito. Va después del correo y antes de los roles a
-              propósito: se rellena justo cuando se marca la casilla de
-              mayorista, y tenerlo debajo obligaría a bajar y volver a subir.
-
-              Cupo 0 es el estado normal y significa que esta cuenta paga
-              siempre por adelantado. Solo con cupo > 0 se le puede fiar.
+              El cupo de crédito ya no se pone aquí (migración 0023): vive en
+              la ficha del contacto, porque se le fía a una persona y no a un
+              login. Lo que SÍ se hace aquí es decir CUÁL ficha es la de esta
+              cuenta (migración 0024): sin este enlace, el checkout la busca
+              por el teléfono que teclee ese día, y un número distinto al de
+              la vez anterior deja el cupo sin efecto.
             -->
-            <fieldset class="mt-4 rounded-md border border-sand p-4">
-              <legend class="px-1 text-sm font-medium text-ink">Crédito</legend>
+            <div class="mt-4 rounded-md border border-sand p-4">
+              <label [for]="'contacto-' + user.id" class="block text-sm font-medium text-ink">
+                Contacto enlazado
+              </label>
               <p class="mt-0.5 text-xs text-ink-muted">
-                Cuánto se le puede fiar y a cuántos días vence. Déjalo en 0 si
-                esta cuenta paga siempre por adelantado.
+                La ficha de la agenda a la que se le fía. Sin enlace, cada
+                compra busca o crea la ficha por el teléfono que escriba ese
+                día — con enlace, siempre usa esta.
               </p>
 
-              <div class="mt-3 grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label [for]="'cupo-' + user.id" class="block text-sm text-ink-soft">
-                    Cupo en pesos
-                  </label>
-                  <input
-                    [id]="'cupo-' + user.id"
-                    type="number"
-                    formControlName="cupoCredito"
-                    min="0"
-                    step="10000"
-                    class="tabular mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
-                  />
-                </div>
+              <select
+                [id]="'contacto-' + user.id"
+                formControlName="contactId"
+                class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+              >
+                <option value="">Sin enlazar</option>
+                @for (contacto of contactosDisponibles(); track contacto.id) {
+                  <option [value]="contacto.id">
+                    {{ contacto.nombre }}
+                    {{ contacto.cupoCredito > 0 ? '· cupo ' + (contacto.cupoCredito | cop) : '· sin cupo' }}
+                  </option>
+                }
+              </select>
 
-                <div>
-                  <label [for]="'plazo-' + user.id" class="block text-sm text-ink-soft">
-                    Plazo en días
-                  </label>
-                  <input
-                    [id]="'plazo-' + user.id"
-                    type="number"
-                    formControlName="diasCredito"
-                    min="0"
-                    step="15"
-                    class="tabular mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
-                  />
-                </div>
-              </div>
-            </fieldset>
+              @if (user.contactoNombre && editForm.controls.contactId.value === user.contactId) {
+                <p class="mt-1.5 text-xs text-ink-muted">
+                  Ahora mismo enlazado a
+                  <strong class="font-medium text-ink">{{ user.contactoNombre }}</strong>.
+                </p>
+              }
+
+              <p class="mt-1.5 text-xs text-ink-muted">
+                El cupo y el plazo se ponen en
+                <strong class="font-semibold text-ink">Contactos</strong>, no aquí.
+              </p>
+            </div>
 
             @for (group of roleGroups; track group.key) {
               <fieldset class="mt-4">

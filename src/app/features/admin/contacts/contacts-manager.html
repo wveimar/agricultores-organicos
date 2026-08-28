@@ -215,6 +215,59 @@
           </fieldset>
         }
 
+        <!--
+          Crédito: solo para clientes. Está aquí y no en Usuarios porque se le
+          fía a la persona, no a un login — un cliente sin cuenta también
+          puede tener cupo. Ver la migración 0023.
+        -->
+        @if (esCliente()) {
+          <fieldset class="mt-6 rounded-md border border-sand p-4">
+            <legend class="px-2 text-sm font-medium text-ink">
+              Crédito <span class="font-normal text-ink-muted">(opcional)</span>
+            </legend>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label for="c-cupo" class="block text-sm text-ink-soft">
+                  Cupo máximo
+                </label>
+                <input
+                  id="c-cupo"
+                  type="number"
+                  min="0"
+                  step="1000"
+                  inputmode="numeric"
+                  placeholder="0"
+                  class="tabular mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+                  [value]="cupoCredito() ?? ''"
+                  (input)="onCredito('cupoCredito', $event)"
+                />
+                <p class="mt-1 text-xs text-ink-muted">
+                  0 = no se le fía. Es el tope de lo que puede deber a la vez.
+                </p>
+              </div>
+
+              <div>
+                <label for="c-dias" class="block text-sm text-ink-soft">Plazo en días</label>
+                <input
+                  id="c-dias"
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputmode="numeric"
+                  placeholder="30"
+                  class="tabular mt-1.5 w-full rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none focus:ring-1 focus:ring-moss"
+                  [value]="diasCredito() ?? ''"
+                  (input)="onCredito('diasCredito', $event)"
+                />
+                <p class="mt-1 text-xs text-ink-muted">
+                  A cuántos días vence cada pedido que se le fíe.
+                </p>
+              </div>
+            </div>
+          </fieldset>
+        }
+
         <div class="mt-5">
           <label for="c-notas" class="block text-sm font-medium text-ink">
             Notas <span class="font-normal text-ink-muted">(opcional)</span>
@@ -473,6 +526,20 @@
                     <div class="flex justify-between gap-4">
                       <dt class="text-ink-muted">Último pedido</dt>
                       <dd class="tabular text-ink">{{ formatDate(contacto.ultimoPedido) }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-4">
+                      <dt class="text-ink-muted">Crédito</dt>
+                      <dd class="tabular text-right text-ink">
+                        @if (contacto.cupoCredito > 0) {
+                          hasta {{ contacto.cupoCredito | cop }}
+                          <span class="block text-xs text-ink-muted">
+                            a {{ contacto.diasCredito }}
+                            {{ contacto.diasCredito === 1 ? 'día' : 'días' }}
+                          </span>
+                        } @else {
+                          <span class="text-ink-muted">Sin cupo — no se le fía</span>
+                        }
+                      </dd>
                     </div>
                   }
 

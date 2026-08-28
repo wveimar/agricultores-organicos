@@ -30,14 +30,15 @@ DROP TABLE IF EXISTS order_item_components;
 DROP TABLE IF EXISTS order_status_log;
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
--- Después de `orders` y `provider_purchases`, que le apuntan.
-DROP TABLE IF EXISTS contacts;
 DROP TABLE IF EXISTS cash_closings;
 DROP TABLE IF EXISTS product_components;
 DROP TABLE IF EXISTS product_wholesale_discounts;
 DROP TABLE IF EXISTS password_resets;
 DROP TABLE IF EXISTS user_roles;
+-- Antes que `contacts`: desde la 0024, `users.contact_id` le apunta.
 DROP TABLE IF EXISTS users;
+-- Después de `orders`, `provider_purchases` y `users`, que le apuntan.
+DROP TABLE IF EXISTS contacts;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS categories;
 DROP TABLE IF EXISTS login_attempts;
@@ -55,13 +56,29 @@ CREATE TABLE users (
   activo        INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
   creado_en     TEXT    NOT NULL DEFAULT (datetime('now')),
 
-  -- Crédito a mayoristas (migración 0017). 0 = esta cuenta no compra fiado,
-  -- que es lo que le toca a todo el mundo salvo a quien se le abra cupo
-  -- expresamente desde el panel.
+  -- ⚠ SIN USO desde la migración 0023. El crédito se mudó a
+  -- `contacts.cupo_credito` porque la deuda la tiene una persona, no un login:
+  -- la tienda se compra sin cuenta y no se le va a pedir contraseña al
+  -- restaurante al que se le fía. Nada las lee ya, y el panel no las ofrece.
+  --
+  -- Siguen aquí porque quitarlas obligaría a recrear `users` entera, y media
+  -- docena de tablas la referencian por FK. No las uses: pon el cupo en la
+  -- ficha del contacto.
   cupo_credito  INTEGER NOT NULL DEFAULT 0 CHECK (cupo_credito >= 0),
-  -- A cuántos días vence lo que se le fía. De aquí sale `orders.vence_en`.
-  dias_credito  INTEGER NOT NULL DEFAULT 0 CHECK (dias_credito >= 0)
+  dias_credito  INTEGER NOT NULL DEFAULT 0 CHECK (dias_credito >= 0),
+
+  -- Enlace manual a la ficha de la agenda (migración 0024). Lo pone un
+  -- SUPER_ADMIN desde el panel de Usuarios. Desde que existe, el checkout de
+  -- esta cuenta usa SIEMPRE esta ficha —sin importar qué teléfono teclee ese
+  -- día— así que el cupo que se le abrió no se pierde entre una compra y otra.
+  -- `contacts` se declara más abajo; SQLite no exige que exista todavía para
+  -- aceptar esta referencia.
+  contact_id    TEXT    REFERENCES contacts(id) ON DELETE SET NULL
 );
+
+-- Una ficha, como mucho, una cuenta enlazada. Parcial: sin enlazar es el
+-- estado normal de casi todo el mundo.
+CREATE UNIQUE INDEX idx_users_contact ON users (contact_id) WHERE contact_id IS NOT NULL;
 
 -- Tabla puente en vez de una columna con roles separados por comas: permite
 -- indexar por rol y que la base rechace un rol inexistente.
@@ -131,6 +148,17 @@ CREATE TABLE contacts (
   titular        TEXT,
   documento      TEXT,
 
+  -- Crédito (migración 0023). Vive aquí y no en `users` porque la deuda la
+  -- tiene una persona, no un login: la tienda se compra sin cuenta y al
+  -- restaurante al que se le fía cada semana no se le va a pedir contraseña.
+  -- Todo pedido tiene `contact_id`, así que la ficha siempre está.
+  --
+  -- 0 = no se le fía, que es lo que le toca a todo el mundo salvo a quien se
+  -- le abra cupo expresamente desde el panel.
+  cupo_credito   INTEGER NOT NULL DEFAULT 0 CHECK (cupo_credito >= 0),
+  -- A cuántos días vence lo fiado. De aquí sale `orders.vence_en`.
+  dias_credito   INTEGER NOT NULL DEFAULT 0 CHECK (dias_credito >= 0),
+
   -- Desactivar en vez de borrar: compras y pedidos lo siguen nombrando.
   activo         INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
 
@@ -151,6 +179,9 @@ CREATE UNIQUE INDEX idx_contacts_telefono
 
 CREATE INDEX idx_contacts_proveedor ON contacts (es_proveedor, activo, nombre);
 CREATE INDEX idx_contacts_cliente   ON contacts (es_cliente,   activo, nombre);
+-- "¿A quién le tengo cupo abierto?", la pregunta de la cartera. Parcial: casi
+-- nadie tiene crédito, y los que no lo tienen no ocupan sitio en el índice.
+CREATE INDEX idx_contacts_credito   ON contacts (cupo_credito) WHERE cupo_credito > 0;
 
 -- ─────────────────────────────── Categorías ───────────────────────────────
 -- Las secciones de la vitrina (migración 0013). `products.categoria_id` apunta

@@ -78,7 +78,13 @@
     "qa:credito": "node worker/tests/qa-credito.mjs",
     "qa:gastos": "node worker/tests/qa-gastos.mjs",
     "qa:compras": "node worker/tests/qa-compras.mjs",
-    "qa:contactos": "node worker/tests/qa-contactos.mjs"
+    "qa:contactos": "node worker/tests/qa-contactos.mjs",
+    "qa:credito-invitado": "node worker/tests/qa-credito-invitado.mjs",
+    "db:migrate:credito-contacto": "wrangler d1 execute DB --local --file=worker/migrations/0023_credito_por_contacto.sql",
+    "db:migrate:credito-contacto:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0023_credito_por_contacto.sql",
+    "db:migrate:usuarios-contacto": "wrangler d1 execute DB --local --file=worker/migrations/0024_usuarios_contacto.sql",
+    "db:migrate:usuarios-contacto:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0024_usuarios_contacto.sql",
+    "qa:usuarios-contacto": "node worker/tests/qa-usuarios-contacto.mjs"
   },
   "private": true,
   "packageManager": "npm@11.12.1",

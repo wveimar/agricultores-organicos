@@ -3,6 +3,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { TokenStore } from '../../../core/api/token-store';
 import { ApiErrorBody, ApiUser } from '../../../core/api/api-client';
+import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import {
   ROLE_HINTS,
   ROLE_LABELS,
@@ -52,7 +53,7 @@ const USER_FILTERS: ReadonlyArray<{ value: UserFilter; label: string }> = [
 
 @Component({
   selector: 'app-users-manager',
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, CopPipe],
   templateUrl: './users-manager.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -75,6 +76,8 @@ export class UsersManager {
 
   constructor() {
     this.adminApi.loadUsers();
+    // Para el selector "Contacto enlazado" del formulario de edición.
+    this.adminApi.loadContacts();
   }
 
   // ────────────────────────── Filtrado del listado ──────────────────────────
@@ -237,10 +240,9 @@ export class UsersManager {
     nombre: ['', [Validators.required, Validators.minLength(3)]],
     email: ['', [Validators.required, Validators.email]],
     roles: this.fb.nonNullable.control<UserRole[]>([], [Validators.required]),
-    // Sin validadores: 0 es válido y significa «no compra a crédito», que es
-    // como nace toda cuenta. El Worker rechaza los negativos.
-    cupoCredito: [0, [Validators.min(0)]],
-    diasCredito: [0, [Validators.min(0)]],
+    // '' = sin enlazar. Sin validadores: es un campo opcional para todo el
+    // mundo salvo para quien de verdad se le va a fiar.
+    contactId: [''],
   });
 
   protected startEdit(user: ApiUser): void {
@@ -252,11 +254,32 @@ export class UsersManager {
       nombre: user.nombre,
       email: user.email,
       roles: [...user.roles],
-      // `?? 0` por si la fila viene de un Worker sin la 0017 desplegada.
-      cupoCredito: user.cupoCredito ?? 0,
-      diasCredito: user.diasCredito ?? 0,
+      contactId: user.contactId ?? '',
     });
   }
+
+  /**
+   * Contactos que se pueden ofrecer para enlazar a ESTA cuenta: clientes
+   * activos que no estén ya enlazados a otra.
+   *
+   * El propio contacto de la cuenta que se está editando se incluye aunque
+   * ya esté "en uso" — por ella misma — para que el selector lo siga
+   * mostrando como elegido y no como si hubiera desaparecido.
+   */
+  protected readonly contactosDisponibles = computed(() => {
+    const editandoId = this.editingId();
+    const enUsoPorOtra = new Set(
+      this.adminApi
+        .users()
+        .filter((u) => u.contactId && u.id !== editandoId)
+        .map((u) => u.contactId as string),
+    );
+
+    return this.adminApi
+      .contacts()
+      .filter((c) => c.esCliente === 1 && c.activo === 1 && !enUsoPorOtra.has(c.id))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  });
 
   protected cancelEdit(): void {
     this.editingId.set(null);
@@ -289,7 +312,7 @@ export class UsersManager {
 
     this.resetError.set(null);
     this.savingId.set(user.id);
-    const { nombre, email, roles, cupoCredito, diasCredito } = this.editForm.getRawValue();
+    const { nombre, email, roles, contactId } = this.editForm.getRawValue();
 
     // Solo se envía lo que cambió: así el servidor no rehace trabajo, y un
     // guardado sin cambios devuelve "sin-cambios" en vez de tocar la fila.
@@ -297,14 +320,12 @@ export class UsersManager {
       nombre?: string;
       email?: string;
       roles?: UserRole[];
-      cupoCredito?: number;
-      diasCredito?: number;
+      contactId?: string | null;
     } = {};
     if (nombre.trim() !== user.nombre) patch.nombre = nombre.trim();
     if (email.trim().toLowerCase() !== user.email) patch.email = email.trim().toLowerCase();
     if (roles.join() !== [...user.roles].join()) patch.roles = roles;
-    if (cupoCredito !== (user.cupoCredito ?? 0)) patch.cupoCredito = cupoCredito;
-    if (diasCredito !== (user.diasCredito ?? 0)) patch.diasCredito = diasCredito;
+    if ((contactId || null) !== user.contactId) patch.contactId = contactId || null;
 
     if (Object.keys(patch).length === 0) {
       this.savingId.set(null);

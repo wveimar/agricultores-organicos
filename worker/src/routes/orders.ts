@@ -2,7 +2,7 @@ import { ApiError, json, readJson, requireInt, requireString } from '../http';
 import { Env, JwtPayload } from '../types';
 import { optionalAuth, requireRole } from '../auth/middleware';
 import { discountedPrice, loadDiscounts, loadUserRoles } from '../pricing';
-import { encontrarOCrearCliente } from './contacts';
+import { contactoDeUsuario, encontrarOCrearCliente } from './contacts';
 import { decodeDataUrl, validateDataUrl } from '../receipts';
 import {
   contenidoDePedidos,
@@ -253,16 +253,24 @@ export async function create(request: Request, env: Env): Promise<Response> {
   // no "pendiente de comprobante" — el comprobante siempre fue opcional.
   const metodoPago = readMetodoPago(body.metodoPago);
 
-  // Ficha en la agenda, buscada por teléfono o creada (ver contacts.ts). Va
-  // FUERA del batch a propósito: es un dato de conveniencia, no parte del
-  // pedido. Si fallara dentro, tumbaría una compra que por lo demás está bien
-  // — y el pedido ya guarda su propia copia del nombre, teléfono y dirección,
-  // que es lo único que hace falta para entregarlo.
-  const contactId = await encontrarOCrearCliente(env, {
-    nombre: clienteNombre,
-    telefono: clienteTelefono,
-    direccion: clienteDireccion,
-  });
+  // Ficha en la agenda. Va FUERA del batch a propósito: es un dato de
+  // conveniencia, no parte del pedido. Si fallara, no debe tumbar una compra
+  // que por lo demás está bien — el pedido ya guarda su propia copia del
+  // nombre, teléfono y dirección, que es lo único que hace falta para
+  // entregarlo.
+  //
+  // Con sesión, se usa la ficha que un SUPER_ADMIN enlazó a esa cuenta desde
+  // Usuarios (migración 0024) — así el mayorista siempre acumula su deuda en
+  // el mismo sitio, sin importar qué teléfono escriba ese día. Si la cuenta no
+  // tiene enlace —o no hay sesión— se busca o crea por teléfono, como a
+  // cualquier invitado.
+  const contactId =
+    (session && (await contactoDeUsuario(env, session.sub, clienteDireccion))) ||
+    (await encontrarOCrearCliente(env, {
+      nombre: clienteNombre,
+      telefono: clienteTelefono,
+      direccion: clienteDireccion,
+    }));
 
   const statements: D1PreparedStatement[] = [
     // La referencia se calcula dentro de la propia transacción: leerla antes y
@@ -647,24 +655,34 @@ export async function confirmDelivery(
 }
 
 /**
- * POST /api/admin/orders/:id/credito — se le fía este pedido al mayorista.
+ * POST /api/admin/orders/:id/credito — se le fía este pedido al cliente.
  *
  * El checkout público no puede llegar aquí: `readMetodoPago()` es lista
  * blanca y solo deja pasar 'contraentrega'. Fiar es siempre una decisión de
- * alguien del panel sobre una cuenta concreta.
+ * alguien del panel sobre una ficha concreta.
+ *
+ * ── Se le fía a la FICHA, no a la cuenta (migración 0023) ──
+ *
+ * Antes esto exigía `orders.user_id`, así que solo se le podía fiar a alguien
+ * con contraseña — y cuatro de cada cinco pedidos son de invitado. La deuda la
+ * tiene una persona, no un usuario del panel, así que el cupo vive en
+ * `contacts` y se lee por `contact_id`, que TODO pedido tiene desde la 0022.
+ *
+ * Un mayorista con login funciona igual: su pedido también trae `contact_id`,
+ * porque el checkout lo ficha por teléfono como a cualquiera.
  *
  * ── Por qué el cupo se comprueba dentro del UPDATE ──
  *
  * Leer el cupo, sumar la deuda y luego escribir deja una ventana entre la
- * lectura y la escritura: dos pedidos concedidos a la vez para el mismo
- * mayorista pasarían los dos la comprobación y juntos se saldrían del cupo.
- * Metiendo la suma en el propio WHERE, SQLite evalúa y escribe en la misma
- * sentencia y el segundo afecta 0 filas — que es exactamente lo que hay que
- * decirle a quien lo intentó.
+ * lectura y la escritura: dos pedidos concedidos a la vez al mismo cliente
+ * pasarían los dos la comprobación y juntos se saldrían del cupo. Metiendo la
+ * suma en el propio WHERE, SQLite evalúa y escribe en la misma sentencia y el
+ * segundo afecta 0 filas — que es exactamente lo que hay que decirle a quien
+ * lo intentó.
  *
- * `vence_en` sale de `dias_credito` de la cuenta y se calcula en la base, no
- * en el navegador de quien pulsa: el vencimiento de una factura no puede
- * depender de la zona horaria del que la crea.
+ * `vence_en` sale de `dias_credito` de la ficha y se calcula en la base, no en
+ * el navegador de quien pulsa: el vencimiento de una factura no puede depender
+ * de la zona horaria del que la crea.
  */
 export async function grantCredit(
   env: Env,
@@ -673,27 +691,27 @@ export async function grantCredit(
 ): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS');
 
-  // Deuda viva de esa misma cuenta, sin contar este pedido. Es la definición
+  // Deuda viva de esa misma ficha, sin contar este pedido. Es la definición
   // que usa cartera(): a crédito, aprobado o enviado, todavía sin 'pago'.
   const DEUDA_ACTUAL = `COALESCE((
         SELECT SUM(d.total) FROM orders d
-         WHERE d.user_id = o.user_id
+         WHERE d.contact_id = o.contact_id
            AND d.metodo_pago = 'credito'
            AND d.estado IN ('aprobado', 'enviado')
            AND d.id <> o.id
       ), 0)`;
 
-  const CUPO = `(SELECT cupo_credito FROM users WHERE id = o.user_id)`;
+  const CUPO = `(SELECT cupo_credito FROM contacts WHERE id = o.contact_id)`;
 
   const result = await env.DB.prepare(
     `UPDATE orders AS o
         SET metodo_pago = 'credito',
             vence_en = date('now', '-5 hours',
-                            '+' || (SELECT dias_credito FROM users WHERE id = o.user_id) || ' days')
+                            '+' || (SELECT dias_credito FROM contacts WHERE id = o.contact_id) || ' days')
       WHERE o.id = ?1
         AND o.metodo_pago <> 'credito'
         AND o.estado IN ('aprobado', 'enviado')
-        AND o.user_id IS NOT NULL
+        AND o.contact_id IS NOT NULL
         AND ${CUPO} > 0
         AND o.total + ${DEUDA_ACTUAL} <= ${CUPO}`,
   )
@@ -720,17 +738,19 @@ export async function grantCredit(
  */
 async function explicarRechazoCredito(env: Env, orderId: string): Promise<ApiError> {
   const fila = await env.DB.prepare(
-    `SELECT o.estado, o.metodo_pago, o.total, o.user_id AS userId,
-            COALESCE(u.cupo_credito, 0) AS cupo,
+    `SELECT o.estado, o.metodo_pago, o.total,
+            o.contact_id AS contactId, o.cliente_nombre AS clienteNombre,
+            c.nombre AS contactoNombre,
+            COALESCE(c.cupo_credito, 0) AS cupo,
             COALESCE((
               SELECT SUM(d.total) FROM orders d
-               WHERE d.user_id = o.user_id
+               WHERE d.contact_id = o.contact_id
                  AND d.metodo_pago = 'credito'
                  AND d.estado IN ('aprobado', 'enviado')
                  AND d.id <> o.id
             ), 0) AS deuda
        FROM orders o
-       LEFT JOIN users u ON u.id = o.user_id
+       LEFT JOIN contacts c ON c.id = o.contact_id
       WHERE o.id = ?1`,
   )
     .bind(orderId)
@@ -738,7 +758,9 @@ async function explicarRechazoCredito(env: Env, orderId: string): Promise<ApiErr
       estado: string;
       metodo_pago: string;
       total: number;
-      userId: string | null;
+      contactId: string | null;
+      clienteNombre: string;
+      contactoNombre: string | null;
       cupo: number;
       deuda: number;
     }>();
@@ -755,16 +777,19 @@ async function explicarRechazoCredito(env: Env, orderId: string): Promise<ApiErr
       `Solo se fía un pedido aprobado o enviado, y este está ${fila.estado}.`,
     );
   }
-  if (!fila.userId) {
+  // Solo les pasa a los pedidos anteriores a la agenda (migración 0022): desde
+  // entonces el checkout ficha a todo el mundo por teléfono.
+  if (!fila.contactId) {
     return ApiError.conflict(
-      'sin-cuenta',
-      'Este pedido se hizo sin cuenta. El crédito se le da a un cliente registrado, que es a quien se le cobra después.',
+      'sin-ficha',
+      `Este pedido no está enlazado a ninguna ficha de la agenda, así que no hay a quién cobrarle. Crea el contacto de "${fila.clienteNombre}" en Contactos y vuelve a intentarlo.`,
     );
   }
   if (fila.cupo === 0) {
     return ApiError.conflict(
       'sin-cupo',
-      'Esta cuenta no tiene cupo de crédito. Asígnaselo en Usuarios antes de fiarle.',
+      `"${fila.contactoNombre}" no tiene cupo de crédito. Ábreselo en Contactos —no hace falta que tenga cuenta— y vuelve a intentarlo.`,
+      { contactId: fila.contactId },
     );
   }
   const libre = fila.cupo - fila.deuda;
@@ -1748,7 +1773,8 @@ function sanitizeFileName(name: string | null): string {
 async function loadOrder(env: Env, orderId: string): Promise<unknown> {
   const [orderResult, itemsResult] = await env.DB.batch([
     env.DB.prepare(
-      `SELECT id, referencia, cliente_nombre AS clienteNombre, cliente_telefono AS clienteTelefono,
+      `SELECT id, referencia, contact_id AS contactId,
+              cliente_nombre AS clienteNombre, cliente_telefono AS clienteTelefono,
               cliente_direccion AS clienteDireccion, estado, stock_reservado AS stockReservado,
               subtotal, envio, total, comprobante_nombre AS comprobanteNombre,
               (comprobante_url IS NOT NULL) AS tieneComprobante,

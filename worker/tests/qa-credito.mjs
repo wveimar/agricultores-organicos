@@ -51,6 +51,7 @@ seccion('Preparando un mayorista con cupo');
 
 const marca = Date.now();
 const email = `qa-credito-${marca}@test.co`;
+const TELEFONO_MAYORISTA = `3001${String(marca).slice(-6)}`;
 
 const { body: creado } = await post('/api/admin/users', {
   email,
@@ -62,19 +63,37 @@ const mayoristaId = creado?.user?.id;
 t(!!mayoristaId, `cuenta creada (${email})`);
 
 const CUPO = 200000;
-const { status: stCupo, body: conCupo } = await api(`/api/admin/users/${mayoristaId}`, {
-  method: 'PATCH',
-  body: JSON.stringify({ cupoCredito: CUPO, diasCredito: 30 }),
-});
-t(stCupo === 200, 'PATCH con cupo y plazo aceptado');
-t(conCupo?.user?.cupoCredito === CUPO, `cupo guardado: ${conCupo?.user?.cupoCredito}`);
-t(conCupo?.user?.diasCredito === 30, `plazo guardado: ${conCupo?.user?.diasCredito} días`);
 
-const { status: stNeg } = await api(`/api/admin/users/${mayoristaId}`, {
-  method: 'PATCH',
-  body: JSON.stringify({ cupoCredito: -5 }),
-});
-t(stNeg === 400, 'un cupo negativo se rechaza con 400');
+// Desde la migración 0023 el cupo NO va en la cuenta: va en la ficha de la
+// agenda, porque se le fía a una persona y no a un login. La ficha la crea el
+// checkout al comprar, así que el cupo se abre DESPUÉS del primer pedido.
+//
+// Que el mayorista tenga cuenta sigue importando, pero para el PRECIO —los
+// descuentos por nivel—, no para el crédito.
+
+/** Pone cupo en la ficha con la que se fichó al mayorista al comprar. */
+const abrirCupo = async (cupo, dias = 30) => {
+  const { body } = await api('/api/admin/contacts?tipo=cliente&inactivos=1');
+  const ficha = (body?.contactos ?? []).find((c) => c.telefono === TELEFONO_MAYORISTA);
+  if (!ficha) {
+    return { status: 0, ficha: null };
+  }
+
+  const { status } = await api(`/api/admin/contacts/${ficha.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      nombre: ficha.nombre,
+      esCliente: true,
+      esProveedor: ficha.esProveedor === 1,
+      telefono: ficha.telefono,
+      direccion: ficha.direccion,
+      cupoCredito: cupo,
+      diasCredito: dias,
+      activo: true,
+    }),
+  });
+  return { status, ficha };
+};
 
 // ───────────────────────── Pedidos del mayorista ─────────────────────────
 
@@ -91,7 +110,7 @@ const pedidoAprobado = async (cantidad) => {
     headers: HM,
     body: JSON.stringify({
       clienteNombre: `QA Mayorista ${marca}`,
-      clienteTelefono: '3000000000',
+      clienteTelefono: TELEFONO_MAYORISTA,
       clienteDireccion: 'Bodega QA',
       items: [{ productId: vendible.id, cantidad }],
     }),
@@ -104,6 +123,17 @@ const pedidoAprobado = async (cantidad) => {
 seccion('Conceder crédito');
 
 const a = await pedidoAprobado(2);
+
+// El checkout ya lo fichó por teléfono; ahora se le abre el cupo en la ficha.
+const { status: stCupo, ficha } = await abrirCupo(CUPO, 30);
+t(stCupo === 200, `cupo de ${CUPO} abierto en la ficha "${ficha?.nombre}"`);
+
+const { status: stNeg } = await api(`/api/admin/contacts/${ficha.id}`, {
+  method: 'PATCH',
+  body: JSON.stringify({ nombre: ficha.nombre, esCliente: true, cupoCredito: -5 }),
+});
+t(stNeg === 400, 'un cupo negativo se rechaza con 400');
+
 const { status: stFiar, body: fiado } = await post(`/api/admin/orders/${a.id}/credito`);
 t(stFiar === 200, 'se concede el crédito sobre un pedido aprobado');
 t(fiado?.order?.metodoPago === 'credito', `metodoPago = ${fiado?.order?.metodoPago}`);

@@ -58,6 +58,8 @@ export class ContactsManager {
   protected readonly numeroCuenta = signal('');
   protected readonly titular = signal('');
   protected readonly documento = signal('');
+  protected readonly cupoCredito = signal<number | null>(null);
+  protected readonly diasCredito = signal<number | null>(null);
   protected readonly activo = signal(true);
 
   protected readonly guardando = signal(false);
@@ -153,6 +155,8 @@ export class ContactsManager {
     this.numeroCuenta.set('');
     this.titular.set('');
     this.documento.set('');
+    this.cupoCredito.set(null);
+    this.diasCredito.set(null);
     this.activo.set(true);
     this.formError.set(null);
     this.feedback.set(null);
@@ -172,6 +176,8 @@ export class ContactsManager {
     this.numeroCuenta.set(contacto.numeroCuenta ?? '');
     this.titular.set(contacto.titular ?? '');
     this.documento.set(contacto.documento ?? '');
+    this.cupoCredito.set(contacto.cupoCredito || null);
+    this.diasCredito.set(contacto.diasCredito || null);
     this.activo.set(contacto.activo === 1);
     this.formError.set(null);
     this.feedback.set(null);
@@ -191,6 +197,16 @@ export class ContactsManager {
 
   protected onNotas(event: Event): void {
     this.notas.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  /**
+   * Cupo y plazo, en enteros. `valueAsNumber` da `NaN` con el campo vacío, que
+   * no es 0: se guarda `null` para distinguir "sin escribir" de "cero", y al
+   * enviar cae a 0, que es "no se le fía".
+   */
+  protected onCredito(destino: 'cupoCredito' | 'diasCredito', event: Event): void {
+    const value = (event.target as HTMLInputElement).valueAsNumber;
+    this[destino].set(Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : null);
   }
 
   protected onTipoCuenta(event: Event): void {
@@ -225,6 +241,8 @@ export class ContactsManager {
       numeroCuenta: this.numeroCuenta().trim() || null,
       titular: this.titular().trim() || null,
       documento: this.documento().trim() || null,
+      cupoCredito: this.cupoCredito() ?? 0,
+      diasCredito: this.diasCredito() ?? 0,
       activo: this.activo(),
     };
 
@@ -267,6 +285,10 @@ export class ContactsManager {
         numeroCuenta: contacto.numeroCuenta,
         titular: contacto.titular,
         documento: contacto.documento,
+        // Se reenvían: el PATCH reemplaza la ficha entera, y omitirlos aquí
+        // borraría el cupo al desactivar y reactivar.
+        cupoCredito: contacto.cupoCredito,
+        diasCredito: contacto.diasCredito,
         activo: contacto.activo !== 1,
       })
       .subscribe({

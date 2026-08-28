@@ -11,6 +11,10 @@ import { hashPassword, verifyPassword } from '../auth/crypto';
 const USER_COLUMNS = `
   u.id, u.email, u.nombre, u.activo, u.creado_en AS creadoEn,
   u.cupo_credito AS cupoCredito, u.dias_credito AS diasCredito,
+  u.contact_id AS contactId,
+  -- Para pintar el nombre sin que el panel tenga que cruzar con la agenda por
+  -- su cuenta. NULL cuando no hay enlace, que es el estado normal.
+  (SELECT c.nombre FROM contacts c WHERE c.id = u.contact_id) AS contactoNombre,
   (SELECT group_concat(r.role) FROM user_roles r WHERE r.user_id = u.id) AS roles
 `;
 
@@ -26,6 +30,8 @@ interface UserRow {
   roles: string | null;
   cupoCredito: number;
   diasCredito: number;
+  contactId: string | null;
+  contactoNombre: string | null;
 }
 
 const toUser = (row: UserRow) => ({
@@ -39,6 +45,10 @@ const toUser = (row: UserRow) => ({
   // crédito, que es como nacen todas.
   cupoCredito: row.cupoCredito,
   diasCredito: row.diasCredito,
+  // La ficha de la agenda enlazada, si alguna (migración 0024). Es la que usa
+  // el checkout de esta cuenta sin importar qué teléfono teclee ese día.
+  contactId: row.contactId,
+  contactoNombre: row.contactoNombre,
 });
 
 function validarPassword(value: unknown, campo: string): string {
@@ -161,6 +171,7 @@ interface UpdateBody {
   activo?: unknown;
   cupoCredito?: unknown;
   diasCredito?: unknown;
+  contactId?: unknown;
 }
 
 /**
@@ -227,6 +238,53 @@ export async function update(
 
   if (body.diasCredito !== undefined) {
     push('dias_credito', readEnteroNoNegativo(body.diasCredito, 'diasCredito'));
+  }
+
+  // Enlace con la agenda (migración 0024). `null` o '' desenlaza: es la vía
+  // para corregir un enlace hecho por error, sin tener que borrar la ficha.
+  if (body.contactId !== undefined) {
+    if (body.contactId === null || body.contactId === '') {
+      push('contact_id', null);
+    } else {
+      const contactId = requireString(body.contactId, 'contactId', 64);
+
+      const contacto = await env.DB.prepare(
+        `SELECT id, nombre, es_cliente AS esCliente FROM contacts WHERE id = ?1`,
+      )
+        .bind(contactId)
+        .first<{ id: string; nombre: string; esCliente: number }>();
+
+      if (!contacto) {
+        throw ApiError.badRequest('contacto-inexistente', 'Ese contacto no está en la agenda.');
+      }
+      // Sin esto, se podría enlazar una cuenta a una finca proveedora: el
+      // cupo de esa ficha nunca se le mostraría a nadie, y sería un enlace sin
+      // sentido que solo confundiría más adelante.
+      if (!contacto.esCliente) {
+        throw ApiError.badRequest(
+          'no-es-cliente',
+          `"${contacto.nombre}" está en la agenda como proveedor. Márcalo también como cliente en Contactos para poder enlazarlo a una cuenta.`,
+        );
+      }
+
+      // Se comprueba antes de escribir, y no solo confiando en el índice
+      // único, para poder decir CON QUIÉN choca — el índice lo impediría
+      // igual, pero el mensaje de SQLite no nombra a nadie.
+      const otraCuenta = await env.DB.prepare(
+        `SELECT nombre FROM users WHERE contact_id = ?1 AND id <> ?2`,
+      )
+        .bind(contactId, userId)
+        .first<{ nombre: string }>();
+
+      if (otraCuenta) {
+        throw ApiError.conflict(
+          'contacto-ya-enlazado',
+          `"${contacto.nombre}" ya está enlazado a la cuenta de ${otraCuenta.nombre}. Desenlázalo de esa cuenta antes de asignarlo aquí.`,
+        );
+      }
+
+      push('contact_id', contactId);
+    }
   }
 
   if (body.activo !== undefined) {
@@ -297,6 +355,12 @@ export async function update(
   } catch (error) {
     if ((error as Error).message.includes('UNIQUE constraint failed: users.email')) {
       throw ApiError.badRequest('email-duplicado', 'Ya existe otra cuenta con ese correo.');
+    }
+    if ((error as Error).message.includes('UNIQUE constraint failed: idx_users_contact')) {
+      throw ApiError.conflict(
+        'contacto-ya-enlazado',
+        'Ese contacto ya está enlazado a otra cuenta. Un contacto solo puede tener una cuenta enlazada; desenlázalo de la otra primero.',
+      );
     }
     throw error;
   }

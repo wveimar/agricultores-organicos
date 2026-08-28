@@ -1,4 +1,4 @@
-import { ApiError, json, readJson, requireString } from '../http';
+import { ApiError, json, readJson, requireInt, requireString } from '../http';
 import { Env, JwtPayload } from '../types';
 import { requireRole } from '../auth/middleware';
 
@@ -67,6 +67,9 @@ interface ContactoEntrada {
   numeroCuenta: string | null;
   titular: string | null;
   documento: string | null;
+  /** Cuánto se le puede fiar. 0 = no se le fía. Ver la migración 0023. */
+  cupoCredito: number;
+  diasCredito: number;
   activo: number;
 }
 
@@ -105,6 +108,17 @@ async function leerCuerpo(request: Request): Promise<ContactoEntrada> {
     numeroCuenta: opcional(body['numeroCuenta'], 'numeroCuenta', 40),
     titular: opcional(body['titular'], 'titular', 160),
     documento: opcional(body['documento'], 'documento', 40),
+    // Solo tiene sentido para un cliente: a un proveedor se le paga, no se le
+    // fía. Se guarda igual si viene —no estorba— y la pantalla solo lo ofrece
+    // cuando la ficha está marcada como cliente.
+    cupoCredito:
+      body['cupoCredito'] === undefined || body['cupoCredito'] === null
+        ? 0
+        : requireInt(body['cupoCredito'], 'cupoCredito', 0),
+    diasCredito:
+      body['diasCredito'] === undefined || body['diasCredito'] === null
+        ? 0
+        : requireInt(body['diasCredito'], 'diasCredito', 0),
     activo: body['activo'] === undefined ? 1 : bandera(body['activo']),
   };
 }
@@ -117,7 +131,10 @@ const COLUMNAS = `
   banco,
   tipo_cuenta   AS tipoCuenta,
   numero_cuenta AS numeroCuenta,
-  titular, documento, activo,
+  titular, documento,
+  cupo_credito  AS cupoCredito,
+  dias_credito  AS diasCredito,
+  activo,
   creado_en     AS creadoEn`;
 
 /**
@@ -155,7 +172,10 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
             c.banco,
             c.tipo_cuenta   AS tipoCuenta,
             c.numero_cuenta AS numeroCuenta,
-            c.titular, c.documento, c.activo,
+            c.titular, c.documento,
+            c.cupo_credito  AS cupoCredito,
+            c.dias_credito  AS diasCredito,
+            c.activo,
             c.creado_en     AS creadoEn,
             (SELECT COUNT(*)            FROM provider_purchases p WHERE p.contact_id = c.id) AS compras,
             (SELECT COALESCE(SUM(p.total_pago), 0) FROM provider_purchases p WHERE p.contact_id = c.id) AS compradoTotal,
@@ -184,8 +204,9 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
     await env.DB.prepare(
       `INSERT INTO contacts
          (id, nombre, es_proveedor, es_cliente, telefono, direccion, notas,
-          banco, tipo_cuenta, numero_cuenta, titular, documento, activo)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
+          banco, tipo_cuenta, numero_cuenta, titular, documento,
+          cupo_credito, dias_credito, activo)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`,
     )
       .bind(
         id,
@@ -200,6 +221,8 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
         datos.numeroCuenta,
         datos.titular,
         datos.documento,
+        datos.cupoCredito,
+        datos.diasCredito,
         datos.activo,
       )
       .run();
@@ -229,7 +252,8 @@ export async function update(
       `UPDATE contacts
           SET nombre = ?2, es_proveedor = ?3, es_cliente = ?4, telefono = ?5,
               direccion = ?6, notas = ?7, banco = ?8, tipo_cuenta = ?9,
-              numero_cuenta = ?10, titular = ?11, documento = ?12, activo = ?13,
+              numero_cuenta = ?10, titular = ?11, documento = ?12,
+              cupo_credito = ?13, dias_credito = ?14, activo = ?15,
               actualizado_en = datetime('now')
         WHERE id = ?1`,
     )
@@ -246,6 +270,8 @@ export async function update(
         datos.numeroCuenta,
         datos.titular,
         datos.documento,
+        datos.cupoCredito,
+        datos.diasCredito,
         datos.activo,
       )
       .run();
@@ -356,6 +382,43 @@ export async function encontrarOCrearCliente(
   } catch {
     return null;
   }
+}
+
+/**
+ * La ficha enlazada a esta cuenta, si un SUPER_ADMIN la enlazó desde Usuarios
+ * (migración 0024). `null` si la cuenta no tiene enlace — la mayoría no lo
+ * tiene, y entonces el pedido cae al camino normal de buscar o crear la ficha
+ * por teléfono, igual que a un invitado.
+ *
+ * Con enlace, la dirección de la ficha se refresca a la de este pedido, igual
+ * que hace `encontrarOCrearCliente()`: es el dato que más cambia. El nombre no
+ * se toca — la ficha pudo corregirse a mano desde el panel.
+ */
+export async function contactoDeUsuario(
+  env: Env,
+  userId: string,
+  direccion: string,
+): Promise<string | null> {
+  const fila = await env.DB.prepare(`SELECT contact_id AS contactId FROM users WHERE id = ?1`)
+    .bind(userId)
+    .first<{ contactId: string | null }>();
+
+  if (!fila?.contactId) {
+    return null;
+  }
+
+  try {
+    await env.DB.prepare(
+      `UPDATE contacts SET direccion = ?2, actualizado_en = datetime('now') WHERE id = ?1`,
+    )
+      .bind(fila.contactId, direccion)
+      .run();
+  } catch {
+    // Igual que en encontrarOCrearCliente(): la ficha es de conveniencia, no
+    // debe tumbar un pedido que por lo demás está bien.
+  }
+
+  return fila.contactId;
 }
 
 /**

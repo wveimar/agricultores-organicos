@@ -18,10 +18,24 @@ export interface ApiUser {
   readonly activo: number;
   readonly creadoEn: string;
   readonly roles: readonly UserRole[];
-  /** Cuánto se le puede fiar, en pesos. 0 = esta cuenta no compra a crédito. */
+  /**
+   * ⚠ Sin uso desde la migración 0023: el crédito se mudó a la ficha del
+   * contacto (`contactId` de aquí abajo). Se sigue devolviendo por si algo
+   * viejo lo lee, pero el panel ya no lo muestra ni lo escribe.
+   */
   readonly cupoCredito: number;
-  /** A cuántos días vence lo que se le fía. */
   readonly diasCredito: number;
+  /**
+   * La ficha de la agenda enlazada a esta cuenta (migración 0024). `null` es
+   * el estado normal: la mayoría de las cuentas no tiene enlace, y su
+   * checkout busca o crea la ficha por el teléfono que escriban ese día.
+   *
+   * Con enlace, el checkout de esta cuenta usa SIEMPRE esta ficha —así el
+   * cupo que se le abrió no se pierde si un día teclea otro teléfono.
+   */
+  readonly contactId: string | null;
+  /** El nombre de esa ficha, para pintarlo sin cruzar con Contactos. */
+  readonly contactoNombre: string | null;
 }
 
 /** Forma estable de los errores del Worker: `{ error: { code, message, details } }`. */
@@ -243,6 +257,8 @@ export interface ApiOrderStatusLogEntry {
 export interface ApiOrder {
   readonly id: string;
   readonly referencia: string;
+  /** La ficha de la agenda a la que se le cobra. Ver migraciones 0022–0024. */
+  readonly contactId: string | null;
   readonly clienteNombre: string;
   readonly clienteTelefono: string;
   readonly clienteDireccion: string;
@@ -495,6 +511,16 @@ export interface ApiContact {
   readonly numeroCuenta: string | null;
   readonly titular: string | null;
   readonly documento: string | null;
+  /**
+   * Cuánto se le puede fiar. 0 = no se le fía.
+   *
+   * Vive aquí y no en la cuenta de usuario porque la deuda la tiene una
+   * persona, no un login: se le fía igual a un cliente sin cuenta. Ver la
+   * migración 0023.
+   */
+  readonly cupoCredito: number;
+  /** A cuántos días vence lo fiado. De aquí sale `orders.venceEn`. */
+  readonly diasCredito: number;
   readonly activo: number;
   readonly creadoEn: string;
 
@@ -522,6 +548,8 @@ export interface ContactInput {
   readonly numeroCuenta: string | null;
   readonly titular: string | null;
   readonly documento: string | null;
+  readonly cupoCredito: number;
+  readonly diasCredito: number;
   readonly activo: boolean;
 }
 
@@ -737,6 +765,8 @@ export class ApiClient {
       password: string;
       roles: readonly UserRole[];
       activo: 0 | 1;
+      /** `null` desenlaza la ficha de la agenda. */
+      contactId: string | null;
     }>,
   ): Observable<ApiUser> {
     return this.http
