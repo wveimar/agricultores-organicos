@@ -103,6 +103,34 @@
             }
           </div>
 
+          <!--
+            La silueta del avatar. Va con vista previa al lado porque el
+            nombre de la lista («Panal», «Frasco») no dice gran cosa hasta
+            que se ve dibujado. Mismo repertorio y mismo componente que usa
+            Categorías.
+          -->
+          <div class="sm:col-span-2">
+            <label for="grp-icono" class="block text-sm font-semibold text-ink">Ícono</label>
+            <div class="mt-2 flex items-center gap-3">
+              <span
+                class="flex size-11 shrink-0 items-center justify-center rounded-full border border-sand bg-linen text-moss"
+                aria-hidden="true"
+              >
+                <app-category-icon [name]="form.controls.icono.value" svgClass="size-5" />
+              </span>
+              <select
+                id="grp-icono"
+                formControlName="icono"
+                class="w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+              >
+                <option value="">Por defecto (hoja)</option>
+                @for (icono of iconos; track icono.value) {
+                  <option [value]="icono.value">{{ icono.label }}</option>
+                }
+              </select>
+            </div>
+          </div>
+
           <div>
             <label for="grp-orden" class="block text-sm font-semibold text-ink">Orden</label>
             <input
@@ -208,6 +236,29 @@
                     }
                   </div>
 
+                  <!-- Mismo selector que "Nuevo grupo" — ver la nota junto a ese formulario. -->
+                  <div class="sm:col-span-2">
+                    <label for="grp-icono" class="block text-sm font-semibold text-ink">Ícono</label>
+                    <div class="mt-2 flex items-center gap-3">
+                      <span
+                        class="flex size-11 shrink-0 items-center justify-center rounded-full border border-sand bg-linen text-moss"
+                        aria-hidden="true"
+                      >
+                        <app-category-icon [name]="form.controls.icono.value" svgClass="size-5" />
+                      </span>
+                      <select
+                        id="grp-icono"
+                        formControlName="icono"
+                        class="w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+                      >
+                        <option value="">Por defecto (hoja)</option>
+                        @for (icono of iconos; track icono.value) {
+                          <option [value]="icono.value">{{ icono.label }}</option>
+                        }
+                      </select>
+                    </div>
+                  </div>
+
                   <div>
                     <label for="grp-orden" class="block text-sm font-semibold text-ink">Orden</label>
                     <input
@@ -269,6 +320,15 @@
               </form>
             } @else {
               <div class="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
+                <!-- La silueta tal cual se ve en el formulario, para reconocer la fila de un vistazo -->
+                <span
+                  class="flex size-10 shrink-0 items-center justify-center rounded-full border border-sand"
+                  [class]="apagado ? 'bg-linen/50 text-ink-muted' : 'bg-linen text-moss'"
+                  aria-hidden="true"
+                >
+                  <app-category-icon [name]="grupo.icono" svgClass="size-5" />
+                </span>
+
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center gap-2">
                     <p class="text-sm font-semibold" [class]="apagado ? 'text-ink-muted' : 'text-ink'">

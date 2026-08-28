@@ -87,7 +87,9 @@
     "qa:usuarios-contacto": "node worker/tests/qa-usuarios-contacto.mjs",
     "qa:admin-groups": "node worker/tests/qa-admin-groups.mjs",
     "db:migrate:grupos-admin": "wrangler d1 execute DB --local --file=worker/migrations/0025_grupos_admin.sql",
-    "db:migrate:grupos-admin:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0025_grupos_admin.sql"
+    "db:migrate:grupos-admin:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0025_grupos_admin.sql",
+    "db:migrate:icono-grupos": "wrangler d1 execute DB --local --file=worker/migrations/0026_icono_grupos.sql",
+    "db:migrate:icono-grupos:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0026_icono_grupos.sql"
   },
   "private": true,
   "packageManager": "npm@11.12.1",

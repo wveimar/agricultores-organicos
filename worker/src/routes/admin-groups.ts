@@ -30,6 +30,7 @@ const COLUMNS = `id,
                   mostrar_filtro_fino AS mostrarFiltroFino,
                   orden,
                   activo,
+                  icono,
                   actualizado_en AS actualizadoEn`;
 
 interface GroupBody {
@@ -38,6 +39,23 @@ interface GroupBody {
   mostrarFiltroFino?: unknown;
   orden?: unknown;
   activo?: unknown;
+  icono?: unknown;
+}
+
+/**
+ * La clave de la silueta del avatar. No se valida contra una lista: el
+ * repertorio vive en el frontend (`CategoryIcon`, compartido con categorías) y
+ * atarlo aquí obligaría a desplegar el Worker cada vez que se dibuja una
+ * silueta nueva. Una clave que el front no conozca cae en la de por defecto,
+ * así que lo peor que puede pasar es que el avatar salga con una hoja.
+ *
+ * Vacío es válido y significa exactamente eso: «la que sea». Idéntica a
+ * `readIcono()` en categories.ts — no se comparte porque cada archivo tiene su
+ * propio `requireString` importado y no compensa una tercera dependencia para
+ * tres líneas.
+ */
+function readIcono(value: unknown): string {
+  return value === '' ? '' : requireString(value, 'icono', 40);
 }
 
 /**
@@ -132,8 +150,8 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
   }
 
   await env.DB.prepare(
-    `INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden, activo)
-     VALUES (?1, ?2, ?3, ?4, ?5)`,
+    `INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden, activo, icono)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
   )
     .bind(
       id,
@@ -141,6 +159,7 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
       body.mostrarFiltroFino ? 1 : 0,
       body.orden === undefined ? 100 : Number(body.orden),
       body.activo === 0 ? 0 : 1,
+      body.icono === undefined ? '' : readIcono(body.icono),
     )
     .run();
 
@@ -182,6 +201,9 @@ export async function update(
   }
   if (body.activo !== undefined) {
     sets.push(`activo = ?${bindings.push(body.activo ? 1 : 0)}`);
+  }
+  if (body.icono !== undefined) {
+    sets.push(`icono = ?${bindings.push(readIcono(body.icono))}`);
   }
 
   if (sets.length === 0) {

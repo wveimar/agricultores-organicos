@@ -38,6 +38,16 @@ export const CATEGORY_ICONS = [
   { value: 'plato', label: 'Plato servido' },
   { value: 'canasta', label: 'Canasta' },
   { value: 'bolsa', label: 'Bolsa' },
+  // Los siguientes cuatro llegaron para los grupos del panel de compras
+  // (migración 0026): "legumbres/verdulería", "panadería", "lácteos" y
+  // "fermentos/procesados" no tenían una silueta propia — 'pan' y 'frasco' ya
+  // significan otra cosa en el repertorio (bollo de tres cortes; jarra con
+  // burbujas), así que reusarlos ahí habría hecho que dos grupos distintos se
+  // vieran igual.
+  { value: 'zanahoria', label: 'Zanahoria' },
+  { value: 'croissant', label: 'Croissant' },
+  { value: 'queso', label: 'Queso' },
+  { value: 'tazon', label: 'Tazón' },
 ] as const;
 
 export type CategoryIconName = (typeof CATEGORY_ICONS)[number]['value'];

@@ -200,6 +200,11 @@ CREATE TABLE admin_groups (
   mostrar_filtro_fino INTEGER NOT NULL DEFAULT 0 CHECK (mostrar_filtro_fino IN (0, 1)),
   orden               INTEGER NOT NULL DEFAULT 100,
   activo              INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
+  -- Silueta del avatar en la lista: 'hoja', 'panal', 'canasta'… Mismo
+  -- repertorio que las categorías (`CategoryIcon`, migración 0016). Sin
+  -- CHECK: una clave desconocida cae en la silueta por defecto. Vacío = «la
+  -- que sea» (migración 0026).
+  icono               TEXT    NOT NULL DEFAULT '',
   creado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
   actualizado_en      TEXT    NOT NULL DEFAULT (datetime('now'))
 );

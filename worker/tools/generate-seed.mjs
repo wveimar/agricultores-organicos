@@ -65,9 +65,9 @@ const GRUPO_DE = new Map(CATEGORIES.map(([id, , , grupo]) => [id, grupo]));
  * `grupo_admin_id` como referencia a ella en vez de un literal fijo.
  */
 const ADMIN_GROUPS = [
-  ['frutas', 'Frutas', 0, 10],
-  ['verduras', 'Verduras', 0, 20],
-  ['agroindustriales', 'Agroindustriales', 1, 30],
+  ['frutas', 'Frutas', 0, 10, 'fruta'],
+  ['verduras', 'Verduras', 0, 20, 'hoja'],
+  ['agroindustriales', 'Agroindustriales', 1, 30, 'canasta'],
 ];
 
 // ─────────────────── PBKDF2, idéntico al del Worker ───────────────────
@@ -144,10 +144,10 @@ for (const user of USERS) {
 lines.push('', '-- ────────────────────── Grupos del panel de compras ──────────────────────');
 
 // Antes que las categorías: `categories.grupo_admin_id` apunta aquí.
-for (const [id, nombre, mostrarFiltroFino, orden] of ADMIN_GROUPS) {
+for (const [id, nombre, mostrarFiltroFino, orden, icono] of ADMIN_GROUPS) {
   lines.push(
-    `INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden) VALUES (` +
-      [q(id), q(nombre), mostrarFiltroFino, orden].join(', ') +
+    `INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden, icono) VALUES (` +
+      [q(id), q(nombre), mostrarFiltroFino, orden, q(icono)].join(', ') +
       ');',
   );
 }

@@ -18,17 +18,17 @@ DELETE FROM categories;
 DELETE FROM admin_groups;
 
 -- ─────────────────────────── Usuarios ───────────────────────────
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-01', 'inventario@agricultores.co', 'Sara Villamil', 'pbkdf2$100000$THhueNUqRRDUSKILG1Hmug$0d-0wfOaCODS8PseH_RWTHWmVQxsuEjvshb5CWQQyBU');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-01', 'inventario@agricultores.co', 'Sara Villamil', 'pbkdf2$100000$cJ0hyArQhXSXiyIWQfov7w$jl4t6rshHNNQexxPVPKs8bRPLTEomlJgSthztwoeDaI');
 INSERT INTO user_roles (user_id, role) VALUES ('u-01', 'ADMIN_INVENTARIO');
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-02', 'pedidos@agricultores.co', 'Diana Cardona', 'pbkdf2$100000$zzuS9uDi-G-rUxQ7hQ-Wnw$tU2xkqTcFpGBx8i4SBSKSeDrTRYIrAYdcXK0c6z7qbg');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-02', 'pedidos@agricultores.co', 'Diana Cardona', 'pbkdf2$100000$CwlwRLKIwrT0SY6NFa8Rhw$JSqxFWHQ3isE5sli4IOIq1exZmrg3Sbxcbht4d6tY20');
 INSERT INTO user_roles (user_id, role) VALUES ('u-02', 'GESTOR_PEDIDOS');
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-03', 'admin@agricultores.co', 'Nicolás Ruiz', 'pbkdf2$100000$AsT2e538hW3F4y-lH8SNmg$CkCXpI9301YcGh4DLUzoIP3Pzun07E86LMPj_WlAsbU');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-03', 'admin@agricultores.co', 'Nicolás Ruiz', 'pbkdf2$100000$qckexuORJksSLVJi4U8A5A$pLkw7sATPvVfDg_jvU6JBvVDdaVJfIGGoIBS0Ba18Jw');
 INSERT INTO user_roles (user_id, role) VALUES ('u-03', 'SUPER_ADMIN');
 
 -- ────────────────────── Grupos del panel de compras ──────────────────────
-INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden) VALUES ('frutas', 'Frutas', 0, 10);
-INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden) VALUES ('verduras', 'Verduras', 0, 20);
-INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden) VALUES ('agroindustriales', 'Agroindustriales', 1, 30);
+INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden, icono) VALUES ('frutas', 'Frutas', 0, 10, 'fruta');
+INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden, icono) VALUES ('verduras', 'Verduras', 0, 20, 'hoja');
+INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden, icono) VALUES ('agroindustriales', 'Agroindustriales', 1, 30, 'canasta');
 
 -- ─────────────────────────── Categorías ───────────────────────────
 INSERT INTO categories (id, nombre, descripcion, grupo_admin_id, orden) VALUES ('verduras', 'Verduras y raíces', 'Recolectadas al amanecer del domingo, en tu casa esa misma tarde.', 'verduras', 10);

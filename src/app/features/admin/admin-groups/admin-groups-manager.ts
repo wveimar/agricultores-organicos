@@ -3,6 +3,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiAdminGroup, ApiErrorBody } from '../../../core/api/api-client';
+import { CATEGORY_ICONS, CategoryIcon } from '../../../shared/category-icon/category-icon';
 
 /**
  * Grupos del panel de compras — "Frutas", "Verduras", "Agroindustriales"...
@@ -25,7 +26,7 @@ import { ApiAdminGroup, ApiErrorBody } from '../../../core/api/api-client';
  */
 @Component({
   selector: 'app-admin-groups-manager',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, CategoryIcon],
   templateUrl: './admin-groups-manager.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -43,6 +44,9 @@ export class AdminGroupsManager {
   protected readonly rowError = signal<string | null>(null);
   protected readonly busyId = signal<string | null>(null);
 
+  /** Las siluetas entre las que se elige. Mismo repertorio que Categorías. */
+  protected readonly iconos = CATEGORY_ICONS;
+
   protected readonly form = this.fb.nonNullable.group({
     nombre: ['', [Validators.required, Validators.minLength(2)]],
     // "Este grupo mezcla categorías muy distintas, mostrar filtro adicional"
@@ -50,6 +54,9 @@ export class AdminGroupsManager {
     // 'agroindustriales' que había antes de esta pantalla.
     mostrarFiltroFino: [false],
     orden: [100, [Validators.required, Validators.min(0)]],
+    // Sin validador: la lista del desplegable ya acota lo que se puede
+    // elegir, y vacío es un valor legítimo — significa «la de por defecto».
+    icono: [''],
   });
 
   constructor() {
@@ -81,6 +88,7 @@ export class AdminGroupsManager {
       // Al final de la lista: un grupo nuevo no debería colarse delante de
       // los que ya tienen categorías sin que nadie lo pida.
       orden: (this.adminApi.adminGroups().at(-1)?.orden ?? 100) + 10,
+      icono: '',
     });
   }
 
@@ -89,6 +97,7 @@ export class AdminGroupsManager {
     this.formError.set(null);
     this.form.setValue({
       nombre: grupo.nombre,
+      icono: grupo.icono ?? '',
       mostrarFiltroFino: grupo.mostrarFiltroFino === 1,
       orden: grupo.orden,
     });
@@ -113,8 +122,8 @@ export class AdminGroupsManager {
     this.saving.set(true);
     this.formError.set(null);
 
-    const { nombre, mostrarFiltroFino, orden } = this.form.getRawValue();
-    const payload = { nombre: nombre.trim(), mostrarFiltroFino, orden };
+    const { nombre, mostrarFiltroFino, orden, icono } = this.form.getRawValue();
+    const payload = { nombre: nombre.trim(), mostrarFiltroFino, orden, icono };
 
     const peticion =
       id === 'nueva'

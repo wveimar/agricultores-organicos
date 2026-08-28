@@ -115,6 +115,8 @@ export interface ApiAdminGroup {
   readonly mostrarFiltroFino: 0 | 1;
   readonly orden: number;
   readonly activo: 0 | 1;
+  /** Clave de la silueta (`CategoryIcon`, compartida con categorías). Vacío = la de por defecto. */
+  readonly icono: string;
   readonly actualizadoEn: string;
   /** Cuántas categorías y productos lo usan. Solo en `/api/admin/admin-groups`. */
   readonly categorias?: number;
@@ -870,6 +872,7 @@ export class ApiClient {
     mostrarFiltroFino?: boolean;
     orden?: number;
     activo?: 0 | 1;
+    icono?: string;
   }): Observable<ApiAdminGroup> {
     return this.http
       .post<{ grupo: ApiAdminGroup }>('/api/admin/admin-groups', input)
@@ -884,6 +887,7 @@ export class ApiClient {
       mostrarFiltroFino: boolean;
       orden: number;
       activo: 0 | 1;
+      icono: string;
     }>,
   ): Observable<ApiAdminGroup> {
     return this.http
