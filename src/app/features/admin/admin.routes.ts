@@ -52,6 +52,15 @@ export const ADMIN_ROUTES: Routes = [
           import('./categories/categories-manager').then((m) => m.CategoriesManager),
       },
       {
+        path: 'grupos',
+        // Misma persona que archiva productos y categorías: es quien elige
+        // en qué grupo cae cada una.
+        canActivate: [roleGuard('ADMIN_INVENTARIO')],
+        title: 'Grupos · Panel',
+        loadComponent: () =>
+          import('./admin-groups/admin-groups-manager').then((m) => m.AdminGroupsManager),
+      },
+      {
         path: 'inventario/crear',
         canActivate: [roleGuard('ADMIN_INVENTARIO')],
         title: 'Crear producto · Panel',

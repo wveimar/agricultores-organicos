@@ -4,13 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { CategoryFilterService } from '../../../core/services/category-filter.service';
 import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
-import {
-  ADMIN_GROUP_LABELS,
-  AdminGroup,
-  ProductUnit,
-  pluralizeVariantLabel,
-  unitPresentation,
-} from '../../../core/models/product.model';
+import { ProductUnit, pluralizeVariantLabel, unitPresentation } from '../../../core/models/product.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { CategoryFilterComponent } from '../../../shared/components/category-filter/category-filter';
 
@@ -42,39 +36,53 @@ export class InventoryDashboard {
   private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
 
-  protected readonly groups = ADMIN_GROUP_LABELS;
+  /** Sale de `admin_groups` (migración 0025), no de una constante fija. */
+  protected readonly groups = this.adminApi.groupOptions;
   protected readonly stockStyles = STOCK_STYLES;
 
-  protected readonly activeGroup = signal<AdminGroup | 'todos'>('todos');
+  protected readonly activeGroup = signal<string>('todos');
   protected readonly query = signal('');
 
   /**
    * Desplegable de categoría fina — lácteos, mieles… — que solo tiene sentido
-   * dentro de "Agroindustriales", así que se oculta bajo cualquier otro grupo.
+   * bajo un grupo que mezcla categorías muy distintas (hoy, "Agroindustriales";
+   * mañana, el que sea).
+   *
+   * Antes esto comparaba el grupo activo contra el literal 'agroindustriales'.
+   * Desde que los grupos son filas editables (0025), ese nombre se puede
+   * cambiar o borrar, así que la condición mira la casilla
+   * `mostrarFiltroFino` del grupo activo — la ficha, no el texto.
+   *
    * Reutiliza `categoryFilter.adminFilterValue`: es la misma selección que
    * lee Reportes, para no llevar dos filtros de categoría independientes en
    * pantallas que hablan del mismo inventario.
    */
-  protected readonly showFineFilter = computed(() => this.activeGroup() === 'agroindustriales');
+  protected readonly showFineFilter = computed(
+    () => this.adminApi.adminGroupById(this.activeGroup())?.mostrarFiltroFino === 1,
+  );
 
   /**
-   * Categorías finas bajo "Agroindustriales" — lácteos, mieles, fermentos…
+   * Categorías finas bajo el grupo activo — lácteos, mieles, fermentos…
    *
    * Salen de la tabla `categories` y no de una constante: el grupo lo trae
    * cada fila, así que una categoría creada hoy desde el panel aparece aquí
-   * sin que nadie recompile.
+   * sin que nadie recompile. Se filtra por el grupo ACTIVO, no por un nombre
+   * fijo, por la misma razón que `showFineFilter`.
    */
-  protected readonly fineOptions = computed(() => [
-    { value: 'todos', label: 'Todas', count: this.categoryFilter.adminCounts()['agroindustriales'] ?? 0 },
-    ...this.adminApi
-      .categories()
-      .filter((c) => c.grupoAdmin === 'agroindustriales')
-      .map((c) => ({
-        value: c.id,
-        label: c.nombre,
-        count: this.categoryFilter.adminCounts()[c.id] ?? 0,
-      })),
-  ]);
+  protected readonly fineOptions = computed(() => {
+    const grupoActivo = this.activeGroup();
+    return [
+      { value: 'todos', label: 'Todas', count: this.categoryFilter.adminCounts()[grupoActivo] ?? 0 },
+      ...this.adminApi
+        .categories()
+        .filter((c) => c.grupoAdmin === grupoActivo)
+        .map((c) => ({
+          value: c.id,
+          label: c.nombre,
+          count: this.categoryFilter.adminCounts()[c.id] ?? 0,
+        })),
+    ];
+  });
   /** Cuando está activo, la tabla solo muestra lo que hay que reponer. */
   protected readonly onlyAlerts = signal(false);
 
@@ -109,6 +117,7 @@ export class InventoryDashboard {
   constructor() {
     this.adminApi.loadProducts();
     this.adminApi.loadCategories();
+    this.adminApi.loadAdminGroups();
   }
 
   protected readonly rows = computed<readonly ApiProduct[]>(() => {
@@ -304,7 +313,7 @@ export class InventoryDashboard {
     return control.invalid && (control.touched || control.dirty);
   }
 
-  protected setGroup(group: AdminGroup | 'todos'): void {
+  protected setGroup(group: string): void {
     this.activeGroup.set(group);
     this.categoryFilter.setAdminFilterValue('todos');
     this.editingId.set(null);

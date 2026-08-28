@@ -4,6 +4,7 @@ import { requireAuth } from './auth/middleware';
 import * as auth from './routes/auth';
 import * as products from './routes/products';
 import * as categories from './routes/categories';
+import * as adminGroups from './routes/admin-groups';
 import * as orders from './routes/orders';
 import * as reports from './routes/reports';
 import * as expenses from './routes/expenses';
@@ -168,6 +169,22 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (categoryMatch && method === 'DELETE') {
       return categories.remove(env, user, categoryMatch[1]);
+    }
+
+    // Grupos del panel de compras (migración 0025)
+    if (pathname === '/api/admin/admin-groups' && method === 'GET') {
+      return adminGroups.listAdmin(env, user);
+    }
+    if (pathname === '/api/admin/admin-groups' && method === 'POST') {
+      return adminGroups.create(request, env, user);
+    }
+
+    const groupMatch = pathname.match(/^\/api\/admin\/admin-groups\/([\w-]+)$/);
+    if (groupMatch && method === 'PUT') {
+      return adminGroups.update(request, env, user, groupMatch[1]);
+    }
+    if (groupMatch && method === 'DELETE') {
+      return adminGroups.remove(env, user, groupMatch[1]);
     }
 
     // Pedidos

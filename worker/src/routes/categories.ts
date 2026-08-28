@@ -1,6 +1,7 @@
 import { ApiError, json, readJson, requireString } from '../http';
 import { Env, JwtPayload } from '../types';
 import { requireRole } from '../auth/middleware';
+import { validarGrupo } from './admin-groups';
 
 /**
  * Categorías del catálogo — los chips de la vitrina y el desplegable del panel.
@@ -17,12 +18,10 @@ const COLUMNS = `id,
                  nombre,
                  descripcion,
                  icono,
-                 grupo_admin    AS grupoAdmin,
+                 grupo_admin_id AS grupoAdmin,
                  orden,
                  activo,
                  actualizado_en AS actualizadoEn`;
-
-const GRUPOS = ['frutas', 'verduras', 'agroindustriales'] as const;
 
 interface CategoryBody {
   id?: unknown;
@@ -45,14 +44,6 @@ interface CategoryBody {
  */
 function readIcono(value: unknown): string {
   return value === '' ? '' : requireString(value, 'icono', 40);
-}
-
-function readGrupo(value: unknown): string {
-  const grupo = requireString(value, 'grupoAdmin', 40);
-  if (!GRUPOS.includes(grupo as (typeof GRUPOS)[number])) {
-    throw ApiError.badRequest('grupo-invalido', `El grupo debe ser uno de: ${GRUPOS.join(', ')}.`);
-  }
-  return grupo;
 }
 
 /**
@@ -139,8 +130,13 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
     );
   }
 
+  const grupoAdmin =
+    body.grupoAdmin === undefined
+      ? await validarGrupo(env, 'agroindustriales')
+      : await validarGrupo(env, body.grupoAdmin);
+
   await env.DB.prepare(
-    `INSERT INTO categories (id, nombre, descripcion, icono, grupo_admin, orden, activo)
+    `INSERT INTO categories (id, nombre, descripcion, icono, grupo_admin_id, orden, activo)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
   )
     .bind(
@@ -148,7 +144,7 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
       nombre,
       body.descripcion === undefined ? '' : requireString(body.descripcion, 'descripcion', 200),
       body.icono === undefined ? '' : readIcono(body.icono),
-      body.grupoAdmin === undefined ? 'agroindustriales' : readGrupo(body.grupoAdmin),
+      grupoAdmin,
       body.orden === undefined ? 100 : Number(body.orden),
       body.activo === 0 ? 0 : 1,
     )
@@ -193,7 +189,7 @@ export async function update(
     sets.push(`icono = ?${bindings.push(readIcono(body.icono))}`);
   }
   if (body.grupoAdmin !== undefined) {
-    sets.push(`grupo_admin = ?${bindings.push(readGrupo(body.grupoAdmin))}`);
+    sets.push(`grupo_admin_id = ?${bindings.push(await validarGrupo(env, body.grupoAdmin))}`);
   }
   if (body.orden !== undefined) {
     sets.push(`orden = ?${bindings.push(Number(body.orden))}`);

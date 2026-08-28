@@ -5,18 +5,14 @@ import {
   ApiConsolidationOrder,
   ApiConsolidationProduct,
 } from '../../../core/api/api-client';
-import { ADMIN_GROUP_LABELS, ProductUnit, UNIT_LABELS } from '../../../core/models/product.model';
+import { ProductUnit, UNIT_LABELS } from '../../../core/models/product.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { CategoryFilterComponent } from '../../../shared/components/category-filter/category-filter';
 
-// El nombre legible de cada `categoria_id` sale ahora de `adminApi.categoryLabels`,
-// que lee la tabla `categories`. Aquí era una constante armada desde `CATEGORIES`
-// y se quedaba muda ante cualquier categoría creada después de compilar.
-
-/** Etiqueta de cada grupo, para los encabezados del consolidado. */
-const GROUP_LABEL: Readonly<Record<string, string>> = Object.fromEntries(
-  ADMIN_GROUP_LABELS.filter((g) => g.value !== 'todos').map((g) => [g.value, g.label]),
-);
+// El nombre legible de cada `categoria_id` sale de `adminApi.categoryLabels`, y
+// el de cada grupo de `adminApi.adminGroupById()` (método `grupoLabel()` más
+// abajo) — las dos leen su tabla en vivo. Aquí eran constantes armadas al
+// cargar el módulo y se quedaban mudas ante una fila creada después.
 
 function money(value: number): string {
   return new Intl.NumberFormat('es-CO', {
@@ -70,6 +66,7 @@ export class ConsolidationReport {
   constructor() {
     this.adminApi.loadConsolidation();
     this.adminApi.loadCategories();
+    this.adminApi.loadAdminGroups();
   }
 
   protected readonly data = this.adminApi.consolidation;
@@ -146,10 +143,15 @@ export class ConsolidationReport {
 
     return [...groups.entries()].map(([grupo, items]) => ({
       grupo,
-      label: GROUP_LABEL[grupo] ?? grupo,
+      label: this.grupoLabel(grupo),
       items,
     }));
   });
+
+  /** El nombre del grupo, leído en vivo de `admin_groups`. */
+  protected grupoLabel(grupoId: string): string {
+    return this.adminApi.adminGroupById(grupoId)?.nombre ?? grupoId;
+  }
 
   /** Cuántos productos están seleccionados. */
   protected readonly selectedCount = computed(() => this.selectedProductIds().size);

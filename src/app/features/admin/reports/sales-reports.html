@@ -320,7 +320,7 @@
     <h2 class="font-display text-h3 text-ink">Ventas por producto</h2>
 
     <div class="flex flex-wrap gap-2" role="tablist" aria-label="Filtrar por grupo">
-      @for (g of groups; track g.value) {
+      @for (g of groups(); track g.value) {
         @let isActive = group() === g.value;
         <button
           type="button"

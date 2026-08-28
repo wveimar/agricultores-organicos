@@ -3,6 +3,7 @@ import { Env, JwtPayload } from '../types';
 import { optionalAuth, requireRole } from '../auth/middleware';
 import { discountedPrice, loadDiscounts, loadUserRoles } from '../pricing';
 import { contenidoPublico } from '../combos';
+import { validarGrupo } from './admin-groups';
 
 /**
  * Tope de una imagen de producto ya en base64.
@@ -48,7 +49,7 @@ function checkImageSource(value: string | undefined, field: string): void {
 
 /** Columnas que ve el público. `precio_costo` queda deliberadamente fuera. */
 const PUBLIC_COLUMNS = `
-  id, slug, nombre, tagline, categoria_id AS categoriaId, grupo_admin AS grupoAdmin,
+  id, slug, nombre, tagline, categoria_id AS categoriaId, grupo_admin_id AS grupoAdmin,
   precio, precio_anterior AS precioAnterior, unidad, cantidad_unidad AS cantidadUnidad, origen, rating,
   review_count AS reviewCount, badge, destacado,
   -- Stock de una canasta: cuántas se pueden armar con lo que hay de sus
@@ -194,7 +195,7 @@ export async function listPublic(request: Request, env: Env, url: URL): Promise<
   }
   if (grupo) {
     bindings.push(grupo);
-    sql += ` AND grupo_admin = ?${bindings.length}`;
+    sql += ` AND grupo_admin_id = ?${bindings.length}`;
   }
 
   sql += ' ORDER BY nombre COLLATE NOCASE';
@@ -533,9 +534,10 @@ export async function updateFull(
   if (!categoriaId || categoriaId.trim().length === 0) {
     throw ApiError.badRequest('categoria-requerida', 'La categoría es requerida.');
   }
-  if (!grupoAdmin || !['frutas', 'verduras', 'agroindustriales'].includes(grupoAdmin)) {
-    throw ApiError.badRequest('grupo-invalido', 'El grupo debe ser frutas, verduras o agroindustriales.');
+  if (!grupoAdmin) {
+    throw ApiError.badRequest('grupo-invalido', 'El grupo es requerido.');
   }
+  await validarGrupo(env, grupoAdmin);
   if (precio === undefined) {
     throw ApiError.badRequest('precio-requerido', 'El precio es requerido.');
   }
@@ -598,7 +600,7 @@ export async function updateFull(
   try {
     await env.DB.prepare(
       `UPDATE products SET
-        slug = ?1, nombre = ?2, tagline = ?3, categoria_id = ?4, grupo_admin = ?5,
+        slug = ?1, nombre = ?2, tagline = ?3, categoria_id = ?4, grupo_admin_id = ?5,
         precio = ?6, precio_costo = ?7, unidad = ?8, cantidad_unidad = ?9, origen = ?10,
         imagen = ?11, imagen_hover = ?12, imagen_alt = ?13,
         ${extras.map((set) => `${set}, `).join('')}actualizado_en = datetime('now')
@@ -680,9 +682,10 @@ export async function create(
   if (!categoriaId || categoriaId.trim().length === 0) {
     throw ApiError.badRequest('categoria-requerida', 'La categoría es requerida.');
   }
-  if (!grupoAdmin || !['frutas', 'verduras', 'agroindustriales'].includes(grupoAdmin)) {
-    throw ApiError.badRequest('grupo-invalido', 'El grupo debe ser frutas, verduras o agroindustriales.');
+  if (!grupoAdmin) {
+    throw ApiError.badRequest('grupo-invalido', 'El grupo es requerido.');
   }
+  await validarGrupo(env, grupoAdmin);
   if (precio === undefined) {
     throw ApiError.badRequest('precio-requerido', 'El precio es requerido.');
   }
@@ -724,11 +727,15 @@ export async function create(
 
   try {
     await env.DB.prepare(
+      // `grupo_admin` (sin `_id`) va con un valor fijo, no con el real: es la
+      // columna vieja, `NOT NULL` sin DEFAULT, que la migración 0025 no pudo
+      // tocar sin recrear la tabla (ver esa migración). Nada la lee ya; esto
+      // solo la mantiene satisfecha para que el INSERT no falle.
       `INSERT INTO products (
-        id, slug, nombre, tagline, categoria_id, grupo_admin,
+        id, slug, nombre, tagline, categoria_id, grupo_admin, grupo_admin_id,
         precio, precio_costo, unidad, cantidad_unidad, origen,
         imagen, imagen_hover, imagen_alt, parent_id, variante_etiqueta
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)`,
+      ) VALUES (?1, ?2, ?3, ?4, ?5, 'agroindustriales', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)`,
     )
       .bind(id, slug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt, parentId, varianteEtiqueta)
       .run();

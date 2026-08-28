@@ -45,7 +45,7 @@ export async function list(env: Env, user: JwtPayload, role: string): Promise<Re
     `SELECT p.id                    AS productId,
             p.nombre,
             p.categoria_id          AS categoriaId,
-            p.grupo_admin           AS grupoAdmin,
+            p.grupo_admin_id        AS grupoAdmin,
             p.unidad,
             p.cantidad_unidad       AS cantidadUnidad,
             p.precio,

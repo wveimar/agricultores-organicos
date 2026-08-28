@@ -39,14 +39,29 @@ export class CategoryFilterService {
    */
   readonly adminQuery = signal('');
 
+  /**
+   * ¿Este valor de filtro es un id de GRUPO, o de categoría fina?
+   *
+   * `adminFilterValue` guarda uno u otro según desde dónde se elija, y las dos
+   * clases de id comparten el mismo espacio de texto. Antes se distinguían
+   * comparando contra los tres literales fijos ('frutas'/'verduras'/
+   * 'agroindustriales'); desde que los grupos son filas editables (migración
+   * 0025) hay que preguntarle a la lista viva — si no, un grupo nuevo con otro
+   * id se clasificaría como categoría y el filtro nunca encontraría nada.
+   */
+  private esIdDeGrupo(value: string): boolean {
+    return this.adminApi.adminGroups().some((g) => g.id === value);
+  }
+
   readonly adminFiltered = computed<readonly ApiProduct[]>(() => {
     const products = this.adminApi.products();
     const value = this.adminFilterValue();
     const term = this.adminQuery().trim().toLowerCase();
+    const esGrupo = this.esIdDeGrupo(value);
 
     return products.filter((product) => {
       if (value !== 'todos') {
-        if (value === 'frutas' || value === 'verduras' || value === 'agroindustriales') {
+        if (esGrupo) {
           if (product.grupoAdmin !== value) {
             return false;
           }
@@ -74,7 +89,7 @@ export class CategoryFilterService {
       return products;
     }
 
-    if (value === 'frutas' || value === 'verduras' || value === 'agroindustriales') {
+    if (this.esIdDeGrupo(value)) {
       return products.filter((p) => p.grupoAdmin === value);
     }
 

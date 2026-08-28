@@ -2,6 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
 import {
   ApiCashSummary,
+  ApiAdminGroup,
   ApiCategory,
   ApiClient,
   ApiClosing,
@@ -138,6 +139,84 @@ export class AdminApiService {
     );
   }
 
+  // ────────────────────── Grupos del panel de compras ──────────────────────
+
+  readonly adminGroups = signal<readonly ApiAdminGroup[]>([]);
+  readonly adminGroupsLoading = signal(false);
+  readonly adminGroupsError = signal<string | null>(null);
+
+  /** Todos, incluidos los desactivados: es la pantalla desde donde se reactivan. */
+  loadAdminGroups(): void {
+    this.adminGroupsLoading.set(true);
+    this.adminGroupsError.set(null);
+
+    this.api.adminGroups().subscribe({
+      next: (rows) => {
+        this.adminGroups.set(rows);
+        this.adminGroupsLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.adminGroupsError.set(error.message);
+        this.adminGroupsLoading.set(false);
+      },
+    });
+  }
+
+  /** Los que se pueden elegir al archivar un producto o una categoría. */
+  readonly selectableAdminGroups = computed(() =>
+    this.adminGroups().filter((g) => g.activo === 1),
+  );
+
+  adminGroupById(id: string): ApiAdminGroup | undefined {
+    return this.adminGroups().find((g) => g.id === id);
+  }
+
+  /**
+   * `{ value, label }` de cada grupo activo, más `'todos'` al frente.
+   *
+   * Antes esto era la constante fija `ADMIN_GROUP_LABELS`. Todas las pantallas
+   * que la consumían (Inventario, Reportes, Consolidado, Categorías) ya
+   * esperaban exactamente esta forma — `.value`/`.label` — así que sustituir
+   * de dónde sale la lista no obliga a tocar sus plantillas.
+   */
+  readonly groupOptions = computed<ReadonlyArray<{ value: string; label: string }>>(() => [
+    { value: 'todos', label: 'Todo el inventario' },
+    ...this.selectableAdminGroups().map((g) => ({ value: g.id, label: g.nombre })),
+  ]);
+
+  createAdminGroup(
+    input: Parameters<ApiClient['createAdminGroup']>[0],
+  ): Observable<ApiAdminGroup> {
+    return this.api.createAdminGroup(input).pipe(
+      tap((created) => this.adminGroups.set([...this.adminGroups(), created])),
+    );
+  }
+
+  updateAdminGroup(
+    id: string,
+    patch: Parameters<ApiClient['updateAdminGroup']>[1],
+  ): Observable<ApiAdminGroup> {
+    return this.api.updateAdminGroup(id, patch).pipe(
+      tap((updated) =>
+        // Se conservan los recuentos: la respuesta del PUT no los trae, y sin
+        // esto la fila mostraría "0 categorías, 0 productos" hasta recargar.
+        this.adminGroups.set(
+          this.adminGroups().map((g) =>
+            g.id === id
+              ? { ...updated, categorias: g.categorias, productos: g.productos }
+              : g,
+          ),
+        ),
+      ),
+    );
+  }
+
+  deleteAdminGroup(id: string): Observable<void> {
+    return this.api.deleteAdminGroup(id).pipe(
+      tap(() => this.adminGroups.set(this.adminGroups().filter((g) => g.id !== id))),
+    );
+  }
+
   // ──────────────────────────────── Inventario ────────────────────────────────
 
   readonly products = signal<readonly ApiProduct[]>([]);
@@ -183,7 +262,7 @@ export class AdminApiService {
     slug?: string;
     tagline?: string;
     categoriaId: string;
-    grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
+    grupoAdmin: string;
     precio: number;
     precioCosto?: number;
     unidad: string;
@@ -279,7 +358,7 @@ export class AdminApiService {
     slug?: string;
     tagline?: string;
     categoriaId: string;
-    grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
+    grupoAdmin: string;
     precio: number;
     precioCosto: number;
     unidad: string;

@@ -7,7 +7,6 @@ import {
   ApiErrorBody,
   ApiSalesRow,
 } from '../../../core/api/api-client';
-import { ADMIN_GROUP_LABELS, AdminGroup } from '../../../core/models/product.model';
 import { AbcClass, PAYMENT_METHOD_LABELS } from '../../../core/models/report.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 
@@ -41,12 +40,13 @@ function money(value: number): string {
 export class SalesReports {
   protected readonly adminApi = inject(AdminApiService);
 
-  protected readonly groups = ADMIN_GROUP_LABELS;
+  /** Sale de `admin_groups` (migración 0025), no de una constante fija. */
+  protected readonly groups = this.adminApi.groupOptions;
   protected readonly medals = MEDAL_STYLES;
   protected readonly abcStyles = ABC_STYLES;
   protected readonly methodLabels = PAYMENT_METHOD_LABELS;
 
-  protected readonly group = signal<AdminGroup | 'todos'>('todos');
+  protected readonly group = signal<string>('todos');
 
   /** Cierre recién hecho, para mostrar el comprobante sin recargar. */
   protected readonly justClosed = signal<ApiClosing | null>(null);
@@ -70,6 +70,7 @@ export class SalesReports {
     this.adminApi.loadCashSummary();
     this.adminApi.loadClosings();
     this.adminApi.loadCodPending();
+    this.adminApi.loadAdminGroups();
     // Para el contador «En cartera» de los KPIs: lo fiado que aún no ha
     // entrado, al lado de lo que sí entró.
     this.adminApi.loadCartera();
@@ -113,7 +114,7 @@ export class SalesReports {
     return closing ? this.buildReceipt(closing) : null;
   });
 
-  protected setGroup(group: AdminGroup | 'todos'): void {
+  protected setGroup(group: string): void {
     this.group.set(group);
   }
 

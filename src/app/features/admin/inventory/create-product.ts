@@ -30,17 +30,17 @@ export class CreateProduct {
   private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
-  private readonly adminApi = inject(AdminApiService);
+  protected readonly adminApi = inject(AdminApiService);
 
   protected readonly form = this.fb.nonNullable.group({
     nombre: ['', [Validators.required, Validators.minLength(2)]],
     slug: [''],
     tagline: [''],
     categoriaId: ['', Validators.required],
-    // Se anota la unión completa y no `as const`: el valor inicial es 'frutas',
-    // pero al precargar desde una ficha madre puede llegar cualquiera de los
-    // tres, y con el tipo estrecho eso no compila.
-    grupoAdmin: ['frutas' as 'frutas' | 'verduras' | 'agroindustriales', Validators.required],
+    // 'frutas' es solo el valor inicial del formulario; el desplegable (ver el
+    // HTML) sale de `adminApi.groupOptions()`, no de una lista fija — desde la
+    // migración 0025 puede haber cualquier grupo, con cualquier id.
+    grupoAdmin: ['frutas', Validators.required],
     precio: [0, [Validators.required, Validators.min(1)]],
     precioCosto: [0, [Validators.required, Validators.min(0)]],
     unidad: ['unidad', Validators.required],
@@ -93,6 +93,10 @@ export class CreateProduct {
     if (this.adminApi.categories().length === 0) {
       this.adminApi.loadCategories();
     }
+    // El desplegable de grupo sale de la tabla `admin_groups` (migración 0025).
+    if (this.adminApi.adminGroups().length === 0) {
+      this.adminApi.loadAdminGroups();
+    }
 
     this.form.controls.parentId.setValue(this.parentParam);
 
@@ -122,7 +126,7 @@ export class CreateProduct {
       nombre: `${madre.nombre} · `,
       tagline: madre.tagline,
       categoriaId: madre.categoriaId,
-      grupoAdmin: madre.grupoAdmin as 'frutas' | 'verduras' | 'agroindustriales',
+      grupoAdmin: madre.grupoAdmin,
       unidad: madre.unidad,
       origen: madre.origen,
       imagen: madre.imagen,

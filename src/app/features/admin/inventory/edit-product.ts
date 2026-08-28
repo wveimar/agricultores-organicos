@@ -30,7 +30,7 @@ export class EditProduct {
   private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
-  private readonly adminApi = inject(AdminApiService);
+  protected readonly adminApi = inject(AdminApiService);
 
   protected readonly productId = this.route.snapshot.paramMap.get('id') || '';
 
@@ -49,9 +49,9 @@ export class EditProduct {
     slug: [''],
     tagline: [''],
     categoriaId: ['', Validators.required],
-    // Se anota la unión completa y no `as const`: el valor inicial es 'frutas',
-    // pero al cargar una ficha puede llegar cualquiera de los tres.
-    grupoAdmin: ['frutas' as 'frutas' | 'verduras' | 'agroindustriales', Validators.required],
+    // 'frutas' es solo el valor inicial; el desplegable sale de
+    // `adminApi.groupOptions()`, no de una lista fija (migración 0025).
+    grupoAdmin: ['frutas', Validators.required],
     precio: [0, [Validators.required, Validators.min(1)]],
     precioCosto: [0, [Validators.required, Validators.min(1)]],
     unidad: ['unidad', Validators.required],
@@ -163,7 +163,7 @@ export class EditProduct {
           slug: prod.slug,
           tagline: prod.tagline,
           categoriaId: prod.categoriaId,
-          grupoAdmin: prod.grupoAdmin as 'frutas' | 'verduras' | 'agroindustriales',
+          grupoAdmin: prod.grupoAdmin,
           precio: prod.precio,
           precioCosto: prod.precioCosto ?? 0,
           unidad: prod.unidad,
@@ -183,6 +183,9 @@ export class EditProduct {
     // entrar directo por URL, y la ficha parecería no tener categoría.
     if (this.adminApi.categories().length === 0) {
       this.adminApi.loadCategories();
+    }
+    if (this.adminApi.adminGroups().length === 0) {
+      this.adminApi.loadAdminGroups();
     }
 
     this.loadProduct();

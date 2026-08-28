@@ -11,14 +11,16 @@
         </svg>
         Volver al inventario
       </a>
-      <h1 class="mt-4 text-h2 text-ink">Categorías</h1>
+      <h1 class="mt-4 text-h2 text-ink">Grupos</h1>
       <p class="mt-2 max-w-2xl text-sm text-ink-soft">
-        Las secciones de la tienda. Son los chips que el cliente ve encima de la
-        vitrina y la lista con la que archivas cada producto.
+        La agrupación macro del panel de compras: "Frutas", "Verduras",
+        "Agroindustriales"... Es lo que eligen Inventario, Reportes y
+        Consolidado, y con lo que se archiva cada categoría y cada producto.
+        No lo ve el cliente.
       </p>
     </div>
 
-    @if (adminApi.categoriesError(); as error) {
+    @if (adminApi.adminGroupsError(); as error) {
       <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4">
         <p class="text-sm font-semibold text-berry">No se pudieron cargar</p>
         <p class="mt-1 text-sm text-ink-soft">{{ error }}</p>
@@ -35,17 +37,17 @@
     <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div class="flex gap-8">
         <div>
-          <p class="tabular font-display text-h3 text-moss">{{ adminApi.categories().length }}</p>
-          <p class="text-sm text-ink-soft">categorías</p>
+          <p class="tabular font-display text-h3 text-moss">{{ adminApi.adminGroups().length }}</p>
+          <p class="text-sm text-ink-soft">grupos</p>
         </div>
         <div>
-          <p class="tabular font-display text-h3 text-ink">{{ totalProductos() }}</p>
-          <p class="text-sm text-ink-soft">productos archivados</p>
+          <p class="tabular font-display text-h3 text-ink">{{ totalEnUso() }}</p>
+          <p class="text-sm text-ink-soft">categorías y productos archivados</p>
         </div>
         @if (sinUsar() > 0) {
           <div>
             <p class="tabular font-display text-h3 text-clay">{{ sinUsar() }}</p>
-            <p class="text-sm text-ink-soft">sin ningún producto</p>
+            <p class="text-sm text-ink-soft">sin nada dentro</p>
           </div>
         }
       </div>
@@ -56,7 +58,7 @@
           class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep"
           (click)="startCreate()"
         >
-          Nueva categoría
+          Nuevo grupo
         </button>
       }
     </div>
@@ -68,10 +70,10 @@
         (ngSubmit)="save()"
         class="mb-6 rounded-lg border border-moss/30 bg-bone p-6"
       >
-        <p class="text-sm font-semibold text-ink">Nueva categoría</p>
+        <p class="text-sm font-semibold text-ink">Nuevo grupo</p>
         <p class="mt-1 text-sm text-ink-soft">
           El identificador se saca del nombre y ya no se puede cambiar: es por
-          donde apuntan los productos.
+          donde apuntan las categorías y los productos.
         </p>
 
         <ng-container [ngTemplateOutlet]="campos" />
@@ -82,7 +84,7 @@
             class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:opacity-50"
             [disabled]="saving()"
           >
-            {{ saving() ? 'Creando…' : 'Crear categoría' }}
+            {{ saving() ? 'Creando…' : 'Crear grupo' }}
           </button>
           <button
             type="button"
@@ -100,27 +102,30 @@
     }
 
     <!-- Listado -->
-    @if (adminApi.categoriesLoading() && adminApi.categories().length === 0) {
+    @if (adminApi.adminGroupsLoading() && adminApi.adminGroups().length === 0) {
       <div class="rounded-lg border border-sand bg-bone p-8 text-center">
-        <p class="text-sm text-ink-soft">Cargando categorías…</p>
+        <p class="text-sm text-ink-soft">Cargando grupos…</p>
       </div>
     } @else {
       <ul class="flex flex-col gap-3">
-        @for (categoria of adminApi.categories(); track categoria.id) {
-          @let editando = editingId() === categoria.id;
-          @let productos = categoria.productos ?? 0;
-          @let apagada = categoria.activo === 0;
+        @for (grupo of adminApi.adminGroups(); track grupo.id) {
+          @let editando = editingId() === grupo.id;
+          @let categorias = grupo.categorias ?? 0;
+          @let productos = grupo.productos ?? 0;
+          @let enUso = categorias + productos;
+          @let apagado = grupo.activo === 0;
 
           <li
             class="rounded-lg border bg-bone transition-colors duration-200"
-            [class]="apagada ? 'border-sand/60' : 'border-sand'"
+            [class]="apagado ? 'border-sand/60' : 'border-sand'"
           >
             @if (editando) {
               <form [formGroup]="form" (ngSubmit)="save()" class="p-6">
-                <p class="text-sm font-semibold text-ink">Editar «{{ categoria.nombre }}»</p>
+                <p class="text-sm font-semibold text-ink">Editar «{{ grupo.nombre }}»</p>
                 <p class="mt-1 text-sm text-ink-soft">
-                  Identificador <code class="text-ink">{{ categoria.id }}</code> — no se
-                  cambia; lo usan {{ productos }} producto(s) para saber dónde están.
+                  Identificador <code class="text-ink">{{ grupo.id }}</code> — no se
+                  cambia; lo usan {{ categorias }} categoría(s) y {{ productos }}
+                  producto(s) para saber a qué grupo pertenecen.
                 </p>
 
                 <ng-container [ngTemplateOutlet]="campos" />
@@ -148,53 +153,41 @@
               </form>
             } @else {
               <div class="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
-                <!-- La silueta tal cual se ve en la tienda, para reconocer la fila de un vistazo -->
-                <span
-                  class="flex size-10 shrink-0 items-center justify-center rounded-full border border-sand"
-                  [class]="apagada ? 'bg-linen/50 text-ink-muted' : 'bg-linen text-moss'"
-                  aria-hidden="true"
-                >
-                  <app-category-icon [name]="categoria.icono" svgClass="size-5" />
-                </span>
-
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center gap-2">
-                    <p class="text-sm font-semibold" [class]="apagada ? 'text-ink-muted' : 'text-ink'">
-                      {{ categoria.nombre }}
+                    <p class="text-sm font-semibold" [class]="apagado ? 'text-ink-muted' : 'text-ink'">
+                      {{ grupo.nombre }}
                     </p>
-                    <span class="text-overline rounded-full bg-linen px-2 py-0.5 font-semibold uppercase text-ink-muted">
-                      {{ grupoLabel(categoria.grupoAdmin) }}
-                    </span>
-                    @if (apagada) {
+                    @if (grupo.mostrarFiltroFino === 1) {
+                      <span
+                        class="text-overline rounded-full bg-sage-light px-2 py-0.5 font-semibold uppercase text-moss-deep"
+                        title="Muestra el desplegable de categoría fina en Inventario"
+                      >
+                        Filtro fino
+                      </span>
+                    }
+                    @if (apagado) {
                       <span class="text-overline rounded-full bg-clay/15 px-2 py-0.5 font-semibold uppercase text-clay-deep">
                         No se ofrece
                       </span>
                     }
                   </div>
 
-                  @if (categoria.descripcion) {
-                    <p class="mt-1 truncate text-sm text-ink-soft">{{ categoria.descripcion }}</p>
-                  } @else {
-                    <p class="mt-1 text-sm text-ink-muted">
-                      Sin descripción — es el subtítulo que se lee bajo el título de la rejilla.
-                    </p>
-                  }
-
                   <p class="tabular mt-1.5 text-xs text-ink-muted">
-                    <code>{{ categoria.id }}</code> · orden {{ categoria.orden }} ·
-                    {{ productos }} producto(s)
+                    <code>{{ grupo.id }}</code> · orden {{ grupo.orden }} ·
+                    {{ categorias }} categoría(s) · {{ productos }} producto(s)
                   </p>
                 </div>
 
                 <!-- Confirmación en el sitio: borrar es lo único irreversible aquí -->
-                @if (confirmingId() === categoria.id) {
+                @if (confirmingId() === grupo.id) {
                   <div class="flex items-center gap-3">
-                    <p class="text-sm text-ink-soft">¿Borrar «{{ categoria.nombre }}»?</p>
+                    <p class="text-sm text-ink-soft">¿Borrar «{{ grupo.nombre }}»?</p>
                     <button
                       type="button"
                       class="rounded-full bg-berry px-4 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:opacity-90 disabled:opacity-50"
-                      [disabled]="busyId() === categoria.id"
-                      (click)="confirmDelete(categoria.id)"
+                      [disabled]="busyId() === grupo.id"
+                      (click)="confirmDelete(grupo.id)"
                     >
                       Sí, borrar
                     </button>
@@ -211,7 +204,7 @@
                     <button
                       type="button"
                       class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
-                      (click)="startEdit(categoria)"
+                      (click)="startEdit(grupo)"
                     >
                       Editar
                     </button>
@@ -219,39 +212,37 @@
                     <button
                       type="button"
                       class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-stone disabled:opacity-50"
-                      [disabled]="busyId() === categoria.id"
+                      [disabled]="busyId() === grupo.id"
                       [title]="
-                        apagada
-                          ? 'Volver a ofrecer esta sección en la tienda'
-                          : 'Dejar de ofrecerla sin perder sus productos'
+                        apagado
+                          ? 'Volver a ofrecerlo en los desplegables'
+                          : 'Dejar de ofrecerlo sin perder lo que ya lo usa'
                       "
-                      (click)="toggleActive(categoria)"
+                      (click)="toggleActive(grupo)"
                     >
-                      {{ apagada ? 'Activar' : 'Desactivar' }}
+                      {{ apagado ? 'Activar' : 'Desactivar' }}
                     </button>
 
                     <!--
-                      Borrar solo si está vacía. Con productos dentro los
-                      dejaría apuntando a un id inexistente: desaparecerían de
-                      todos los chips y solo se encontrarían buscando por
-                      nombre. Es el fallo que esta tabla vino a cerrar, así que
-                      aquí ni se ofrece — para eso está «Desactivar».
+                      Borrar solo si no lo usa nada. Con categorías o productos
+                      dentro los dejaría apuntando a un id inexistente — para
+                      eso está «Desactivar».
                     -->
                     <button
                       type="button"
                       class="rounded-full border border-sand px-4 py-2 text-sm transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-40"
                       [class]="
-                        productos === 0
+                        enUso === 0
                           ? 'text-ink-soft hover:border-berry hover:text-berry'
                           : 'text-ink-muted'
                       "
-                      [disabled]="productos > 0 || busyId() === categoria.id"
+                      [disabled]="enUso > 0 || busyId() === grupo.id"
                       [title]="
-                        productos > 0
-                          ? 'Tiene ' + productos + ' producto(s) dentro. Muévelos a otra categoría o desactívala.'
-                          : 'Borrar esta categoría'
+                        enUso > 0
+                          ? 'Lo usan ' + categorias + ' categoría(s) y ' + productos + ' producto(s). Muévelos a otro grupo o desactívalo.'
+                          : 'Borrar este grupo'
                       "
-                      (click)="askDelete(categoria.id)"
+                      (click)="askDelete(grupo.id)"
                     >
                       Borrar
                     </button>
@@ -263,7 +254,8 @@
         } @empty {
           <li class="rounded-lg border border-sand bg-bone p-8 text-center">
             <p class="text-sm text-ink-soft">
-              No hay ninguna categoría todavía. Crea la primera para poder archivar productos.
+              No hay ningún grupo todavía. Crea el primero para poder clasificar
+              categorías y productos.
             </p>
           </li>
         }
@@ -280,86 +272,24 @@
 <ng-template #campos>
   <div class="mt-5 grid gap-4 sm:grid-cols-2">
     <div class="sm:col-span-2">
-      <label for="cat-nombre" class="block text-sm font-semibold text-ink">Nombre</label>
+      <label for="grp-nombre" class="block text-sm font-semibold text-ink">Nombre</label>
       <input
-        id="cat-nombre"
+        id="grp-nombre"
         type="text"
         formControlName="nombre"
         class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
         [class]="showError('nombre') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-        placeholder="Ej: Panadería"
+        placeholder="Ej: Lácteos y fermentados"
       />
       @if (showError('nombre')) {
         <p class="mt-2 text-sm text-berry">El nombre es requerido (mín. 2 caracteres)</p>
       }
     </div>
 
-    <div class="sm:col-span-2">
-      <label for="cat-descripcion" class="block text-sm font-semibold text-ink">
-        Descripción <span class="font-normal text-ink-muted">(opcional)</span>
-      </label>
-      <input
-        id="cat-descripcion"
-        type="text"
-        formControlName="descripcion"
-        class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
-        placeholder="Horneado el mismo día con harinas del altiplano."
-      />
-      <p class="mt-2 text-sm text-ink-soft">
-        Se lee bajo el título de la rejilla cuando el cliente elige esta sección.
-      </p>
-    </div>
-
-    <!--
-      La silueta del chip. Va con vista previa al lado porque el nombre de la
-      lista («Panal», «Frasco») no dice gran cosa hasta que se ve dibujado.
-    -->
-    <div class="sm:col-span-2">
-      <label for="cat-icono" class="block text-sm font-semibold text-ink">Ícono del chip</label>
-      <div class="mt-2 flex items-center gap-3">
-        <span
-          class="flex size-11 shrink-0 items-center justify-center rounded-full border border-sand bg-linen text-moss"
-          aria-hidden="true"
-        >
-          <app-category-icon [name]="form.controls.icono.value" svgClass="size-5" />
-        </span>
-        <select
-          id="cat-icono"
-          formControlName="icono"
-          class="w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
-        >
-          <option value="">Por defecto (hoja)</option>
-          @for (icono of iconos; track icono.value) {
-            <option [value]="icono.value">{{ icono.label }}</option>
-          }
-        </select>
-      </div>
-      <p class="mt-2 text-sm text-ink-soft">
-        Acompaña al nombre en la barra de la tienda. Se dibuja en un solo color
-        y toma el del chip, así que ninguna elección desentona.
-      </p>
-    </div>
-
     <div>
-      <label for="cat-grupo" class="block text-sm font-semibold text-ink">Grupo de compras</label>
-      <select
-        id="cat-grupo"
-        formControlName="grupoAdmin"
-        class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
-      >
-        @for (grupo of grupos(); track grupo.value) {
-          <option [value]="grupo.value">{{ grupo.label }}</option>
-        }
-      </select>
-      <p class="mt-2 text-sm text-ink-soft">
-        Cómo se agrupa en el inventario. No lo ve el cliente.
-      </p>
-    </div>
-
-    <div>
-      <label for="cat-orden" class="block text-sm font-semibold text-ink">Orden</label>
+      <label for="grp-orden" class="block text-sm font-semibold text-ink">Orden</label>
       <input
-        id="cat-orden"
+        id="grp-orden"
         type="number"
         formControlName="orden"
         min="0"
@@ -368,11 +298,28 @@
         [class]="showError('orden') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
       />
       <p class="mt-2 text-sm text-ink-soft">
-        Posición del chip en la tienda. El menor va primero.
+        Posición en los desplegables. El menor va primero.
       </p>
       @if (showError('orden')) {
         <p class="mt-2 text-sm text-berry">Tiene que ser 0 o más</p>
       }
+    </div>
+
+    <div class="flex items-end pb-1">
+      <label class="flex cursor-pointer items-start gap-2.5 text-sm text-ink">
+        <input
+          type="checkbox"
+          formControlName="mostrarFiltroFino"
+          class="mt-0.5 size-4 rounded border-sand text-moss focus:ring-moss"
+        />
+        <span>
+          Mezcla categorías muy distintas
+          <span class="mt-0.5 block text-xs font-normal text-ink-soft">
+            Muestra en Inventario un desplegable de categoría fina bajo este
+            grupo — como "Lácteos", "Mieles"… hoy bajo "Agroindustriales".
+          </span>
+        </span>
+      </label>
     </div>
   </div>
 </ng-template>

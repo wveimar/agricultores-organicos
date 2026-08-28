@@ -56,6 +56,20 @@ const CATEGORIES = [
 /** `categoria_id` → `grupo_admin`, que es lo que `products` guarda copiado. */
 const GRUPO_DE = new Map(CATEGORIES.map(([id, , , grupo]) => [id, grupo]));
 
+/**
+ * Los grupos del panel de compras (migración 0025), con la misma bandera de
+ * filtro fino que trae esa migración: solo 'agroindustriales' la enciende,
+ * porque mezcla categorías muy distintas (lácteos, mieles, panadería…).
+ *
+ * Van en su propia tabla porque `categories` y `products` ahora guardan
+ * `grupo_admin_id` como referencia a ella en vez de un literal fijo.
+ */
+const ADMIN_GROUPS = [
+  ['frutas', 'Frutas', 0, 10],
+  ['verduras', 'Verduras', 0, 20],
+  ['agroindustriales', 'Agroindustriales', 1, 30],
+];
+
 // ─────────────────── PBKDF2, idéntico al del Worker ───────────────────
 // 100.000: tope duro del runtime real de Cloudflare Workers, no una elección
 // de estilo. Ver el comentario largo en worker/src/auth/crypto.ts.
@@ -111,6 +125,8 @@ const lines = [
   'DELETE FROM user_roles;',
   'DELETE FROM users;',
   'DELETE FROM products;',
+  'DELETE FROM categories;',
+  'DELETE FROM admin_groups;',
   '',
   '-- ─────────────────────────── Usuarios ───────────────────────────',
 ];
@@ -125,6 +141,17 @@ for (const user of USERS) {
   }
 }
 
+lines.push('', '-- ────────────────────── Grupos del panel de compras ──────────────────────');
+
+// Antes que las categorías: `categories.grupo_admin_id` apunta aquí.
+for (const [id, nombre, mostrarFiltroFino, orden] of ADMIN_GROUPS) {
+  lines.push(
+    `INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden) VALUES (` +
+      [q(id), q(nombre), mostrarFiltroFino, orden].join(', ') +
+      ');',
+  );
+}
+
 lines.push('', '-- ─────────────────────────── Categorías ───────────────────────────');
 
 // Antes que los productos: `products.categoria_id` apunta aquí (por
@@ -132,7 +159,7 @@ lines.push('', '-- ────────────────────�
 // muestra ni un chip.
 for (const [id, nombre, descripcion, grupo, orden] of CATEGORIES) {
   lines.push(
-    `INSERT INTO categories (id, nombre, descripcion, grupo_admin, orden) VALUES (` +
+    `INSERT INTO categories (id, nombre, descripcion, grupo_admin_id, orden) VALUES (` +
       [q(id), q(nombre), q(descripcion), q(grupo), orden].join(', ') +
       ');',
   );
@@ -144,20 +171,25 @@ for (const p of PRODUCTS) {
   const grupo = GRUPO_DE.get(p.categoryId);
   if (!grupo) {
     // Un producto con una categoría que no está sembrada entraría con
-    // `grupo_admin` NULL y violaría el NOT NULL de la tabla — mejor un
-    // mensaje que diga cuál, que un error de SQLite a mitad del seed.
+    // `grupo_admin_id` en NULL — sin CHECK que lo impida, sería un producto
+    // sin grupo que ni saldría en los filtros de Inventario. Mejor un mensaje
+    // que diga cuál, que dejarlo pasar en silencio.
     throw new Error(
       `El producto ${p.id} usa la categoría "${p.categoryId}", que no está en CATEGORIES.`,
     );
   }
   lines.push(
-    `INSERT INTO products (id, slug, nombre, tagline, categoria_id, grupo_admin, precio, precio_costo, precio_anterior, unidad, origen, rating, review_count, badge, stock_actual, stock_seguridad, imagen, imagen_hover, imagen_alt) VALUES (` +
+    // `grupo_admin` (sin `_id`) lleva un valor fijo, no el real: es la columna
+    // vieja, `NOT NULL` sin DEFAULT, que la migración 0025 dejó sin usar
+    // porque quitarla exigía recrear `products`. Ver esa migración.
+    `INSERT INTO products (id, slug, nombre, tagline, categoria_id, grupo_admin, grupo_admin_id, precio, precio_costo, precio_anterior, unidad, origen, rating, review_count, badge, stock_actual, stock_seguridad, imagen, imagen_hover, imagen_alt) VALUES (` +
       [
         q(p.id),
         q(p.slug),
         q(p.name),
         q(p.tagline),
         q(p.categoryId),
+        q('agroindustriales'),
         q(grupo),
         p.price,
         p.costPrice,

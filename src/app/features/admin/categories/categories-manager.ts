@@ -4,7 +4,6 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiCategory, ApiErrorBody } from '../../../core/api/api-client';
-import { ADMIN_GROUP_LABELS } from '../../../core/models/product.model';
 import { CATEGORY_ICONS, CategoryIcon } from '../../../shared/category-icon/category-icon';
 
 /**
@@ -35,7 +34,15 @@ export class CategoriesManager {
   protected readonly adminApi = inject(AdminApiService);
   private readonly fb = inject(FormBuilder);
 
-  protected readonly grupos = ADMIN_GROUP_LABELS.filter((g) => g.value !== 'todos');
+  /**
+   * Los grupos que se pueden elegir en el formulario. Sale de la tabla
+   * `admin_groups` (migración 0025), sin el pseudo-valor 'todos' que sí lleva
+   * `groupOptions()` para los filtros de otras pantallas — aquí hay que
+   * elegir uno de verdad, no "todos a la vez".
+   */
+  protected readonly grupos = computed(() =>
+    this.adminApi.groupOptions().filter((g) => g.value !== 'todos'),
+  );
 
   /** Las siluetas entre las que se elige. El repertorio vive en `CategoryIcon`. */
   protected readonly iconos = CATEGORY_ICONS;
@@ -56,12 +63,13 @@ export class CategoriesManager {
     // Sin validador: la lista del desplegable ya acota lo que se puede elegir,
     // y vacío es un valor legítimo — significa «la de por defecto».
     icono: [''],
-    grupoAdmin: ['agroindustriales' as 'frutas' | 'verduras' | 'agroindustriales'],
+    grupoAdmin: ['agroindustriales'],
     orden: [100, [Validators.required, Validators.min(0)]],
   });
 
   constructor() {
     this.adminApi.loadCategories();
+    this.adminApi.loadAdminGroups();
   }
 
   protected readonly creando = computed(() => this.editingId() === 'nueva');
@@ -198,6 +206,6 @@ export class CategoriesManager {
   }
 
   protected grupoLabel(value: string): string {
-    return this.grupos.find((g) => g.value === value)?.label ?? value;
+    return this.grupos().find((g) => g.value === value)?.label ?? value;
   }
 }

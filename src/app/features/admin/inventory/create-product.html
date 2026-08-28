@@ -84,7 +84,7 @@
         }
       </div>
 
-      <!-- Grupo Admin -->
+      <!-- Grupo Admin: sale de admin_groups, no de una lista fija (0025) -->
       <div>
         <label for="grupo" class="block text-sm font-semibold text-ink">Grupo</label>
         <select
@@ -92,9 +92,9 @@
           formControlName="grupoAdmin"
           class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
         >
-          <option value="frutas">Frutas</option>
-          <option value="verduras">Verduras</option>
-          <option value="agroindustriales">Agroindustriales</option>
+          @for (grupo of adminApi.selectableAdminGroups(); track grupo.id) {
+            <option [value]="grupo.id">{{ grupo.nombre }}</option>
+          }
         </select>
       </div>
 

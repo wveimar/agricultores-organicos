@@ -87,12 +87,37 @@ export interface ApiCategory {
    * defecto, que es lo que trae una categoría recién creada.
    */
   readonly icono: string;
-  readonly grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
+  /** Id de la fila en `admin_groups`. Desde la 0025 ya no es un literal fijo. */
+  readonly grupoAdmin: string;
   /** Posición del chip. Menor va antes. */
   readonly orden: number;
   readonly activo: 0 | 1;
   readonly actualizadoEn: string;
   /** Cuántos productos cuelgan de ella. Solo en `/api/admin/categories`. */
+  readonly productos?: number;
+}
+
+/**
+ * Un grupo del panel de compras ("Frutas", "Verduras", "Agroindustriales"...).
+ *
+ * Eran tres literales fijos; desde la migración 0025 son filas de
+ * `admin_groups`, editables desde Inventario → Grupos.
+ */
+export interface ApiAdminGroup {
+  readonly id: string;
+  readonly nombre: string;
+  /**
+   * "Este grupo mezcla categorías muy distintas, mostrar filtro adicional" —
+   * la casilla que en Inventario abre el desplegable de categoría fina bajo
+   * este grupo. Reemplaza comparar el nombre contra el literal
+   * 'agroindustriales': ahora cualquier grupo puede encenderla.
+   */
+  readonly mostrarFiltroFino: 0 | 1;
+  readonly orden: number;
+  readonly activo: 0 | 1;
+  readonly actualizadoEn: string;
+  /** Cuántas categorías y productos lo usan. Solo en `/api/admin/admin-groups`. */
+  readonly categorias?: number;
   readonly productos?: number;
 }
 
@@ -796,7 +821,7 @@ export class ApiClient {
     id?: string;
     descripcion?: string;
     icono?: string;
-    grupoAdmin?: 'frutas' | 'verduras' | 'agroindustriales';
+    grupoAdmin?: string;
     orden?: number;
     activo?: 0 | 1;
   }): Observable<ApiCategory> {
@@ -812,7 +837,7 @@ export class ApiClient {
       nombre: string;
       descripcion: string;
       icono: string;
-      grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
+      grupoAdmin: string;
       orden: number;
       activo: 0 | 1;
     }>,
@@ -826,6 +851,50 @@ export class ApiClient {
   deleteCategory(id: string): Observable<void> {
     return this.http
       .delete<{ ok: true }>(`/api/admin/categories/${id}`)
+      .pipe(map(() => undefined), catchError(handleError));
+  }
+
+  // ────────────────────── Grupos del panel de compras ──────────────────────
+
+  /** Todos, con cuántas categorías y productos usa cada uno. */
+  adminGroups(): Observable<readonly ApiAdminGroup[]> {
+    return this.http
+      .get<{ grupos: ApiAdminGroup[] }>('/api/admin/admin-groups')
+      .pipe(map((res) => res.grupos), catchError(handleError));
+  }
+
+  createAdminGroup(input: {
+    nombre: string;
+    /** Se deduce del nombre si no se manda. */
+    id?: string;
+    mostrarFiltroFino?: boolean;
+    orden?: number;
+    activo?: 0 | 1;
+  }): Observable<ApiAdminGroup> {
+    return this.http
+      .post<{ grupo: ApiAdminGroup }>('/api/admin/admin-groups', input)
+      .pipe(map((res) => res.grupo), catchError(handleError));
+  }
+
+  /** El `id` no se puede cambiar: es por donde apuntan categorías y productos. */
+  updateAdminGroup(
+    id: string,
+    patch: Partial<{
+      nombre: string;
+      mostrarFiltroFino: boolean;
+      orden: number;
+      activo: 0 | 1;
+    }>,
+  ): Observable<ApiAdminGroup> {
+    return this.http
+      .put<{ grupo: ApiAdminGroup }>(`/api/admin/admin-groups/${id}`, patch)
+      .pipe(map((res) => res.grupo), catchError(handleError));
+  }
+
+  /** Falla con `grupo-en-uso` si todavía hay categorías o productos dentro. */
+  deleteAdminGroup(id: string): Observable<void> {
+    return this.http
+      .delete<{ ok: true }>(`/api/admin/admin-groups/${id}`)
       .pipe(map(() => undefined), catchError(handleError));
   }
 
@@ -881,7 +950,7 @@ export class ApiClient {
     slug?: string;
     tagline?: string;
     categoriaId: string;
-    grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
+    grupoAdmin: string;
     precio: number;
     precioCosto?: number;
     unidad: string;
@@ -928,7 +997,7 @@ export class ApiClient {
     slug?: string;
     tagline?: string;
     categoriaId: string;
-    grupoAdmin: 'frutas' | 'verduras' | 'agroindustriales';
+    grupoAdmin: string;
     precio: number;
     precioCosto: number;
     unidad: string;

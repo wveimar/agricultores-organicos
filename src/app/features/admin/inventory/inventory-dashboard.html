@@ -71,7 +71,7 @@
 <!-- Filtros -->
 <div class="mt-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
   <div class="flex flex-wrap gap-2" role="tablist" aria-label="Filtrar por grupo">
-    @for (group of groups; track group.value) {
+    @for (group of groups(); track group.value) {
       @let isActive = activeGroup() === group.value;
       <button
         type="button"

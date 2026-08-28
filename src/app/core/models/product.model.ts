@@ -249,22 +249,20 @@ export function marginPercentOf(product: Product): number {
 }
 
 /**
- * Agrupación macro que usa el panel de inventario. El catálogo público tiene
- * seis categorías de cara al cliente; compras razona con estas tres.
+ * Agrupación macro que usa el panel de inventario.
+ *
+ * Era una unión de tres literales fijos («frutas» | «verduras» |
+ * «agroindustriales»). Desde la migración 0025 los grupos son filas de
+ * `admin_groups`, editables desde el panel (Inventario → Grupos), así que el
+ * tipo se amplía a `string` — igual que le pasó a `CategoryId` cuando las
+ * categorías dejaron de ser una constante compilada.
  */
-export type AdminGroup = 'frutas' | 'verduras' | 'agroindustriales';
+export type AdminGroup = string;
 
-// `ADMIN_GROUP_OF` vivía aquí: un `Record<CategoryId, AdminGroup>` que había
-// que ampliar a mano con cada categoría nueva. Ahora el grupo es la columna
-// `grupo_admin` de la tabla `categories` y llega en `Category.adminGroup`, que
-// es lo único que puede cubrir una categoría creada desde el panel.
-
-export const ADMIN_GROUP_LABELS: ReadonlyArray<{ value: AdminGroup | 'todos'; label: string }> = [
-  { value: 'todos', label: 'Todo el inventario' },
-  { value: 'frutas', label: 'Frutas' },
-  { value: 'verduras', label: 'Verduras' },
-  { value: 'agroindustriales', label: 'Agroindustriales' },
-];
+// `ADMIN_GROUP_LABELS` vivía aquí: un array fijo con las tres opciones y sus
+// etiquetas. Ahora la lista sale de `adminApi.groupOptions()`, que lee la
+// tabla `admin_groups` — es lo único que puede cubrir un grupo creado o
+// renombrado desde el panel sin recompilar.
 
 export type SortOption = 'destacados' | 'precio-asc' | 'precio-desc' | 'mejor-valorados';
 

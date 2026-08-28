@@ -121,7 +121,7 @@ export async function sales(env: Env, user: JwtPayload): Promise<Response> {
             (a.ingresos - a.costo)                       AS ganancia,
             a.pedidos,
             p.origen,
-            p.grupo_admin                                AS grupoAdmin,
+            p.grupo_admin_id                             AS grupoAdmin,
             p.stock_actual                               AS stockRestante,
             p.imagen,
             p.imagen_alt                                 AS imagenAlt,
@@ -650,7 +650,7 @@ export async function consolidation(
               COUNT(DISTINCT l.order_id)            AS pedidos,
               COALESCE(MAX(p.unidad), 'unidad')      AS unidad,
               COALESCE(MAX(p.cantidad_unidad), 1)    AS cantidadUnidad,
-              COALESCE(MAX(p.grupo_admin), 'verduras') AS grupoAdmin,
+              COALESCE(MAX(p.grupo_admin_id), 'verduras') AS grupoAdmin,
               -- Categoría fina (lácteos, mieles, verduras...), no solo el grupo
               -- macro: es lo que deja filtrar el consolidado por línea de
               -- negocio real y no solo por "agroindustriales" en bloque.

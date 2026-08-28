@@ -41,6 +41,8 @@ DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS contacts;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS categories;
+-- Después de `products` y `categories`, que le apuntan desde la 0025.
+DROP TABLE IF EXISTS admin_groups;
 DROP TABLE IF EXISTS login_attempts;
 
 -- ────────────────────────────── Usuarios y roles ──────────────────────────────
@@ -183,6 +185,27 @@ CREATE INDEX idx_contacts_cliente   ON contacts (es_cliente,   activo, nombre);
 -- nadie tiene crédito, y los que no lo tienen no ocupan sitio en el índice.
 CREATE INDEX idx_contacts_credito   ON contacts (cupo_credito) WHERE cupo_credito > 0;
 
+-- ────────────────────── Grupos del panel de compras (0025) ──────────────────────
+-- "Frutas" / "Verduras" / "Agroindustriales" vivían fijos en un CHECK de
+-- `products`, otro de `categories` y un tipo de TypeScript. Ahora son filas,
+-- igual que las categorías desde la 0013.
+
+CREATE TABLE admin_groups (
+  id                  TEXT    PRIMARY KEY,
+  nombre              TEXT    NOT NULL,
+  -- Casilla "mostrar filtro adicional" de Inventario. Reemplaza comparar el
+  -- nombre del grupo contra el literal 'agroindustriales': ahora el filtro
+  -- fino se activa por esta bandera, así que renombrar o crear un grupo con
+  -- el mismo comportamiento no depende de acertarle al texto exacto.
+  mostrar_filtro_fino INTEGER NOT NULL DEFAULT 0 CHECK (mostrar_filtro_fino IN (0, 1)),
+  orden               INTEGER NOT NULL DEFAULT 100,
+  activo              INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
+  creado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
+  actualizado_en      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_admin_groups_orden ON admin_groups (activo, orden);
+
 -- ─────────────────────────────── Categorías ───────────────────────────────
 -- Las secciones de la vitrina (migración 0013). `products.categoria_id` apunta
 -- aquí por convención, sin FK: la restricción se añadiría recreando `products`
@@ -192,8 +215,16 @@ CREATE TABLE categories (
   id             TEXT    PRIMARY KEY,
   nombre         TEXT    NOT NULL,
   descripcion    TEXT    NOT NULL DEFAULT '',
+  -- ⚠ SIN USO desde la migración 0025. El grupo se mudó a `grupo_admin_id`
+  -- (más abajo), que referencia la tabla `admin_groups` en vez de un CHECK con
+  -- tres literales fijos. Sigue aquí porque quitarla no compensa, pero el
+  -- panel ya no la lee ni la escribe.
   grupo_admin    TEXT    NOT NULL DEFAULT 'agroindustriales'
                          CHECK (grupo_admin IN ('frutas', 'verduras', 'agroindustriales')),
+  -- El grupo de verdad. Sin CHECK: la validez la exige la aplicación contra
+  -- `admin_groups`, igual que ya hace `categoria_id` en `products` — así un
+  -- grupo nuevo no exige tocar el esquema.
+  grupo_admin_id TEXT    REFERENCES admin_groups(id) ON DELETE SET NULL,
   -- Posición del chip en la vitrina. Menor va antes.
   orden          INTEGER NOT NULL DEFAULT 100,
   activo         INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
@@ -214,7 +245,15 @@ CREATE TABLE products (
   tagline         TEXT    NOT NULL DEFAULT '',
   categoria_id    TEXT    NOT NULL,
   -- Agrupación macro que usa el panel de compras.
+  -- ⚠ SIN USO desde la migración 0025 — ver el mismo aviso en `categories`.
   grupo_admin     TEXT    NOT NULL CHECK (grupo_admin IN ('frutas', 'verduras', 'agroindustriales')),
+  -- El grupo de verdad, sin CHECK. `products` tiene FK con ON DELETE RESTRICT
+  -- desde `order_items`/`order_item_components`/`provider_purchase_items`, así
+  -- que quitar el CHECK de la columna vieja exigiría recrearla arrastrando el
+  -- histórico de ventas y compras — de ahí la columna nueva en vez de tocar la
+  -- de siempre. Mismo motivo que documenta la migración 0012 para no recrear
+  -- esta tabla al añadir las variantes.
+  grupo_admin_id  TEXT    REFERENCES admin_groups(id) ON DELETE SET NULL,
 
   precio          INTEGER NOT NULL CHECK (precio >= 0),
   -- Lo que se le paga a la finca. Nunca sale en la API pública.
@@ -273,7 +312,7 @@ CREATE TABLE products (
 -- El catálogo público filtra por activo y agrupa por categoría: un índice
 -- parcial deja fuera las filas inactivas y mantiene el escaneo mínimo.
 CREATE INDEX idx_products_categoria ON products (categoria_id) WHERE activo = 1;
-CREATE INDEX idx_products_grupo     ON products (grupo_admin)  WHERE activo = 1;
+CREATE INDEX idx_products_grupo     ON products (grupo_admin_id)  WHERE activo = 1;
 -- Alertas de reposición: se resuelve leyendo solo el índice.
 CREATE INDEX idx_products_stock     ON products (stock_actual, stock_seguridad) WHERE activo = 1;
 -- "¿Quiénes son las hijas de este id?", una vez por padre. Parcial: las filas
