@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
@@ -26,7 +25,7 @@ import { CATEGORY_ICONS, CategoryIcon } from '../../../shared/category-icon/cate
  */
 @Component({
   selector: 'app-categories-manager',
-  imports: [ReactiveFormsModule, RouterLink, NgTemplateOutlet, CategoryIcon],
+  imports: [ReactiveFormsModule, RouterLink, CategoryIcon],
   templateUrl: './categories-manager.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

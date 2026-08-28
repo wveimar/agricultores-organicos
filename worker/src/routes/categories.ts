@@ -47,6 +47,20 @@ function readIcono(value: unknown): string {
 }
 
 /**
+ * La descripción es opcional de verdad — así lo dice el formulario y así lo
+ * permite la columna (`DEFAULT ''`) — así que vacía es un valor válido, no
+ * ausencia de valor. `requireString()` a secas la habría rechazado con "el
+ * campo es obligatorio", porque no distingue "no mandaste nada" de "mandaste
+ * una cadena vacía a propósito": el formulario SIEMPRE manda la clave
+ * (`FormControl` nunca es `undefined`), así que sin este caso especial crear
+ * o editar una categoría con la descripción en blanco fallaba siempre. Mismo
+ * patrón que `readIcono()`, un campo con la misma forma justo aquí arriba.
+ */
+function readDescripcion(value: unknown): string {
+  return value === '' ? '' : requireString(value, 'descripcion', 200);
+}
+
+/**
  * Normaliza un nombre a un id usable: «Panadería fina» → `panaderia-fina`.
  *
  * Sin tildes ni eñes a propósito. El id acaba en la URL de los filtros y en
@@ -142,7 +156,7 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
     .bind(
       id,
       nombre,
-      body.descripcion === undefined ? '' : requireString(body.descripcion, 'descripcion', 200),
+      body.descripcion === undefined ? '' : readDescripcion(body.descripcion),
       body.icono === undefined ? '' : readIcono(body.icono),
       grupoAdmin,
       body.orden === undefined ? 100 : Number(body.orden),
@@ -182,7 +196,7 @@ export async function update(
   }
   if (body.descripcion !== undefined) {
     sets.push(
-      `descripcion = ?${bindings.push(requireString(body.descripcion, 'descripcion', 200))}`,
+      `descripcion = ?${bindings.push(readDescripcion(body.descripcion))}`,
     );
   }
   if (body.icono !== undefined) {

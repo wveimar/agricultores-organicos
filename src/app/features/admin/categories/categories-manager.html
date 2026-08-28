@@ -74,7 +74,115 @@
           donde apuntan los productos.
         </p>
 
-        <ng-container [ngTemplateOutlet]="campos" />
+        <!--
+          Los campos van inline y no en un `<ng-template>` con
+          `ngTemplateOutlet` a propósito: ese patrón NO propaga el
+          `ControlContainer` de este `[formGroup]` hacia el contenido
+          proyectado (Angular resuelve la inyección del contenido de un
+          `ng-template` por dónde se DECLARA, no por dónde se usa el
+          outlet), así que cada `formControlName` de dentro fallaba con
+          NG01050 y el campo quedaba visualmente escrito pero nunca
+          conectado al control real — el error de validación se congelaba
+          en lo que fuera que tuviera el control al momento del fallo.
+        -->
+        <div class="mt-5 grid gap-4 sm:grid-cols-2">
+          <div class="sm:col-span-2">
+            <label for="cat-nombre" class="block text-sm font-semibold text-ink">Nombre</label>
+            <input
+              id="cat-nombre"
+              type="text"
+              formControlName="nombre"
+              class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+              [class]="showError('nombre') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+              placeholder="Ej: Panadería"
+            />
+            @if (showError('nombre')) {
+              <p class="mt-2 text-sm text-berry">El nombre es requerido (mín. 2 caracteres)</p>
+            }
+          </div>
+
+          <div class="sm:col-span-2">
+            <label for="cat-descripcion" class="block text-sm font-semibold text-ink">
+              Descripción <span class="font-normal text-ink-muted">(opcional)</span>
+            </label>
+            <input
+              id="cat-descripcion"
+              type="text"
+              formControlName="descripcion"
+              class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+              placeholder="Horneado el mismo día con harinas del altiplano."
+            />
+            <p class="mt-2 text-sm text-ink-soft">
+              Se lee bajo el título de la rejilla cuando el cliente elige esta sección.
+            </p>
+          </div>
+
+          <!--
+            La silueta del chip. Va con vista previa al lado porque el nombre
+            de la lista («Panal», «Frasco») no dice gran cosa hasta que se ve
+            dibujado.
+          -->
+          <div class="sm:col-span-2">
+            <label for="cat-icono" class="block text-sm font-semibold text-ink">Ícono del chip</label>
+            <div class="mt-2 flex items-center gap-3">
+              <span
+                class="flex size-11 shrink-0 items-center justify-center rounded-full border border-sand bg-linen text-moss"
+                aria-hidden="true"
+              >
+                <app-category-icon [name]="form.controls.icono.value" svgClass="size-5" />
+              </span>
+              <select
+                id="cat-icono"
+                formControlName="icono"
+                class="w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+              >
+                <option value="">Por defecto (hoja)</option>
+                @for (icono of iconos; track icono.value) {
+                  <option [value]="icono.value">{{ icono.label }}</option>
+                }
+              </select>
+            </div>
+            <p class="mt-2 text-sm text-ink-soft">
+              Acompaña al nombre en la barra de la tienda. Se dibuja en un solo
+              color y toma el del chip, así que ninguna elección desentona.
+            </p>
+          </div>
+
+          <div>
+            <label for="cat-grupo" class="block text-sm font-semibold text-ink">Grupo de compras</label>
+            <select
+              id="cat-grupo"
+              formControlName="grupoAdmin"
+              class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+            >
+              @for (grupo of grupos(); track grupo.value) {
+                <option [value]="grupo.value">{{ grupo.label }}</option>
+              }
+            </select>
+            <p class="mt-2 text-sm text-ink-soft">
+              Cómo se agrupa en el inventario. No lo ve el cliente.
+            </p>
+          </div>
+
+          <div>
+            <label for="cat-orden" class="block text-sm font-semibold text-ink">Orden</label>
+            <input
+              id="cat-orden"
+              type="number"
+              formControlName="orden"
+              min="0"
+              step="10"
+              class="tabular mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200"
+              [class]="showError('orden') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+            />
+            <p class="mt-2 text-sm text-ink-soft">
+              Posición del chip en la tienda. El menor va primero.
+            </p>
+            @if (showError('orden')) {
+              <p class="mt-2 text-sm text-berry">Tiene que ser 0 o más</p>
+            }
+          </div>
+        </div>
 
         <div class="mt-5 flex items-center gap-3">
           <button
@@ -123,7 +231,101 @@
                   cambia; lo usan {{ productos }} producto(s) para saber dónde están.
                 </p>
 
-                <ng-container [ngTemplateOutlet]="campos" />
+                <!-- Mismos campos que "Nueva categoría" — ver la nota junto a ese formulario. -->
+                <div class="mt-5 grid gap-4 sm:grid-cols-2">
+                  <div class="sm:col-span-2">
+                    <label for="cat-nombre" class="block text-sm font-semibold text-ink">Nombre</label>
+                    <input
+                      id="cat-nombre"
+                      type="text"
+                      formControlName="nombre"
+                      class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
+                      [class]="showError('nombre') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+                      placeholder="Ej: Panadería"
+                    />
+                    @if (showError('nombre')) {
+                      <p class="mt-2 text-sm text-berry">El nombre es requerido (mín. 2 caracteres)</p>
+                    }
+                  </div>
+
+                  <div class="sm:col-span-2">
+                    <label for="cat-descripcion" class="block text-sm font-semibold text-ink">
+                      Descripción <span class="font-normal text-ink-muted">(opcional)</span>
+                    </label>
+                    <input
+                      id="cat-descripcion"
+                      type="text"
+                      formControlName="descripcion"
+                      class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+                      placeholder="Horneado el mismo día con harinas del altiplano."
+                    />
+                    <p class="mt-2 text-sm text-ink-soft">
+                      Se lee bajo el título de la rejilla cuando el cliente elige esta sección.
+                    </p>
+                  </div>
+
+                  <div class="sm:col-span-2">
+                    <label for="cat-icono" class="block text-sm font-semibold text-ink">Ícono del chip</label>
+                    <div class="mt-2 flex items-center gap-3">
+                      <span
+                        class="flex size-11 shrink-0 items-center justify-center rounded-full border border-sand bg-linen text-moss"
+                        aria-hidden="true"
+                      >
+                        <app-category-icon [name]="form.controls.icono.value" svgClass="size-5" />
+                      </span>
+                      <select
+                        id="cat-icono"
+                        formControlName="icono"
+                        class="w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+                      >
+                        <option value="">Por defecto (hoja)</option>
+                        @for (icono of iconos; track icono.value) {
+                          <option [value]="icono.value">{{ icono.label }}</option>
+                        }
+                      </select>
+                    </div>
+                    <p class="mt-2 text-sm text-ink-soft">
+                      Acompaña al nombre en la barra de la tienda. Se dibuja en
+                      un solo color y toma el del chip, así que ninguna
+                      elección desentona.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label for="cat-grupo" class="block text-sm font-semibold text-ink">Grupo de compras</label>
+                    <select
+                      id="cat-grupo"
+                      formControlName="grupoAdmin"
+                      class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+                    >
+                      @for (grupo of grupos(); track grupo.value) {
+                        <option [value]="grupo.value">{{ grupo.label }}</option>
+                      }
+                    </select>
+                    <p class="mt-2 text-sm text-ink-soft">
+                      Cómo se agrupa en el inventario. No lo ve el cliente.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label for="cat-orden" class="block text-sm font-semibold text-ink">Orden</label>
+                    <input
+                      id="cat-orden"
+                      type="number"
+                      formControlName="orden"
+                      min="0"
+                      step="10"
+                      class="tabular mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200"
+                      [class]="showError('orden') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+                    />
+                    <p class="mt-2 text-sm text-ink-soft">
+                      Posición del chip en la tienda. El menor va primero.
+                    </p>
+                    @if (showError('orden')) {
+                      <p class="mt-2 text-sm text-berry">Tiene que ser 0 o más</p>
+                    }
+                  </div>
+                </div>
 
                 <div class="mt-5 flex items-center gap-3">
                   <button
@@ -271,108 +473,3 @@
     }
   </div>
 </div>
-
-<!--
-  Los campos son los mismos al crear y al editar, así que viven una sola vez.
-  El identificador no está aquí a propósito: al crear se deduce del nombre, y
-  al editar no se puede cambiar.
--->
-<ng-template #campos>
-  <div class="mt-5 grid gap-4 sm:grid-cols-2">
-    <div class="sm:col-span-2">
-      <label for="cat-nombre" class="block text-sm font-semibold text-ink">Nombre</label>
-      <input
-        id="cat-nombre"
-        type="text"
-        formControlName="nombre"
-        class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-        [class]="showError('nombre') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-        placeholder="Ej: Panadería"
-      />
-      @if (showError('nombre')) {
-        <p class="mt-2 text-sm text-berry">El nombre es requerido (mín. 2 caracteres)</p>
-      }
-    </div>
-
-    <div class="sm:col-span-2">
-      <label for="cat-descripcion" class="block text-sm font-semibold text-ink">
-        Descripción <span class="font-normal text-ink-muted">(opcional)</span>
-      </label>
-      <input
-        id="cat-descripcion"
-        type="text"
-        formControlName="descripcion"
-        class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
-        placeholder="Horneado el mismo día con harinas del altiplano."
-      />
-      <p class="mt-2 text-sm text-ink-soft">
-        Se lee bajo el título de la rejilla cuando el cliente elige esta sección.
-      </p>
-    </div>
-
-    <!--
-      La silueta del chip. Va con vista previa al lado porque el nombre de la
-      lista («Panal», «Frasco») no dice gran cosa hasta que se ve dibujado.
-    -->
-    <div class="sm:col-span-2">
-      <label for="cat-icono" class="block text-sm font-semibold text-ink">Ícono del chip</label>
-      <div class="mt-2 flex items-center gap-3">
-        <span
-          class="flex size-11 shrink-0 items-center justify-center rounded-full border border-sand bg-linen text-moss"
-          aria-hidden="true"
-        >
-          <app-category-icon [name]="form.controls.icono.value" svgClass="size-5" />
-        </span>
-        <select
-          id="cat-icono"
-          formControlName="icono"
-          class="w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
-        >
-          <option value="">Por defecto (hoja)</option>
-          @for (icono of iconos; track icono.value) {
-            <option [value]="icono.value">{{ icono.label }}</option>
-          }
-        </select>
-      </div>
-      <p class="mt-2 text-sm text-ink-soft">
-        Acompaña al nombre en la barra de la tienda. Se dibuja en un solo color
-        y toma el del chip, así que ninguna elección desentona.
-      </p>
-    </div>
-
-    <div>
-      <label for="cat-grupo" class="block text-sm font-semibold text-ink">Grupo de compras</label>
-      <select
-        id="cat-grupo"
-        formControlName="grupoAdmin"
-        class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
-      >
-        @for (grupo of grupos(); track grupo.value) {
-          <option [value]="grupo.value">{{ grupo.label }}</option>
-        }
-      </select>
-      <p class="mt-2 text-sm text-ink-soft">
-        Cómo se agrupa en el inventario. No lo ve el cliente.
-      </p>
-    </div>
-
-    <div>
-      <label for="cat-orden" class="block text-sm font-semibold text-ink">Orden</label>
-      <input
-        id="cat-orden"
-        type="number"
-        formControlName="orden"
-        min="0"
-        step="10"
-        class="tabular mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200"
-        [class]="showError('orden') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-      />
-      <p class="mt-2 text-sm text-ink-soft">
-        Posición del chip en la tienda. El menor va primero.
-      </p>
-      @if (showError('orden')) {
-        <p class="mt-2 text-sm text-berry">Tiene que ser 0 o más</p>
-      }
-    </div>
-  </div>
-</ng-template>

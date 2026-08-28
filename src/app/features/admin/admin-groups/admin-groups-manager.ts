@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
@@ -26,7 +25,7 @@ import { ApiAdminGroup, ApiErrorBody } from '../../../core/api/api-client';
  */
 @Component({
   selector: 'app-admin-groups-manager',
-  imports: [ReactiveFormsModule, RouterLink, NgTemplateOutlet],
+  imports: [ReactiveFormsModule, RouterLink],
   templateUrl: './admin-groups-manager.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
