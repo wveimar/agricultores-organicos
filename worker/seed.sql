@@ -7,6 +7,11 @@
 --  por eso cambian en cada regeneración aunque la clave sea la misma.
 -- ============================================================
 
+DELETE FROM payment_allocations;
+DELETE FROM payments;
+DELETE FROM invoice_items;
+DELETE FROM invoices WHERE tipo <> 'factura';
+DELETE FROM invoices;
 DELETE FROM order_items;
 DELETE FROM orders;
 DELETE FROM contacts;
@@ -18,11 +23,11 @@ DELETE FROM categories;
 DELETE FROM admin_groups;
 
 -- ─────────────────────────── Usuarios ───────────────────────────
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-01', 'inventario@agricultores.co', 'Sara Villamil', 'pbkdf2$100000$cJ0hyArQhXSXiyIWQfov7w$jl4t6rshHNNQexxPVPKs8bRPLTEomlJgSthztwoeDaI');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-01', 'inventario@agricultores.co', 'Sara Villamil', 'pbkdf2$100000$lf6SMM1xG0KMHgV8l6RxPw$WQWR4daUQC-0_AtmLDX-a1Bg5QJXtPGK2c3r4-6ICnk');
 INSERT INTO user_roles (user_id, role) VALUES ('u-01', 'ADMIN_INVENTARIO');
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-02', 'pedidos@agricultores.co', 'Diana Cardona', 'pbkdf2$100000$CwlwRLKIwrT0SY6NFa8Rhw$JSqxFWHQ3isE5sli4IOIq1exZmrg3Sbxcbht4d6tY20');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-02', 'pedidos@agricultores.co', 'Diana Cardona', 'pbkdf2$100000$D67FhM4dEObmWj--cNnTrw$r0Z9348o-9j_LDSYhg0b1uBVc9NgyoYm7oz9umzka0U');
 INSERT INTO user_roles (user_id, role) VALUES ('u-02', 'GESTOR_PEDIDOS');
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-03', 'admin@agricultores.co', 'Nicolás Ruiz', 'pbkdf2$100000$qckexuORJksSLVJi4U8A5A$pLkw7sATPvVfDg_jvU6JBvVDdaVJfIGGoIBS0Ba18Jw');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-03', 'admin@agricultores.co', 'Nicolás Ruiz', 'pbkdf2$100000$4tRotZOD8uM9-vzqFBY2ow$hCJQpTMEceOPi4aW_nbZ8WA1pjyA5zziZbbynBDaz-o');
 INSERT INTO user_roles (user_id, role) VALUES ('u-03', 'SUPER_ADMIN');
 
 -- ────────────────────── Grupos del panel de compras ──────────────────────
@@ -111,9 +116,14 @@ INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario,
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-03', 'p-01', 'Tomate Chonto en Rama', 9800, 7600, 5);
 INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-04', 'ORD-1039', 'cli-4', 'Ana Lucía Peña', '318 662 7745', 'Avenida 6N # 23-18, Cali', 'aprobado', 0, 53800, 0, 53800, 'u-02', '2026-08-08T17:05:00.000Z', '2026-08-08T16:20:00.000Z');
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-04', 'p-13', 'Cítricos y Tropicales', 26900, 20200, 2);
+INSERT INTO invoices (id, consecutivo, numero, order_id, contact_id, cliente_nombre, cliente_telefono, subtotal, envio, total, saldo, estado, emitida_en) VALUES ('inv-o-04', 1, 'FAC-000001', 'o-04', 'cli-4', 'Ana Lucía Peña', '318 662 7745', 53800, 0, 53800, 53800, 'emitida', '2026-08-08T17:05:00.000Z');
+INSERT INTO invoice_items (invoice_id, product_id, descripcion, cantidad, precio_unitario, importe) VALUES ('inv-o-04', 'p-13', 'Cítricos y Tropicales', 2, 26900, 53800);
 INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-05', 'ORD-1038', 'cli-5', 'Hotel Campestre El Roble', '310 455 9012', 'Km 3 vía Arcabuco, Villa de Leyva', 'enviado', 0, 203600, 0, 203600, 'u-02', '2026-08-08T12:30:00.000Z', '2026-08-08T11:48:00.000Z');
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-05', 'p-25', 'Canasta del Mercado · Grande', 146000, 109500, 1);
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-05', 'p-20', 'Trigo Integral Molido en Piedra', 9600, 6500, 6);
+INSERT INTO invoices (id, consecutivo, numero, order_id, contact_id, cliente_nombre, cliente_telefono, subtotal, envio, total, saldo, estado, emitida_en) VALUES ('inv-o-05', 2, 'FAC-000002', 'o-05', 'cli-5', 'Hotel Campestre El Roble', '310 455 9012', 203600, 0, 203600, 203600, 'emitida', '2026-08-08T12:30:00.000Z');
+INSERT INTO invoice_items (invoice_id, product_id, descripcion, cantidad, precio_unitario, importe) VALUES ('inv-o-05', 'p-25', 'Canasta del Mercado · Grande', 1, 146000, 146000);
+INSERT INTO invoice_items (invoice_id, product_id, descripcion, cantidad, precio_unitario, importe) VALUES ('inv-o-05', 'p-20', 'Trigo Integral Molido en Piedra', 6, 9600, 57600);
 INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-06', 'ORD-1044', 'cli-6', 'Camilo Vargas', '317 990 4423', 'Calle 36 # 27-15, Bucaramanga', 'pendiente', 0, 56200, 0, 56200, NULL, NULL, '2026-08-09T11:12:00.000Z');
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-06', 'p-15', 'Ensalada Arcoíris', 16900, 9300, 2);
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-06', 'p-18', 'Smoothie de Fresa y Chía', 11200, 6200, 2);

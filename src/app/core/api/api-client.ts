@@ -330,6 +330,10 @@ export interface ApiOrder {
   readonly venceEn: string | null;
   readonly closingId: string | null;
   readonly creadoEn: string;
+  /** Quién lo lleva (migración 0029). `null` = sin asignar o se recoge en finca. */
+  readonly domiciliarioId: string | null;
+  /** Copia congelada: sobrevive a que se borre la cuenta del domiciliario. */
+  readonly domiciliarioNombre: string | null;
   readonly items: readonly ApiOrderItem[];
 }
 
@@ -349,6 +353,18 @@ export interface ApiDelivery {
   readonly total: number;
   readonly creadoEn: string;
   readonly metodoPago: 'transferencia' | 'contraentrega' | 'credito';
+  /** Quién lo lleva (migración 0029). `null` = todavía sin asignar. */
+  readonly domiciliarioId: string | null;
+  /** Copia congelada del nombre: sobrevive a que se borre la cuenta. */
+  readonly domiciliarioNombre: string | null;
+  /** La ficha del cliente, para poder registrarle un abono en la puerta. */
+  readonly contactId: string | null;
+  /**
+   * Lo que este cliente debe de antes, sin contar este pedido. Viaja con la
+   * entrega porque es lo que hace falta saber en la puerta cuando el cliente
+   * saca plata de una deuda vieja.
+   */
+  readonly deudaAnterior: number;
   readonly items: readonly {
     readonly productoNombre: string;
     readonly precioUnitario: number;
@@ -688,6 +704,145 @@ export interface ApiClosing {
  * no el navegador: si los calculara cada cliente, dos personas en husos
  * distintos verían vencida la misma factura en días distintos.
  */
+/**
+ * Una factura (migración 0027) — el documento contable de una venta.
+ *
+ * No hay forma de crearla ni editarla desde el cliente, y es deliberado: nace
+ * sola al aprobar el pedido, y se corrige anulándola y emitiendo otra.
+ */
+export interface ApiInvoice {
+  readonly id: string;
+  /** Posición en la numeración. Sirve para ordenar sin depender del texto. */
+  readonly consecutivo: number;
+  /** Ya formateado: «FAC-000123». */
+  readonly numero: string;
+  readonly orderId: string | null;
+  readonly contactId: string | null;
+  readonly clienteNombre: string;
+  readonly clienteTelefono: string;
+  readonly subtotal: number;
+  readonly envio: number;
+  readonly total: number;
+  /** Lo que falta por cobrar. 0 en las pagadas y en las anuladas. */
+  readonly saldo: number;
+  readonly estado: 'emitida' | 'pagada_parcial' | 'pagada' | 'anulada';
+  readonly emitidaEn: string;
+  readonly venceEn: string | null;
+  readonly anuladaEn: string | null;
+  /** También guarda el motivo de una nota: las dos responden «por qué existe». */
+  readonly motivoAnulacion: string | null;
+  /**
+   * Qué clase de documento es (migración 0030). Una nota vive en la misma
+   * tabla que la factura porque es lo mismo —número, líneas, cliente— y solo
+   * cambia qué le hace al saldo de otra.
+   */
+  readonly tipo: 'factura' | 'nota_credito' | 'nota_debito';
+  /** La factura que esta nota corrige. `null` en las facturas. */
+  readonly invoiceOrigenId: string | null;
+}
+
+/** Lo que se manda al emitir una nota crédito o débito. */
+export interface ApiNotaInput {
+  readonly tipo: 'nota_credito' | 'nota_debito';
+  /** Obligatorio: una nota sin explicación no se puede auditar. */
+  readonly motivo: string;
+  readonly items: readonly ApiInvoiceItemInput[];
+}
+
+/** Una línea de la factura. Congelada: lo que se cobró y a qué precio ese día. */
+export interface ApiInvoiceItem {
+  readonly id: number;
+  /** `null` cuando se cobró algo que no está en el catálogo. */
+  readonly productId: string | null;
+  readonly descripcion: string;
+  readonly cantidad: number;
+  readonly precioUnitario: number;
+  /** `cantidad × precioUnitario`, calculado por el servidor. */
+  readonly importe: number;
+}
+
+/** Lo que se manda al crear o editar una factura. El importe lo calcula el servidor. */
+export interface ApiInvoiceItemInput {
+  readonly productId?: string | null;
+  readonly descripcion: string;
+  readonly cantidad: number;
+  readonly precioUnitario: number;
+}
+
+export interface ApiInvoiceInput {
+  readonly contactId?: string | null;
+  readonly clienteNombre: string;
+  readonly clienteTelefono?: string;
+  readonly envio?: number;
+  readonly venceEn?: string | null;
+  readonly items: readonly ApiInvoiceItemInput[];
+}
+
+/**
+ * Un cobro (migración 0028): entró tal plata, tal día, por tal medio.
+ *
+ * Separado de la factura a propósito. Contra qué deudas se aplica lo dicen sus
+ * `allocations`, y por eso un mismo cobro puede cubrir varias facturas.
+ */
+export interface ApiPayment {
+  readonly id: string;
+  readonly referencia: string;
+  readonly contactId: string | null;
+  readonly clienteNombre: string;
+  readonly monto: number;
+  readonly metodo: 'efectivo' | 'transferencia' | 'nequi' | 'daviplata';
+  readonly recibidoEn: string;
+  readonly recibidoPorNombre: string;
+  /** 0 = efectivo todavía en poder del domiciliario, no cuenta para caja. */
+  readonly liquidado: 0 | 1;
+  /** La jornada que se lo llevó. `null` = todavía sin cerrar, aún editable. */
+  readonly closingId: string | null;
+  readonly nota: string | null;
+  /** Cuánto de este cobro está repartido. Lo que falte es anticipo. */
+  readonly asignado?: number;
+}
+
+/** Una línea del reparto: cuánto de este cobro salda esta factura. */
+export interface ApiAllocation {
+  readonly id: number;
+  readonly invoiceId: string;
+  readonly numero: string;
+  readonly monto: number;
+}
+
+/** Una factura que todavía debe algo, para armar el reparto. */
+export interface ApiDeuda {
+  readonly id: string;
+  readonly numero: string;
+  readonly total: number;
+  readonly saldo: number;
+  readonly emitidaEn: string;
+  readonly venceEn: string | null;
+}
+
+export interface ApiPaymentInput {
+  readonly contactId: string;
+  readonly monto: number;
+  readonly metodo?: string;
+  readonly nota?: string | null;
+  /** Sin reparto explícito se aplica a lo más viejo primero. */
+  readonly allocations?: readonly { invoiceId: string; monto: number }[];
+}
+
+export interface ApiPaymentSummary {
+  readonly cobrado: number;
+  readonly enPoderDelDomiciliario: number;
+  readonly sinCerrar: number;
+}
+
+/** Las cifras de cabecera de Facturación, calculadas sobre TODAS las facturas. */
+export interface ApiInvoiceSummary {
+  readonly facturado: number;
+  readonly porCobrar: number;
+  readonly abiertas: number;
+  readonly vencidas: number;
+}
+
 export interface ApiCarteraRow {
   readonly id: string;
   readonly referencia: string;
@@ -1326,6 +1481,150 @@ export class ApiClient {
   }
 
   /** Lo que los mayoristas deben, con su antigüedad ya calculada por el Worker. */
+  // ──────────────────────────── Facturación (0027) ────────────────────────────
+
+  /** Las facturas y sus totales. Sin método de creación: nacen al aprobar. */
+  invoices(filtros: { estado?: string; contactId?: string } = {}): Observable<{
+    invoices: readonly ApiInvoice[];
+    resumen: ApiInvoiceSummary;
+  }> {
+    const params = new URLSearchParams();
+    if (filtros.estado) {
+      params.set('estado', filtros.estado);
+    }
+    if (filtros.contactId) {
+      params.set('contactId', filtros.contactId);
+    }
+    const query = params.toString();
+
+    return this.http
+      .get<{ invoices: ApiInvoice[]; resumen: ApiInvoiceSummary }>(
+        `/api/admin/invoices${query ? `?${query}` : ''}`,
+      )
+      .pipe(catchError(handleError));
+  }
+
+  /** La factura con sus líneas. */
+  invoice(id: string): Observable<{ invoice: ApiInvoice; items: readonly ApiInvoiceItem[] }> {
+    return this.http
+      .get<{ invoice: ApiInvoice; items: ApiInvoiceItem[] }>(`/api/admin/invoices/${id}`)
+      .pipe(catchError(handleError));
+  }
+
+  /** Factura a mano, sin pedido detrás. No mueve inventario. */
+  createInvoice(input: ApiInvoiceInput): Observable<ApiInvoice> {
+    return this.http
+      .post<{ invoice: ApiInvoice }>('/api/admin/invoices', input)
+      .pipe(map((res) => res.invoice), catchError(handleError));
+  }
+
+  /** Reescribe la factura entera. Solo mientras no tenga dinero encima. */
+  updateInvoice(id: string, input: ApiInvoiceInput): Observable<ApiInvoice> {
+    return this.http
+      .put<{ invoice: ApiInvoice }>(`/api/admin/invoices/${id}`, input)
+      .pipe(map((res) => res.invoice), catchError(handleError));
+  }
+
+  /** Borrado real. Solo mientras no tenga dinero encima. */
+  deleteInvoice(id: string): Observable<void> {
+    return this.http
+      .delete<{ ok: true }>(`/api/admin/invoices/${id}`)
+      .pipe(map(() => undefined), catchError(handleError));
+  }
+
+  /**
+   * Emite una nota crédito o débito sobre una factura.
+   *
+   * Devuelve la nota y la factura ya recalculada: el saldo cambia en el mismo
+   * batch, así que la pantalla puede pintar las dos sin volver a preguntar.
+   */
+  crearNota(
+    invoiceId: string,
+    input: ApiNotaInput,
+  ): Observable<{ nota: ApiInvoice; invoice: ApiInvoice }> {
+    return this.http
+      .post<{ nota: ApiInvoice; invoice: ApiInvoice }>(
+        `/api/admin/invoices/${invoiceId}/nota`,
+        input,
+      )
+      .pipe(catchError(handleError));
+  }
+
+  /** Anular: el camino para algo que ya salió al cliente. Exige motivo. */
+  anularInvoice(id: string, motivo: string): Observable<ApiInvoice> {
+    return this.http
+      .post<{ invoice: ApiInvoice }>(`/api/admin/invoices/${id}/anular`, { motivo })
+      .pipe(map((res) => res.invoice), catchError(handleError));
+  }
+
+  // ───────────────────────────── Reparto (0029) ─────────────────────────────
+
+  /** Las cuentas que pueden repartir. Solo id y nombre. */
+  couriers(): Observable<readonly { id: string; nombre: string }[]> {
+    return this.http
+      .get<{ couriers: { id: string; nombre: string }[] }>('/api/admin/couriers')
+      .pipe(map((res) => res.couriers), catchError(handleError));
+  }
+
+  /** Asigna, reasigna o suelta (con `null`) el domiciliario de un pedido. */
+  assignCourier(orderId: string, domiciliarioId: string | null): Observable<ApiOrder> {
+    return this.http
+      .post<{ order: ApiOrder }>(`/api/admin/orders/${orderId}/domiciliario`, { domiciliarioId })
+      .pipe(map((res) => res.order), catchError(handleError));
+  }
+
+  // ────────────────────────────── Cartera (0028) ──────────────────────────────
+
+  payments(contactId?: string): Observable<{
+    payments: readonly ApiPayment[];
+    resumen: ApiPaymentSummary;
+  }> {
+    const query = contactId ? `?contactId=${encodeURIComponent(contactId)}` : '';
+    return this.http
+      .get<{ payments: ApiPayment[]; resumen: ApiPaymentSummary }>(`/api/admin/payments${query}`)
+      .pipe(catchError(handleError));
+  }
+
+  /** Lo que un cliente debe hoy, para armar el reparto de un abono. */
+  deudasDe(contactId: string): Observable<readonly ApiDeuda[]> {
+    return this.http
+      .get<{ deudas: ApiDeuda[] }>(
+        `/api/admin/payments/deudas?contactId=${encodeURIComponent(contactId)}`,
+      )
+      .pipe(map((res) => res.deudas), catchError(handleError));
+  }
+
+  paymentDetail(id: string): Observable<{
+    payment: ApiPayment;
+    allocations: readonly ApiAllocation[];
+  }> {
+    return this.http
+      .get<{ payment: ApiPayment; allocations: ApiAllocation[] }>(`/api/admin/payments/${id}`)
+      .pipe(catchError(handleError));
+  }
+
+  /** Registrar un cobro. Devuelve también cuánto quedó como anticipo. */
+  createPayment(input: ApiPaymentInput): Observable<{ payment: ApiPayment; anticipo: number }> {
+    return this.http
+      .post<{ payment: ApiPayment; anticipo: number }>('/api/admin/payments', input)
+      .pipe(catchError(handleError));
+  }
+
+  updatePayment(
+    id: string,
+    input: Omit<ApiPaymentInput, 'contactId'>,
+  ): Observable<{ payment: ApiPayment; anticipo: number }> {
+    return this.http
+      .put<{ payment: ApiPayment; anticipo: number }>(`/api/admin/payments/${id}`, input)
+      .pipe(catchError(handleError));
+  }
+
+  deletePayment(id: string): Observable<void> {
+    return this.http
+      .delete<{ ok: true }>(`/api/admin/payments/${id}`)
+      .pipe(map(() => undefined), catchError(handleError));
+  }
+
   cartera(): Observable<readonly ApiCarteraRow[]> {
     return this.http
       .get<{ deudores: ApiCarteraRow[] }>('/api/admin/reports/cartera')

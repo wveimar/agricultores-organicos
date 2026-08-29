@@ -111,3 +111,36 @@ export function requireString(value: unknown, field: string, maxLength = 500): s
   }
   return trimmed;
 }
+
+/**
+ * Un texto que de verdad es opcional: devuelve `null` si no vino nada.
+ *
+ * Existe porque este error ya se cometió varias veces en este código, siempre
+ * igual: un campo opcional validado con `requireString()` a secas, que no
+ * distingue «no mandaste nada» de «mandaste vacío a propósito». Un formulario
+ * reactivo SIEMPRE manda la clave —un `FormControl` nunca es `undefined`— y
+ * suele mandar `null` o `''` cuando está en blanco, así que el campo opcional
+ * acababa rechazándose con «es obligatorio».
+ *
+ * Las tres formas de decir «vacío» que llegan de un cliente HTTP —ausente,
+ * `null` y cadena vacía— colapsan aquí a `null`. `readIcono()` y
+ * `readDescripcion()` son versiones anteriores de esta misma idea escritas a
+ * mano en sus rutas; se dejaron ahí porque funcionan, pero lo nuevo usa esto.
+ */
+export function optionalString(
+  value: unknown,
+  field: string,
+  maxLength = 500,
+): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  // Un texto de solo espacios también es vacío. Se comprueba antes de delegar
+  // porque `requireString` lo rechazaría con «es obligatorio», que es
+  // justamente el error que este helper existe para evitar: teclear un espacio
+  // y borrarlo no puede convertir un campo opcional en uno obligatorio.
+  if (typeof value === 'string' && value.trim() === '') {
+    return null;
+  }
+  return requireString(value, field, maxLength);
+}

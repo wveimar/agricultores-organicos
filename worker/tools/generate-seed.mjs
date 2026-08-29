@@ -118,6 +118,19 @@ const lines = [
   '--  por eso cambian en cada regeneración aunque la clave sea la misma.',
   '-- ============================================================',
   '',
+  // Antes que `orders`: la FK de la factura al pedido es ON DELETE RESTRICT,
+  // así que borrar pedidos con factura viva fallaría.
+  // El reparto antes que los cobros, y los cobros antes que las facturas: la
+  // FK de `payment_allocations` a `invoices` es RESTRICT, así que una factura
+  // con plata asignada no se deja borrar. Es la misma protección que impide
+  // borrarla desde el panel.
+  'DELETE FROM payment_allocations;',
+  'DELETE FROM payments;',
+  'DELETE FROM invoice_items;',
+  // Las notas antes que las facturas: aunque la FK sea CASCADE, borrarlas
+  // explícitamente deja claro el orden y no depende del motor.
+  "DELETE FROM invoices WHERE tipo <> 'factura';",
+  'DELETE FROM invoices;',
   'DELETE FROM order_items;',
   'DELETE FROM orders;',
   'DELETE FROM contacts;',
@@ -272,6 +285,10 @@ lines.push('', '-- ────────────────────�
 // quién los aprobó por nombre; la tabla real referencia el id del usuario.
 const userIdByName = new Map(USERS.map((u) => [u.nombre, u.id]));
 
+// El consecutivo de facturación va en el orden en que se siembran los pedidos.
+// Es un contador y no `COUNT(*)`: los números de factura no se reutilizan.
+let consecutivoFactura = 0;
+
 for (const order of ORDERS) {
   const subtotal = order.lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
   const aprobadoPor = order.approvedBy ? (userIdByName.get(order.approvedBy) ?? 'NULL') : 'NULL';
@@ -312,6 +329,62 @@ for (const order of ORDERS) {
         ].join(', ') +
         ');',
     );
+  }
+
+  // Factura del pedido (migración 0027).
+  //
+  // Se emite aquí y no se deja para después porque en el sistema real la
+  // factura nace DENTRO del batch que aprueba el pedido: un pedido aprobado
+  // sin factura no es un estado que pueda existir. Sembrar sin ella dejaría la
+  // base de pruebas en una situación imposible, y la cartera arrancaría
+  // mintiendo en cada `db:reset`.
+  //
+  // Solo los aprobados: lo que sigue pendiente todavía no facturó nada.
+  if (order.approvedAt) {
+    const consecutivo = ++consecutivoFactura;
+    const cobrado = order.status === 'pago' || order.status === 'cancelado';
+
+    lines.push(
+      `INSERT INTO invoices (id, consecutivo, numero, order_id, contact_id, cliente_nombre, cliente_telefono, subtotal, envio, total, saldo, estado, emitida_en) VALUES (` +
+        [
+          q(`inv-${order.id}`),
+          consecutivo,
+          q(`FAC-${String(consecutivo).padStart(6, '0')}`),
+          q(order.id),
+          q(contactIdByPhone.get(order.customerPhone)),
+          q(order.customerName),
+          q(order.customerPhone),
+          subtotal,
+          0,
+          subtotal,
+          cobrado ? 0 : subtotal,
+          q(
+            order.status === 'pago'
+              ? 'pagada'
+              : order.status === 'cancelado'
+                ? 'anulada'
+                : 'emitida',
+          ),
+          q(order.approvedAt),
+        ].join(', ') +
+        ');',
+    );
+
+    // Las líneas de la factura, congeladas igual que las del pedido.
+    for (const line of order.lines) {
+      lines.push(
+        `INSERT INTO invoice_items (invoice_id, product_id, descripcion, cantidad, precio_unitario, importe) VALUES (` +
+          [
+            q(`inv-${order.id}`),
+            q(line.productId),
+            q(line.productName),
+            line.quantity,
+            line.unitPrice,
+            line.unitPrice * line.quantity,
+          ].join(', ') +
+          ');',
+      );
+    }
   }
 }
 

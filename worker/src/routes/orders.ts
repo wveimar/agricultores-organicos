@@ -12,6 +12,8 @@ import {
   sentenciasDeInstantanea,
   stockDeCanastas,
 } from '../combos';
+import * as invoices from './invoices';
+import * as payments from './payments';
 
 /**
  * Misma regla que `src/app/core/models/cart.model.ts`. Editar un pedido
@@ -472,6 +474,17 @@ export async function approve(
        SELECT ?1, 'aprobado', ?2, ?3
         WHERE (SELECT aprobacion_token FROM orders WHERE id = ?1) = ?4`,
     ).bind(orderId, user.sub, user.nombre, token),
+    // La factura nace aquí, en el mismo batch que descuenta el inventario
+    // (migración 0027). Emitirla después, en otra petición, dejaría una
+    // ventana en la que el pedido está aprobado y la venta sin facturar — y si
+    // esa segunda petición fallara, la mercancía habría salido sin documento.
+    //
+    // Lleva la misma guarda de token que el apunte de arriba, y por el mismo
+    // motivo: solo factura quien ganó la carrera de aprobación.
+    invoices.emitirStatement(env, `inv-${orderId}`, orderId, token),
+    // Las líneas van en el mismo batch: una factura sin líneas no se puede
+    // imprimir ni auditar.
+    invoices.emitirLineasStatement(env, `inv-${orderId}`, orderId, token),
   ];
 
   if (necesitaDescuento) {
@@ -565,6 +578,14 @@ export async function markPaid(env: Env, user: JwtPayload, orderId: string): Pro
        SELECT ?1, 'pago', ?2, ?3
         WHERE (SELECT estado FROM orders WHERE id = ?1) = 'pago'`,
     ).bind(orderId, user.sub, user.nombre),
+    // El cobro de verdad (0028): un `payment` con su reparto contra la
+    // factura. `liquidado: 0` porque este efectivo sigue en el bolsillo del
+    // domiciliario hasta que alguien lo entregue en la finca — contarlo antes
+    // en el cierre sería contar plata que nadie ha visto.
+    ...payments.cobrarPedidoStatements(env, `pay-cod-${orderId}`, orderId, user, {
+      metodo: 'efectivo',
+      liquidado: 0,
+    }),
   ]);
 
   if (updateResult.meta.changes === 0) {
@@ -840,6 +861,16 @@ export async function collectCredit(
        SELECT ?1, 'pago', ?2, ?3
         WHERE (SELECT estado FROM orders WHERE id = ?1) = 'pago'`,
     ).bind(orderId, user.sub, user.nombre),
+    // Cobro del fiado (0028). `liquidado: 1`: un crédito se salda por
+    // transferencia, así que la plata entra a la cuenta en el acto y no hay
+    // efectivo de nadie que liquidar.
+    //
+    // Esto salda la factura ENTERA. Para cobrar solo una parte está
+    // `POST /api/admin/payments`, que es el camino que admite abonos.
+    ...payments.cobrarPedidoStatements(env, `pay-cre-${orderId}`, orderId, user, {
+      metodo: 'transferencia',
+      liquidado: 1,
+    }),
   ]);
 
   if (updateResult.meta.changes === 0) {
@@ -889,6 +920,10 @@ export async function settleCash(env: Env, user: JwtPayload, orderId: string): P
        SELECT ?1, 'liquidado', ?2, ?3
         WHERE (SELECT efectivo_liquidado FROM orders WHERE id = ?1) = 1`,
     ).bind(orderId, user.sub, user.nombre),
+    // El cobro pasa a contar para el cierre: hasta ahora era plata cobrada
+    // pero no disponible. Mismo hecho que `efectivo_liquidado`, anotado
+    // también en el lado del dinero (0028).
+    payments.liquidarPedidoStatement(env, orderId),
   ]);
 
   if (updateResult.meta.changes === 0) {
@@ -975,6 +1010,11 @@ export async function rejectDelivery(
        SELECT ?1, 'rechazado', ?2, ?3
         WHERE (SELECT cancelacion_token FROM orders WHERE id = ?1) = ?4`,
     ).bind(orderId, user.sub, user.nombre, token),
+    // Este pedido sí llegó a aprobarse, así que tiene factura (0027) y hay que
+    // anularla: un rechazo en la puerta no deja deuda. `cancel()` no necesita
+    // esta línea porque solo cancela pedidos sin aprobar, que nunca se
+    // facturaron.
+    invoices.anularPorPedidoStatement(env, orderId, `Rechazado en la entrega: ${motivo}`),
   ];
 
   // A diferencia de cancel(), aquí siempre se devuelve stock: un pedido
@@ -1574,7 +1614,8 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
             (comprobante_url IS NOT NULL) AS tieneComprobante,
             aprobado_en AS aprobadoEn,
             metodo_pago AS metodoPago, efectivo_liquidado AS efectivoLiquidado, vence_en AS venceEn,
-            closing_id AS closingId, creado_en AS creadoEn
+            closing_id AS closingId, creado_en AS creadoEn,
+            domiciliario_id AS domiciliarioId, domiciliario_nombre AS domiciliarioNombre
        FROM orders ${where}
       ORDER BY creado_en DESC
       LIMIT ?${bindings.length}`,
@@ -1623,6 +1664,115 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
   });
 }
 
+interface AsignarBody {
+  domiciliarioId?: unknown;
+}
+
+/**
+ * POST /api/admin/orders/:id/domiciliario — asignar o soltar el reparto.
+ *
+ * Mandar `domiciliarioId: null` lo desasigna, que es lo que hace falta cuando
+ * alguien se enferma a mitad de ruta. Reasignar es simplemente volver a
+ * asignar: no hay estado intermedio ni hay que soltar primero.
+ *
+ * Solo `GESTOR_PEDIDOS`: un domiciliario no se adjudica pedidos a sí mismo.
+ *
+ * Se guarda también el nombre, congelado. Si mañana se borra la cuenta, la FK
+ * pone el id en NULL pero el pedido tiene que poder seguir diciendo quién lo
+ * llevó — es el mismo criterio que `cliente_nombre` frente a `contact_id`.
+ *
+ * Queda traza en `order_status_log`: reasignar a mitad de jornada es
+ * justamente el tipo de cosa que después nadie recuerda al cuadrar el efectivo.
+ */
+export async function assignCourier(
+  request: Request,
+  env: Env,
+  user: JwtPayload,
+  orderId: string,
+): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const body = await readJson<AsignarBody>(request);
+  const soltar = body.domiciliarioId === null || body.domiciliarioId === '';
+  const domiciliarioId = soltar
+    ? null
+    : requireString(body.domiciliarioId, 'domiciliarioId', 80);
+
+  let nombre: string | null = null;
+
+  if (domiciliarioId) {
+    // Se comprueba el rol, no solo que el usuario exista: asignarle un reparto
+    // a quien lleva el inventario dejaría el pedido en manos de alguien que no
+    // tiene la pantalla para entregarlo.
+    const candidato = await env.DB.prepare(
+      `SELECT u.nombre
+         FROM users u
+         JOIN user_roles r ON r.user_id = u.id
+        WHERE u.id = ?1 AND u.activo = 1 AND r.role = 'DOMICILIARIO'`,
+    )
+      .bind(domiciliarioId)
+      .first<{ nombre: string }>();
+
+    if (!candidato) {
+      throw ApiError.badRequest(
+        'domiciliario-invalido',
+        'Esa cuenta no existe, está desactivada o no tiene el rol de domiciliario.',
+      );
+    }
+    nombre = candidato.nombre;
+  }
+
+  const [updateResult] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE orders SET domiciliario_id = ?2, domiciliario_nombre = ?3
+        WHERE id = ?1 AND estado IN ('aprobado', 'enviado')`,
+    ).bind(orderId, domiciliarioId, nombre),
+    env.DB.prepare(
+      `INSERT INTO order_status_log (order_id, estado, actor_id, actor_nombre)
+       SELECT ?1, 'enviado', ?2, ?3
+        WHERE (SELECT COUNT(*) FROM orders
+                WHERE id = ?1 AND estado IN ('aprobado', 'enviado')) = 1`,
+    ).bind(orderId, user.sub, user.nombre),
+  ]);
+
+  if (updateResult.meta.changes === 0) {
+    const actual = await env.DB.prepare(`SELECT estado FROM orders WHERE id = ?1`)
+      .bind(orderId)
+      .first<{ estado: string }>();
+
+    if (!actual) {
+      throw ApiError.notFound('Ese pedido no existe.');
+    }
+    throw ApiError.conflict(
+      'estado-invalido',
+      `Solo se le asigna domiciliario a un pedido aprobado o enviado, y este está ${actual.estado}.`,
+    );
+  }
+
+  return json({ order: await loadOrder(env, orderId) });
+}
+
+/**
+ * GET /api/admin/couriers — las cuentas que pueden repartir.
+ *
+ * Vive aquí y no en users.ts porque es la lista que llena el desplegable de
+ * asignación, no una pantalla de administración de cuentas: solo devuelve id y
+ * nombre, sin correo ni nada de la cuenta.
+ */
+export async function couriers(env: Env, user: JwtPayload): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const { results } = await env.DB.prepare(
+    `SELECT u.id, u.nombre
+       FROM users u
+       JOIN user_roles r ON r.user_id = u.id
+      WHERE r.role = 'DOMICILIARIO' AND u.activo = 1
+      ORDER BY u.nombre COLLATE NOCASE`,
+  ).all();
+
+  return json({ couriers: results });
+}
+
 /**
  * GET /api/admin/entregas — pedidos enviados que el domiciliario todavía
  * tiene pendientes en la calle.
@@ -1644,15 +1794,46 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
 export async function deliveries(env: Env, user: JwtPayload): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS', 'DOMICILIARIO');
 
+  /**
+   * Un domiciliario ve SOLO lo suyo; un gestor ve toda la calle.
+   *
+   * Lo sin asignar también lo ve el domiciliario: si la lista se limitara a lo
+   * que lleva su nombre, un pedido que nadie asignó desaparecería de todas las
+   * pantallas y se quedaría en la calle sin que nadie lo reclame. Prefiere
+   * enseñarlo de más a perderlo.
+   */
+  const esSoloDomiciliario =
+    user.roles.includes('DOMICILIARIO') && !user.roles.includes('GESTOR_PEDIDOS');
+
+  const filtroMio = esSoloDomiciliario
+    ? `AND (domiciliario_id = ?1 OR domiciliario_id IS NULL)`
+    : '';
+
   const { results: orders } = await env.DB.prepare(
     `SELECT id, referencia, cliente_nombre AS clienteNombre,
             cliente_telefono AS clienteTelefono, cliente_direccion AS clienteDireccion,
-            total, creado_en AS creadoEn, metodo_pago AS metodoPago
+            total, creado_en AS creadoEn, metodo_pago AS metodoPago,
+            domiciliario_id AS domiciliarioId,
+            domiciliario_nombre AS domiciliarioNombre,
+            contact_id AS contactId,
+            -- Lo que este cliente debe de ANTES, sin contar la factura de este
+            -- mismo pedido. Viaja con la entrega porque es lo que el
+            -- domiciliario necesita saber en la puerta: muchas veces le pagan
+            -- de una deuda vieja, y sin esta cifra tendría que llamar a
+            -- preguntar cuánto es.
+            IFNULL((SELECT SUM(i.saldo) FROM invoices i
+                     WHERE i.contact_id = orders.contact_id
+                       AND i.estado <> 'anulada'
+                       AND i.tipo = 'factura'
+                       AND (i.order_id IS NULL OR i.order_id <> orders.id)), 0) AS deudaAnterior
        FROM orders
       WHERE estado = 'enviado'
         AND (metodo_pago = 'contraentrega' OR entregado_en IS NULL)
+        ${filtroMio}
       ORDER BY creado_en ASC`,
-  ).all<{ id: string }>();
+  )
+    .bind(...(esSoloDomiciliario ? [user.sub] : []))
+    .all<{ id: string }>();
 
   if (orders.length === 0) {
     return json({ entregas: [] });
@@ -1780,7 +1961,8 @@ async function loadOrder(env: Env, orderId: string): Promise<unknown> {
               (comprobante_url IS NOT NULL) AS tieneComprobante,
               aprobado_en AS aprobadoEn,
               metodo_pago AS metodoPago, efectivo_liquidado AS efectivoLiquidado, vence_en AS venceEn,
-              closing_id AS closingId, creado_en AS creadoEn
+              closing_id AS closingId, creado_en AS creadoEn,
+              domiciliario_id AS domiciliarioId, domiciliario_nombre AS domiciliarioNombre
          FROM orders WHERE id = ?1`,
     ).bind(orderId),
     env.DB.prepare(

@@ -96,6 +96,24 @@ export const ADMIN_ROUTES: Routes = [
           import('./reports/consolidation-report').then((m) => m.ConsolidationReport),
       },
       {
+        path: 'facturacion',
+        // Mismo permiso que Cartera: factura y cobro son la misma persona.
+        // Anular exige además SUPER_ADMIN, y eso lo comprueba el Worker.
+        canActivate: [roleGuard('GESTOR_PEDIDOS')],
+        title: 'Facturación · Panel',
+        loadComponent: () =>
+          import('./invoices/invoices-manager').then((m) => m.InvoicesManager),
+      },
+      {
+        path: 'cobros',
+        // Quien cobra es quien gestiona pedidos: registrar un cobro cambia lo
+        // que entra al cierre de caja.
+        canActivate: [roleGuard('GESTOR_PEDIDOS')],
+        title: 'Cobros · Panel',
+        loadComponent: () =>
+          import('./payments/payments-manager').then((m) => m.PaymentsManager),
+      },
+      {
         path: 'cartera',
         // Quien cobra es quien gestiona pedidos: registrar un pago cambia lo
         // que entra al cierre de caja, no el inventario.

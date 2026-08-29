@@ -1,0 +1,572 @@
+<div class="min-h-screen bg-linen px-5 py-12">
+  <div class="mx-auto max-w-5xl">
+    <!-- Encabezado -->
+    <div class="mb-8">
+      <h1 class="text-h2 text-ink">Facturación</h1>
+      <p class="mt-2 max-w-2xl text-sm text-ink-soft">
+        El libro de ventas. Cada factura nace sola al aprobar su pedido, y aquí
+        también puedes emitir una a mano para una venta de mostrador. Se corrige
+        y se borra mientras no tenga dinero encima; en cuanto entra un cobro, lo
+        que corresponde es una
+        <strong class="font-semibold text-ink">nota crédito</strong> —para una
+        devolución o un descuento— o una
+        <strong class="font-semibold text-ink">nota débito</strong> para un cargo
+        extra. La nota corrige sin borrar el rastro de que hubo una corrección.
+      </p>
+    </div>
+
+    @if (adminApi.invoicesError(); as fallo) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4">
+        <p class="text-sm font-semibold text-berry">No se pudo cargar la facturación</p>
+        <p class="mt-1 text-sm text-ink-soft">{{ fallo }}</p>
+      </div>
+    }
+
+    @if (error(); as fallo) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4" role="alert">
+        <p class="text-sm text-ink-soft">{{ fallo }}</p>
+      </div>
+    }
+
+    <!-- Cifras de cabecera. Salen del servidor sobre TODAS las facturas, no
+         sobre las 200 del listado: una cifra que cambie al filtrar parecería
+         mal calculada. -->
+    @if (adminApi.invoicesResumen(); as resumen) {
+      <div class="mb-6 flex flex-wrap gap-8">
+        <div>
+          <p class="tabular font-display text-h3 text-ink">{{ resumen.porCobrar | cop }}</p>
+          <p class="text-sm text-ink-soft">por cobrar</p>
+        </div>
+        <div>
+          <p class="tabular font-display text-h3 text-moss">{{ resumen.facturado | cop }}</p>
+          <p class="text-sm text-ink-soft">facturado en total</p>
+        </div>
+        <div>
+          <p class="tabular font-display text-h3 text-ink">{{ resumen.abiertas }}</p>
+          <p class="text-sm text-ink-soft">facturas abiertas</p>
+        </div>
+        @if (resumen.vencidas > 0) {
+          <div>
+            <p class="tabular font-display text-h3 text-clay-deep">{{ resumen.vencidas }}</p>
+            <p class="text-sm text-ink-soft">ya vencidas</p>
+          </div>
+        }
+      </div>
+    }
+
+    <!--
+      Formulario de crear/editar. Uno solo para los dos casos: es el mismo
+      documento, cambia si ya tenía id. Los campos van escritos aquí y no en un
+      `ng-template` reutilizado porque el contenido proyectado con
+      `ngTemplateOutlet` no hereda el `formGroup` del sitio donde se pinta.
+    -->
+    @if (editandoId(); as modo) {
+      <form
+        [formGroup]="form"
+        (ngSubmit)="guardar()"
+        class="mb-6 rounded-2xl border border-sand bg-bone px-6 py-5"
+      >
+        <p class="mb-4 text-sm font-semibold text-ink">
+          {{ modo === 'nueva' ? 'Factura nueva' : 'Editar factura' }}
+        </p>
+
+        @if (modo === 'nueva') {
+          <p class="mb-4 max-w-2xl text-xs text-ink-soft">
+            Para una venta de mostrador, sin pedido detrás.
+            <strong class="font-semibold text-ink">No mueve inventario:</strong>
+            descontar bodega es lo que hace aprobar un pedido, y hacerlo también
+            aquí descontaría dos veces lo que pase por los dos caminos.
+          </p>
+        }
+
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label for="fac-cliente" class="block text-sm font-semibold text-ink">Cliente</label>
+            <input
+              id="fac-cliente"
+              type="text"
+              formControlName="clienteNombre"
+              class="mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
+            />
+          </div>
+          <div>
+            <label for="fac-telefono" class="block text-sm font-semibold text-ink">Teléfono</label>
+            <input
+              id="fac-telefono"
+              type="text"
+              formControlName="clienteTelefono"
+              class="mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
+            />
+          </div>
+          <div>
+            <label for="fac-envio" class="block text-sm font-semibold text-ink">Domicilio</label>
+            <input
+              id="fac-envio"
+              type="number"
+              min="0"
+              formControlName="envio"
+              class="tabular mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
+            />
+          </div>
+          <div>
+            <label for="fac-vence" class="block text-sm font-semibold text-ink">
+              Vence <span class="font-normal text-ink-muted">(opcional)</span>
+            </label>
+            <input
+              id="fac-vence"
+              type="date"
+              formControlName="venceEn"
+              class="mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <p class="mt-5 mb-2 text-sm font-semibold text-ink">Qué se cobra</p>
+
+        <div class="flex flex-col gap-2" formArrayName="items">
+          @for (linea of items.controls; track $index) {
+            <div [formGroupName]="$index" class="flex flex-wrap items-end gap-2">
+              <div class="min-w-[12rem] flex-1">
+                <label [for]="'linea-desc-' + $index" class="sr-only">Descripción</label>
+                <input
+                  [id]="'linea-desc-' + $index"
+                  type="text"
+                  placeholder="Descripción"
+                  formControlName="descripcion"
+                  class="w-full rounded-md border border-sand bg-linen/60 px-3 py-2 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
+                />
+              </div>
+              <div class="w-20">
+                <label [for]="'linea-cant-' + $index" class="sr-only">Cantidad</label>
+                <input
+                  [id]="'linea-cant-' + $index"
+                  type="number"
+                  min="1"
+                  placeholder="Cant."
+                  formControlName="cantidad"
+                  class="tabular w-full rounded-md border border-sand bg-linen/60 px-3 py-2 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
+                />
+              </div>
+              <div class="w-32">
+                <label [for]="'linea-precio-' + $index" class="sr-only">Precio unitario</label>
+                <input
+                  [id]="'linea-precio-' + $index"
+                  type="number"
+                  min="0"
+                  placeholder="Precio"
+                  formControlName="precioUnitario"
+                  class="tabular w-full rounded-md border border-sand bg-linen/60 px-3 py-2 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                class="rounded-md border border-sand px-3 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-berry hover:text-berry disabled:opacity-40"
+                [disabled]="items.length === 1"
+                title="Quitar esta línea"
+                (click)="quitarLinea($index)"
+              >
+                Quitar
+              </button>
+            </div>
+          }
+        </div>
+
+        <button
+          type="button"
+          class="mt-2 text-sm text-moss transition-opacity duration-200 hover:opacity-75"
+          (click)="agregarLinea()"
+        >
+          + Agregar línea
+        </button>
+
+        <div class="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-sand pt-4">
+          <p class="tabular text-sm text-ink-soft">
+            Total: <strong class="font-semibold text-ink">{{ totalForm() | cop }}</strong>
+          </p>
+          <div class="flex items-center gap-3">
+            <button
+              type="submit"
+              class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-bone transition-opacity duration-200 hover:opacity-90 disabled:opacity-50"
+              [disabled]="guardando()"
+            >
+              {{ guardando() ? 'Guardando…' : modo === 'nueva' ? 'Emitir factura' : 'Guardar' }}
+            </button>
+            <button
+              type="button"
+              class="text-sm text-ink-soft transition-colors duration-200 hover:text-ink"
+              (click)="cerrarFormulario()"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </form>
+    } @else {
+      <div class="mb-5">
+        <button
+          type="button"
+          class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-bone transition-opacity duration-200 hover:opacity-90"
+          (click)="crear()"
+        >
+          Factura nueva
+        </button>
+      </div>
+    }
+
+    <!-- Filtros -->
+    <div class="mb-5 flex flex-wrap items-center gap-2">
+      @for (estado of estados; track estado.value) {
+        @let activo = estadoActivo() === estado.value;
+        <button
+          type="button"
+          class="rounded-full border px-4 py-2 text-sm transition-colors duration-200"
+          [class]="
+            activo
+              ? 'border-moss bg-moss font-semibold text-bone'
+              : 'border-sand bg-bone text-ink-soft hover:border-moss hover:text-moss'
+          "
+          (click)="seleccionarEstado(estado.value)"
+        >
+          {{ estado.label }}
+          <span class="tabular ml-1 text-xs opacity-70">{{ porEstado()[estado.value] ?? 0 }}</span>
+        </button>
+      }
+
+      <div class="ml-auto">
+        <label for="buscar-factura" class="sr-only">Buscar factura</label>
+        <input
+          id="buscar-factura"
+          type="search"
+          placeholder="Número, cliente o teléfono…"
+          class="w-64 rounded-full border border-sand bg-bone px-4 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:outline-none"
+          [value]="busqueda()"
+          (input)="onBuscar($event)"
+        />
+      </div>
+    </div>
+
+    @if (adminApi.invoicesLoading()) {
+      <p class="text-sm text-ink-muted">Cargando facturas…</p>
+    } @else if (visible().length === 0) {
+      <div class="rounded-2xl border border-sand bg-bone px-6 py-10 text-center">
+        <p class="text-sm text-ink-soft">
+          @if (adminApi.invoices().length === 0) {
+            Todavía no hay facturas. Se emiten solas al aprobar un pedido.
+          } @else {
+            Ninguna factura coincide con ese filtro.
+          }
+        </p>
+      </div>
+    } @else {
+      <ul class="flex flex-col gap-3">
+        @for (factura of visible(); track factura.id) {
+          @let anulada = factura.estado === 'anulada';
+
+          <li
+            class="rounded-2xl border bg-bone"
+            [class]="vencida(factura) ? 'border-clay/40' : 'border-sand'"
+          >
+            @if (notandoId() === factura.id) {
+              <!--
+                Emitir una nota es la forma correcta de corregir algo ya
+                cobrado: en vez de reescribir el pasado, se emite un documento
+                nuevo que dice qué cambió y por qué.
+              -->
+              <form [formGroup]="formNota" (ngSubmit)="emitirNota()" class="flex flex-col gap-3 px-6 py-5">
+                <p class="text-sm font-semibold text-ink">
+                  Nota sobre «{{ factura.numero }}» de {{ factura.clienteNombre }}
+                </p>
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label for="nota-tipo" class="block text-sm font-semibold text-ink">Qué hace</label>
+                    <select
+                      id="nota-tipo"
+                      formControlName="tipo"
+                      class="mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
+                    >
+                      <option value="nota_credito">Crédito · le resta a la factura</option>
+                      <option value="nota_debito">Débito · le suma a la factura</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="nota-monto" class="block text-sm font-semibold text-ink">Cuánto</label>
+                    <input
+                      id="nota-monto"
+                      type="number"
+                      min="1"
+                      formControlName="monto"
+                      class="tabular mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label for="nota-desc" class="block text-sm font-semibold text-ink">Concepto</label>
+                  <input
+                    id="nota-desc"
+                    type="text"
+                    placeholder="Devolución de tres kilos de tomate"
+                    formControlName="descripcion"
+                    class="mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label for="nota-motivo" class="block text-sm font-semibold text-ink">Por qué</label>
+                  <input
+                    id="nota-motivo"
+                    type="text"
+                    placeholder="Queda en el histórico"
+                    formControlName="motivo"
+                    class="mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
+                  />
+                </div>
+
+                <div class="flex items-center gap-3">
+                  <button
+                    type="submit"
+                    class="rounded-full bg-moss px-4 py-2 text-sm font-semibold text-bone transition-opacity duration-200 hover:opacity-90 disabled:opacity-50"
+                    [disabled]="guardando()"
+                  >
+                    {{ guardando() ? 'Emitiendo…' : 'Emitir nota' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="text-sm text-ink-soft transition-colors duration-200 hover:text-ink"
+                    (click)="cerrarNota()"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            } @else if (borrandoId() === factura.id) {
+              <!-- Borrar sí es irreversible, a diferencia de anular. -->
+              <div class="flex flex-wrap items-center gap-4 px-6 py-5">
+                <p class="flex-1 text-sm text-ink-soft">
+                  ¿Borrar «{{ factura.numero }}» de {{ factura.clienteNombre }}? Desaparece
+                  con sus líneas y no se puede deshacer. Si ya salió al cliente, mejor anúlala:
+                  queda en el histórico.
+                </p>
+                <button
+                  type="button"
+                  class="rounded-full bg-berry px-4 py-2 text-sm font-semibold text-bone transition-opacity duration-200 hover:opacity-90 disabled:opacity-50"
+                  [disabled]="guardando()"
+                  (click)="borrar(factura.id)"
+                >
+                  {{ guardando() ? 'Borrando…' : 'Sí, borrar' }}
+                </button>
+                <button
+                  type="button"
+                  class="text-sm text-ink-soft transition-colors duration-200 hover:text-ink"
+                  (click)="cancelarBorrar()"
+                >
+                  No
+                </button>
+              </div>
+            } @else if (anulandoId() === factura.id) {
+              <!-- Anular pide motivo: una factura anulada sin explicación es un
+                   agujero en la contabilidad que nadie puede auditar después. -->
+              <div class="flex flex-col gap-3 px-6 py-5">
+                <p class="text-sm font-semibold text-ink">
+                  Anular «{{ factura.numero }}» de {{ factura.clienteNombre }}
+                </p>
+                <p class="text-sm text-ink-soft">
+                  No se borra: queda en el histórico marcada como anulada, con el
+                  motivo y quién la anuló.
+                </p>
+                <input
+                  type="text"
+                  placeholder="Por qué se anula"
+                  maxlength="200"
+                  class="w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:border-moss focus:bg-bone focus:outline-none"
+                  [value]="motivo()"
+                  (input)="onMotivo($event)"
+                />
+                <div class="flex items-center gap-3">
+                  <button
+                    type="button"
+                    class="rounded-full bg-berry px-4 py-2 text-sm font-semibold text-bone transition-opacity duration-200 hover:opacity-90 disabled:opacity-50"
+                    [disabled]="guardando()"
+                    (click)="anular(factura.id)"
+                  >
+                    {{ guardando() ? 'Anulando…' : 'Sí, anular' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="text-sm text-ink-soft transition-colors duration-200 hover:text-ink"
+                    (click)="cancelar()"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            } @else {
+              <div class="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <p
+                      class="tabular text-sm font-semibold"
+                      [class]="anulada ? 'text-ink-muted line-through' : 'text-ink'"
+                    >
+                      {{ factura.numero }}
+                    </p>
+                    <p class="text-sm" [class]="anulada ? 'text-ink-muted' : 'text-ink'">
+                      {{ factura.clienteNombre }}
+                    </p>
+
+                    @if (esNota(factura)) {
+                      <!-- Una nota se distingue de un vistazo: no es algo que
+                           se cobre, es una corrección sobre otra cosa. -->
+                      <span
+                        class="text-overline rounded-full px-2 py-0.5 font-semibold uppercase"
+                        [class]="
+                          factura.tipo === 'nota_credito'
+                            ? 'bg-sage-light text-moss-deep'
+                            : 'bg-clay/15 text-clay-deep'
+                        "
+                      >
+                        {{ etiquetaTipo(factura) }}
+                      </span>
+                    }
+
+                    <!--
+                      El estado de cobro solo tiene sentido en una factura. Una
+                      nota no se cobra: mueve el saldo de otra. Marcarla «Por
+                      cobrar» haría pensar que hay plata pendiente que no existe.
+                    -->
+                    @if (!esNota(factura)) {
+                      <span
+                        class="text-overline rounded-full px-2 py-0.5 font-semibold uppercase"
+                        [class]="
+                          factura.estado === 'pagada'
+                            ? 'bg-sage-light text-moss-deep'
+                            : factura.estado === 'anulada'
+                              ? 'bg-stone/25 text-ink-muted'
+                              : factura.estado === 'pagada_parcial'
+                                ? 'bg-honey/20 text-clay-deep'
+                                : 'bg-clay/15 text-clay-deep'
+                        "
+                      >
+                        {{ etiquetaEstado(factura) }}
+                      </span>
+                    } @else if (anulada) {
+                      <span
+                        class="text-overline rounded-full bg-stone/25 px-2 py-0.5 font-semibold uppercase text-ink-muted"
+                      >
+                        Anulada
+                      </span>
+                    }
+
+                    @if (vencida(factura)) {
+                      <span
+                        class="text-overline rounded-full bg-berry/15 px-2 py-0.5 font-semibold uppercase text-berry"
+                      >
+                        Vencida
+                      </span>
+                    }
+                  </div>
+
+                  <p class="tabular mt-1.5 text-xs text-ink-muted">
+                    {{ fecha(factura.emitidaEn) }}
+                    @if (factura.venceEn) {
+                      · vence {{ fecha(factura.venceEn) }}
+                    }
+                    @if (factura.clienteTelefono) {
+                      · {{ factura.clienteTelefono }}
+                    }
+                  </p>
+
+                  <!--
+                    La misma columna guarda dos motivos: por qué se anuló un
+                    documento y por qué existe una nota. Son la misma pregunta
+                    —«por qué está esto aquí»— pero la etiqueta no puede ser la
+                    misma, o una nota recién emitida parecería anulada.
+                  -->
+                  @if (factura.motivoAnulacion) {
+                    <p class="mt-1.5 text-xs text-ink-soft">
+                      @if (esNota(factura) && !anulada) {
+                        Motivo: {{ factura.motivoAnulacion }}
+                      } @else {
+                        Anulada: {{ factura.motivoAnulacion }}
+                      }
+                    </p>
+                  }
+                </div>
+
+                <div class="flex items-center gap-5">
+                  <div class="text-right">
+                    <p
+                      class="tabular text-sm font-semibold"
+                      [class]="anulada ? 'text-ink-muted' : 'text-ink'"
+                    >
+                      {{ factura.total | cop }}
+                    </p>
+                    @if (factura.saldo > 0) {
+                      <p class="tabular text-xs text-clay-deep">
+                        debe {{ factura.saldo | cop }}
+                      </p>
+                    } @else if (!anulada) {
+                      <p class="text-xs text-moss">sin saldo</p>
+                    }
+                  </div>
+
+                  <!--
+                    Solo se ofrece anular lo que todavía no tiene dinero encima.
+                    Una factura cobrada se deshace con una nota crédito y su
+                    devolución, no borrando el documento — ver `sePuedeAnular`.
+                  -->
+                  <div class="flex items-center gap-2">
+                    @if (sePuedeNotar(factura)) {
+                      <button
+                        type="button"
+                        class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+                        title="Corrige la factura sin reescribirla: devolución, descuento o cargo extra"
+                        (click)="abrirNota(factura)"
+                      >
+                        Nota
+                      </button>
+                    }
+                    @if (sePuedeModificar(factura)) {
+                      <button
+                        type="button"
+                        class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss"
+                        (click)="editar(factura)"
+                      >
+                        Editar
+                      </button>
+                    }
+                    @if (sePuedeAnular(factura)) {
+                      <button
+                        type="button"
+                        class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-clay hover:text-clay-deep"
+                        title="Deja la factura en el histórico, marcada como anulada"
+                        (click)="preguntar(factura.id)"
+                      >
+                        Anular
+                      </button>
+                    }
+                    @if (sePuedeModificar(factura)) {
+                      <button
+                        type="button"
+                        class="rounded-full border border-sand px-4 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-berry hover:text-berry"
+                        title="La borra de verdad. Para algo que ya salió al cliente, mejor anular."
+                        (click)="preguntarBorrar(factura.id)"
+                      >
+                        Borrar
+                      </button>
+                    }
+                  </div>
+                </div>
+              </div>
+            }
+          </li>
+        }
+      </ul>
+
+      <p class="tabular mt-5 text-sm text-ink-soft">
+        {{ visible().length }} factura(s) a la vista · {{ saldoVisible() | cop }} por cobrar
+      </p>
+    }
+  </div>
+</div>

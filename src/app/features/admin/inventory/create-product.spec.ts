@@ -18,9 +18,15 @@ class AdminApiStub {
   readonly categories = signal([]);
   readonly selectableCategories = signal([]);
   readonly products = signal([]);
+  // El desplegable de grupo sale de `admin_groups` (migración 0025). El doble
+  // se quedó sin estas dos cuando el componente empezó a pedirlas, y el
+  // constructor reventaba antes de montar nada: las cinco pruebas de este
+  // archivo fallaban por el doble, no por lo que miden.
+  readonly adminGroups = signal([]);
 
   loadProducts = () => {};
   loadCategories = () => {};
+  loadAdminGroups = () => {};
   possibleParents = () => [];
   variantsOf = () => [];
   productById = () => undefined;
@@ -40,7 +46,14 @@ function build(): CreateProduct {
   // en un bucle: sin reiniciar, el segundo choca con el módulo ya instanciado.
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), { provide: AdminApiService, useClass: AdminApiStub }],
+    providers: [
+      // Con la tabla de rutas vacía, el `navigate` a Inventario que hace el
+      // componente tras guardar rechaza la promesa con NG04002 y vitest la
+      // cuenta como error no gestionado: la suite pasaba pero salía con
+      // código 1. Basta con que la ruta destino exista.
+      provideRouter([{ path: 'admin/inventario', children: [] }]),
+      { provide: AdminApiService, useClass: AdminApiStub },
+    ],
   });
   return TestBed.createComponent(CreateProduct).componentInstance;
 }

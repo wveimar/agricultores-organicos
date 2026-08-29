@@ -5,6 +5,8 @@ import * as auth from './routes/auth';
 import * as products from './routes/products';
 import * as categories from './routes/categories';
 import * as adminGroups from './routes/admin-groups';
+import * as invoices from './routes/invoices';
+import * as paymentsRoute from './routes/payments';
 import * as orders from './routes/orders';
 import * as reports from './routes/reports';
 import * as expenses from './routes/expenses';
@@ -191,6 +193,72 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (groupMatch && method === 'DELETE') {
       return adminGroups.remove(env, user, groupMatch[1]);
+    }
+
+    // Facturación (migración 0027). No hay POST para emitir: la factura nace
+    // sola al aprobar el pedido, dentro del mismo batch. Ver routes/invoices.ts.
+    if (pathname === '/api/admin/invoices' && method === 'GET') {
+      return invoices.list(env, user, url);
+    }
+    // Factura a mano, sin pedido detrás: la venta de mostrador.
+    if (pathname === '/api/admin/invoices' && method === 'POST') {
+      return invoices.create(request, env, user);
+    }
+
+    const invoiceMatch = pathname.match(/^\/api\/admin\/invoices\/([\w-]+)$/);
+    if (invoiceMatch && method === 'GET') {
+      return invoices.detail(env, user, invoiceMatch[1]);
+    }
+    if (invoiceMatch && method === 'PUT') {
+      return invoices.update(request, env, user, invoiceMatch[1]);
+    }
+    if (invoiceMatch && method === 'DELETE') {
+      return invoices.remove(env, user, invoiceMatch[1]);
+    }
+
+    const invoiceAnularMatch = pathname.match(/^\/api\/admin\/invoices\/([\w-]+)\/anular$/);
+    if (invoiceAnularMatch && method === 'POST') {
+      return invoices.anular(request, env, user, invoiceAnularMatch[1]);
+    }
+
+    // Nota crédito o débito sobre una factura (migración 0030): la forma
+    // correcta de corregir algo ya cobrado sin reescribir el pasado.
+    const notaMatch = pathname.match(/^\/api\/admin\/invoices\/([\w-]+)\/nota$/);
+    if (notaMatch && method === 'POST') {
+      return invoices.crearNota(request, env, user, notaMatch[1]);
+    }
+
+    // Cartera: los cobros y su reparto entre facturas (migración 0028).
+    // `/deudas` va ANTES que el patrón de id, o `deudas` se leería como un id.
+    if (pathname === '/api/admin/payments/deudas' && method === 'GET') {
+      return paymentsRoute.deudas(env, user, url);
+    }
+    if (pathname === '/api/admin/payments' && method === 'GET') {
+      return paymentsRoute.list(env, user, url);
+    }
+    if (pathname === '/api/admin/payments' && method === 'POST') {
+      return paymentsRoute.create(request, env, user);
+    }
+
+    const paymentMatch = pathname.match(/^\/api\/admin\/payments\/([\w-]+)$/);
+    if (paymentMatch && method === 'GET') {
+      return paymentsRoute.detail(env, user, paymentMatch[1]);
+    }
+    if (paymentMatch && method === 'PUT') {
+      return paymentsRoute.update(request, env, user, paymentMatch[1]);
+    }
+    if (paymentMatch && method === 'DELETE') {
+      return paymentsRoute.remove(env, user, paymentMatch[1]);
+    }
+
+    // Reparto: quién lleva cada pedido (migración 0029).
+    if (pathname === '/api/admin/couriers' && method === 'GET') {
+      return orders.couriers(env, user);
+    }
+
+    const courierMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/domiciliario$/);
+    if (courierMatch && method === 'POST') {
+      return orders.assignCourier(request, env, user, courierMatch[1]);
     }
 
     // Pedidos

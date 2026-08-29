@@ -386,6 +386,25 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
 
   const totalGastos = gastos?.totalGastos ?? 0;
 
+  /**
+   * Lo que de verdad entró en la jornada (migración 0028).
+   *
+   * Distinto de `ventaProducto`, y a propósito: aquí caben los abonos de
+   * facturas de días anteriores, que son plata real de hoy pero venta de
+   * antes. Es la cifra que cuadra con el cajón; `total_recaudado` sigue
+   * cuadrando con el informe de ventas.
+   *
+   * Solo lo liquidado: el efectivo que un domiciliario cobró y aún no ha
+   * entregado no está en la finca, así que no puede contar. Mismo criterio que
+   * `efectivo_liquidado` en los pedidos.
+   */
+  const cobros = await env.DB.prepare(
+    `SELECT COALESCE(SUM(monto), 0) AS totalCobrado
+       FROM payments WHERE closing_id IS NULL AND liquidado = 1`,
+  ).first<{ totalCobrado: number }>();
+
+  const totalCobrado = cobros?.totalCobrado ?? 0;
+
   const closingId = crypto.randomUUID();
 
   /**
@@ -403,12 +422,12 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
       `INSERT INTO cash_closings (
          id, referencia, cerrado_por, cerrado_por_nombre, cerrado_en,
          pedidos_count, unidades_count, venta_producto, costo_producto,
-         ganancia, envios_cobrados, total_recaudado, total_gastos
+         ganancia, envios_cobrados, total_recaudado, total_gastos, total_cobrado
        ) VALUES (
          ?1,
          'CIERRE-' || printf('%04d',
            (SELECT COALESCE(MAX(CAST(substr(referencia, 8) AS INTEGER)), 0) + 1 FROM cash_closings)),
-         ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
+         ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12
        )`,
     ).bind(
       closingId,
@@ -425,6 +444,7 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
       totals.enviosCobrados,
       ventaProducto,
       totalGastos,
+      totalCobrado,
     ),
     // Marca exactamente el mismo conjunto que se acaba de sumar. Al ir en el
     // mismo batch, ningún pedido puede colarse entre el cálculo y el archivado.
@@ -454,6 +474,15 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
     env.DB.prepare(
       `UPDATE expenses SET closing_id = ?1 WHERE closing_id IS NULL`,
     ).bind(closingId),
+
+    // Los cobros de la jornada pasan a ser de este cierre. Mismo predicado que
+    // la suma de `totalCobrado`: en el batch nadie puede registrar un abono
+    // entre las dos, así que la cifra congelada y las filas marcadas describen
+    // el mismo conjunto. A partir de aquí el cobro ya no se puede editar ni
+    // borrar — lo defiende `payments.exigirAbierto`.
+    env.DB.prepare(
+      `UPDATE payments SET closing_id = ?1 WHERE closing_id IS NULL AND liquidado = 1`,
+    ).bind(closingId),
   ]);
 
   const closing = await env.DB.prepare(
@@ -461,7 +490,7 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
             pedidos_count AS pedidos, unidades_count AS unidades,
             venta_producto AS ventaProducto, costo_producto AS costoProducto,
             ganancia, envios_cobrados AS enviosCobrados, total_recaudado AS totalRecaudado,
-            total_gastos AS totalGastos
+            total_gastos AS totalGastos, total_cobrado AS totalCobrado
        FROM cash_closings WHERE id = ?1`,
   )
     .bind(closingId)
@@ -786,7 +815,7 @@ export async function closings(env: Env, user: JwtPayload): Promise<Response> {
             pedidos_count AS pedidos, unidades_count AS unidades,
             venta_producto AS ventaProducto, costo_producto AS costoProducto,
             ganancia, envios_cobrados AS enviosCobrados, total_recaudado AS totalRecaudado,
-            total_gastos AS totalGastos
+            total_gastos AS totalGastos, total_cobrado AS totalCobrado
        FROM cash_closings
       ORDER BY cerrado_en DESC
       LIMIT 50`,

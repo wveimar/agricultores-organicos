@@ -23,6 +23,12 @@ PRAGMA foreign_keys = ON;
 -- porque `product_components` seguía referenciándolo. Si mañana se agrega una
 -- tabla nueva, va aquí arriba y en su sitio más abajo, o el reset vuelve a
 -- romperse.
+-- Antes que `orders`: la FK de la factura al pedido es ON DELETE RESTRICT.
+-- Y las asignaciones antes que las facturas, por su propio RESTRICT.
+DROP TABLE IF EXISTS payment_allocations;
+DROP TABLE IF EXISTS payments;
+DROP TABLE IF EXISTS invoice_items;
+DROP TABLE IF EXISTS invoices;
 DROP TABLE IF EXISTS provider_purchase_items;
 DROP TABLE IF EXISTS provider_purchases;
 DROP TABLE IF EXISTS expenses;
@@ -399,7 +405,13 @@ CREATE TABLE cash_closings (
   -- Gastos operativos de la jornada (transporte, empaque, servicios). Se
   -- restan de `ganancia` junto con el costo de mercancía: es la diferencia
   -- entre "cuánto margen dejó la fruta" y "cuánto quedó de verdad". Ver 0020.
-  total_gastos       INTEGER NOT NULL DEFAULT 0 CHECK (total_gastos       >= 0)
+  total_gastos       INTEGER NOT NULL DEFAULT 0 CHECK (total_gastos       >= 0),
+
+  -- Cuánto se COBRÓ en la jornada, frente a `total_recaudado`, que es cuánto
+  -- se VENDIÓ (migración 0028). Las dos conviven porque responden preguntas
+  -- distintas: esta cuadra con el dinero del cajón —incluidos abonos de
+  -- facturas viejas—, la otra con el informe de ventas del día.
+  total_cobrado      INTEGER NOT NULL DEFAULT 0 CHECK (total_cobrado      >= 0)
 );
 
 CREATE INDEX idx_closings_fecha ON cash_closings (cerrado_en DESC);
@@ -488,8 +500,18 @@ CREATE TABLE orders (
   -- — por eso es una marca aparte y no un estado nuevo: 'enviado' no cambia,
   -- solo se anota que ya llegó. En contra entrega no se usa: ahí `pagar()`
   -- confirma cobro y entrega en el mismo paso. Ver la migración 0018.
-  entregado_en       TEXT
+  entregado_en       TEXT,
+
+  -- Quién lo lleva (migración 0029). SET NULL: si la cuenta del domiciliario
+  -- se borra, el pedido sigue existiendo — se pierde el vínculo, no la venta.
+  -- Por eso el nombre se copia congelado, igual que `cliente_nombre`.
+  domiciliario_id     TEXT REFERENCES users(id) ON DELETE SET NULL,
+  domiciliario_nombre TEXT
 );
+
+-- "¿Qué llevo yo hoy?". Parcial: casi ningún pedido tiene domiciliario.
+CREATE INDEX idx_orders_domiciliario
+  ON orders (domiciliario_id, estado) WHERE domiciliario_id IS NOT NULL;
 
 -- El panel lista por estado y por jornada abierta; ambos índices evitan
 -- escanear la tabla completa cuando crezca.
@@ -570,6 +592,179 @@ CREATE TABLE order_status_log (
 );
 
 CREATE INDEX idx_status_log_order ON order_status_log (order_id, creado_en);
+
+-- ────────────────────────────── Facturación (0027) ──────────────────────────────
+-- El pedido es logística y se puede editar; la factura es contabilidad y no se
+-- edita nunca. Separarlas es lo que permite cobrar por partes sin que la deuda
+-- del cliente se mueva cada vez que alguien corrige una línea del pedido.
+-- Ver la migración 0027 para el razonamiento completo.
+
+CREATE TABLE invoices (
+  id                TEXT    PRIMARY KEY,
+
+  -- Consecutivo de la numeración. No se deriva de COUNT(*): contar filas
+  -- reutilizaría un número si alguna vez se borra una factura, y un
+  -- consecutivo con huecos es un problema, pero uno repetido es un fraude.
+  consecutivo       INTEGER NOT NULL UNIQUE,
+  -- Lo que se lee e imprime: «FAC-000123». Se guarda ya formateado porque el
+  -- día que haya resolución DIAN el prefijo cambia, y las ya emitidas tienen
+  -- que conservar el número con el que salieron.
+  numero            TEXT    NOT NULL UNIQUE,
+
+  -- RESTRICT: una factura emitida es un hecho contable y borrar el pedido no
+  -- puede llevársela. NULL deja la puerta abierta a una venta de mostrador.
+  order_id          TEXT    REFERENCES orders(id)   ON DELETE RESTRICT,
+  -- Apunta a `contacts` y no a `users` por lo mismo que el crédito en la 0023:
+  -- se compra sin cuenta, y la deuda es de una persona, no de un login.
+  contact_id        TEXT    REFERENCES contacts(id) ON DELETE RESTRICT,
+
+  -- Copia congelada, igual que `orders.cliente_nombre`.
+  cliente_nombre    TEXT    NOT NULL,
+  cliente_telefono  TEXT    NOT NULL DEFAULT '',
+
+  subtotal          INTEGER NOT NULL DEFAULT 0 CHECK (subtotal >= 0),
+  envio             INTEGER NOT NULL DEFAULT 0 CHECK (envio    >= 0),
+  total             INTEGER NOT NULL DEFAULT 0 CHECK (total    >= 0),
+
+  -- Lo que falta por cobrar. Materializado y no calculado con SUM() sobre los
+  -- abonos: la cartera lo pregunta en cada carga del panel. Se recalcula
+  -- siempre dentro del mismo `batch()` que inserta el abono.
+  saldo             INTEGER NOT NULL DEFAULT 0 CHECK (saldo >= 0),
+
+  estado            TEXT    NOT NULL DEFAULT 'emitida'
+                            CHECK (estado IN ('emitida', 'pagada_parcial', 'pagada', 'anulada')),
+
+  emitida_en        TEXT    NOT NULL DEFAULT (datetime('now')),
+  vence_en          TEXT,
+
+  anulada_en        TEXT,
+  anulada_por       TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  motivo_anulacion  TEXT,
+
+  -- ── Notas crédito y débito (migración 0030) ──
+  --
+  -- Una nota vive en esta misma tabla, como en Odoo y QuickBooks: es un
+  -- documento con líneas, número y estado, igual que una factura. Lo único
+  -- que cambia es qué le hace al saldo de otra.
+  --
+  --   'factura'      → lo que se cobra
+  --   'nota_credito' → RESTA de la factura de origen (devolución, descuento,
+  --                    corrección de algo ya cobrado que no se puede editar)
+  --   'nota_debito'  → SUMA a la factura de origen (mora, reenvío, cargo extra)
+  tipo              TEXT    NOT NULL DEFAULT 'factura'
+                            CHECK (tipo IN ('factura', 'nota_credito', 'nota_debito')),
+  -- Qué factura corrige. Obligatorio en las notas, NULL en las facturas: lo
+  -- garantiza el CHECK de abajo, no solo el endpoint.
+  --
+  -- CASCADE, no RESTRICT: una nota no existe sin su factura —es una corrección
+  -- SOBRE ella— así que si la factura se va, sus notas se van con ella. Con
+  -- RESTRICT, además, la FK apunta a la propia tabla y `DROP TABLE invoices`
+  -- chocaba consigo misma: cada nota bloqueaba el borrado de su factura y el
+  -- esquema no se podía recrear.
+  --
+  -- Lo que de verdad protege el dinero es la FK de `payment_allocations`, que
+  -- sí es RESTRICT: una factura con cobros encima no se borra pase lo que pase.
+  invoice_origen_id TEXT    REFERENCES invoices(id) ON DELETE CASCADE,
+
+  -- Una nota SIEMPRE corrige algo, y una factura nunca corrige nada. Sin esto
+  -- podría existir una nota crédito suelta, que no significa nada: no habría
+  -- deuda de la que restar.
+  CHECK (
+    (tipo = 'factura'      AND invoice_origen_id IS NULL) OR
+    (tipo <> 'factura'     AND invoice_origen_id IS NOT NULL)
+  )
+
+  -- Aquí vivía `CHECK (saldo <= total)`. Se quitó con las notas débito: un
+  -- cargo extra sobre una factura ya emitida hace que el saldo pase del total
+  -- original a propósito, y el CHECK habría bloqueado el caso legítimo.
+);
+
+-- Un pedido tiene como mucho una factura viva. Parcial sobre las no anuladas:
+-- anular y reemitir es el camino previsto para corregir.
+CREATE UNIQUE INDEX idx_invoices_order_viva
+  ON invoices (order_id) WHERE order_id IS NOT NULL AND estado <> 'anulada';
+
+CREATE INDEX idx_invoices_cartera ON invoices (estado, vence_en);
+CREATE INDEX idx_invoices_contact ON invoices (contact_id, emitida_en DESC);
+-- "¿Qué notas tiene esta factura encima?", que es lo que el saldo pregunta en
+-- cada recálculo. Parcial: casi ninguna factura acaba teniendo notas.
+CREATE INDEX idx_invoices_origen
+  ON invoices (invoice_origen_id) WHERE invoice_origen_id IS NOT NULL;
+
+-- Líneas de la factura, congeladas igual que `order_items`. Existen para que
+-- una factura pueda vivir sin pedido detrás (venta de mostrador, un servicio):
+-- sin ellas, facturar a mano obligaría a inventar un pedido falso.
+CREATE TABLE invoice_items (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- CASCADE: una línea no significa nada sin su factura. Lo que no se borra es
+  -- una factura con dinero encima, y eso lo defiende el endpoint.
+  invoice_id      TEXT    NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  -- NULL permitido: se puede cobrar algo que no está en el catálogo. SET NULL
+  -- y no RESTRICT: retirar un producto no puede reescribir una factura vieja
+  -- — el nombre cobrado vive en `descripcion`.
+  product_id      TEXT    REFERENCES products(id) ON DELETE SET NULL,
+  descripcion     TEXT    NOT NULL,
+  cantidad        INTEGER NOT NULL CHECK (cantidad > 0),
+  precio_unitario INTEGER NOT NULL CHECK (precio_unitario >= 0),
+  -- Redundante con cantidad × precio a propósito: es la cifra que se imprimió.
+  importe         INTEGER NOT NULL CHECK (importe >= 0)
+);
+
+CREATE INDEX idx_invoice_items_invoice ON invoice_items (invoice_id);
+
+-- ─────────────────────── Cartera: abonos y cobros (0028) ───────────────────────
+-- Modelo de tres tablas (invoices ← payment_allocations → payments), el mismo
+-- de Odoo, QuickBooks y Xero. La tabla del medio es la que permite que un pago
+-- cubra varias facturas y que una factura reciba varios abonos.
+-- Ver la migración 0028 para el razonamiento completo.
+
+CREATE TABLE payments (
+  id                  TEXT    PRIMARY KEY,
+  -- Serie propia, aparte de la de facturas.
+  referencia          TEXT    NOT NULL UNIQUE,
+
+  contact_id          TEXT    REFERENCES contacts(id) ON DELETE RESTRICT,
+  -- Copia congelada, igual que en `invoices`.
+  cliente_nombre      TEXT    NOT NULL,
+
+  monto               INTEGER NOT NULL CHECK (monto > 0),
+  metodo              TEXT    NOT NULL DEFAULT 'efectivo'
+                              CHECK (metodo IN ('efectivo', 'transferencia', 'nequi', 'daviplata')),
+
+  -- Cuándo entró la plata. No tiene por qué coincidir con la fecha de la
+  -- factura: representar ese desfase es el motivo de este módulo.
+  recibido_en         TEXT    NOT NULL DEFAULT (datetime('now')),
+  recibido_por        TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  recibido_por_nombre TEXT    NOT NULL DEFAULT '',
+
+  -- 0 solo para el efectivo que un domiciliario aún no ha entregado en la
+  -- finca. Misma distinción que `orders.efectivo_liquidado` (0015): un cierre
+  -- que cuente ese dinero cuenta plata que nadie ha visto.
+  liquidado           INTEGER NOT NULL DEFAULT 1 CHECK (liquidado IN (0, 1)),
+
+  closing_id          TEXT    REFERENCES cash_closings(id) ON DELETE SET NULL,
+
+  comprobante_url     TEXT,
+  nota                TEXT
+);
+
+CREATE INDEX idx_payments_closing ON payments (closing_id, liquidado);
+CREATE INDEX idx_payments_contact ON payments (contact_id, recibido_en DESC);
+
+-- Cuánto de este pago salda esta factura. La suma de las asignaciones de un
+-- pago nunca pasa de su monto; lo que sobra es anticipo. Esa invariante no
+-- cabe en un CHECK (SQLite no admite subconsultas ahí): la impone el endpoint
+-- dentro del mismo batch que inserta.
+CREATE TABLE payment_allocations (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  payment_id TEXT    NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+  -- RESTRICT: una factura con plata asignada no se borra.
+  invoice_id TEXT    NOT NULL REFERENCES invoices(id) ON DELETE RESTRICT,
+  monto      INTEGER NOT NULL CHECK (monto > 0),
+  UNIQUE (payment_id, invoice_id)
+);
+
+CREATE INDEX idx_allocations_invoice ON payment_allocations (invoice_id);
 
 -- ─────────────────── Gastos operativos y pago a las fincas ───────────────────
 -- Lo que hace que `ganancia` sea la de verdad y no solo el margen de la fruta.

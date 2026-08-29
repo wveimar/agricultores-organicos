@@ -49,6 +49,12 @@ export class AdminLayout {
       roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'],
     },
     { path: '/admin/reportes', label: 'Reportes', roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'] },
+    // Facturación antes que Cartera, en el orden en que ocurren: primero se
+    // emite el documento, después se persigue el cobro.
+    { path: '/admin/facturacion', label: 'Facturación', roles: ['GESTOR_PEDIDOS'] },
+    // Cobros va justo después de Facturación: se emite, se cobra, y lo que
+    // queda sin cobrar es lo que mira Cartera.
+    { path: '/admin/cobros', label: 'Cobros', roles: ['GESTOR_PEDIDOS'] },
     // Junto a Reportes: las dos hablan de dinero, y de la cartera se sale a
     // mirar la caja para ver qué falta por entrar.
     { path: '/admin/cartera', label: 'Cartera', roles: ['GESTOR_PEDIDOS'] },

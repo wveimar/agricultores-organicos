@@ -14,8 +14,15 @@ import {
   ApiDelivery,
   ApiErrorBody,
   ApiExpense,
+  ApiInvoice,
+  ApiInvoiceInput,
+  ApiInvoiceSummary,
+  ApiNotaInput,
   ApiOrder,
   ApiOrderStatusLogEntry,
+  ApiPayment,
+  ApiPaymentInput,
+  ApiPaymentSummary,
   ApiProduct,
   ApiPurchase,
   ApiSalesRow,
@@ -823,6 +830,171 @@ export class AdminApiService {
         this.loadCashSummary();
         this.loadClosings();
         this.loadOrders();
+      }),
+    );
+  }
+
+  // ──────────────────────────── Facturación (0027) ────────────────────────────
+
+  readonly invoices = signal<readonly ApiInvoice[]>([]);
+  readonly invoicesResumen = signal<ApiInvoiceSummary | null>(null);
+  readonly invoicesLoading = signal(false);
+  readonly invoicesError = signal<string | null>(null);
+
+  loadInvoices(filtros: { estado?: string; contactId?: string } = {}): void {
+    this.invoicesLoading.set(true);
+    this.invoicesError.set(null);
+    this.api.invoices(filtros).subscribe({
+      next: (res) => {
+        this.invoices.set(res.invoices);
+        this.invoicesResumen.set(res.resumen);
+        this.invoicesLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.invoicesError.set(error.message);
+        this.invoicesLoading.set(false);
+      },
+    });
+  }
+
+  /**
+   * Anula una factura y la reemplaza en la lista que ya está en pantalla.
+   *
+   * Se recarga el resumen entero después: anular cambia «por cobrar», y dejar
+   * la cabecera con la cifra vieja es justo el tipo de descuadre que esta
+   * pantalla existe para evitar.
+   */
+  anularInvoice(id: string, motivo: string): Observable<ApiInvoice> {
+    return this.api.anularInvoice(id, motivo).pipe(
+      tap((anulada) => {
+        this.invoices.update((list) => list.map((f) => (f.id === id ? anulada : f)));
+        this.loadInvoices();
+      }),
+    );
+  }
+
+  /** La factura con sus líneas, para abrir el formulario de edición. */
+  invoiceDetail(id: string) {
+    return this.api.invoice(id);
+  }
+
+  /**
+   * Emite una nota crédito o débito y recarga la lista.
+   *
+   * Recarga entera y no parchea en memoria: una nota cambia el saldo de su
+   * factura de origen y aparece además como documento nuevo, así que son dos
+   * filas distintas las que se mueven.
+   */
+  crearNota(invoiceId: string, input: ApiNotaInput) {
+    return this.api.crearNota(invoiceId, input).pipe(tap(() => this.loadInvoices()));
+  }
+
+  /**
+   * Las tres escrituras recargan la lista entera en vez de parchearla en
+   * memoria: crear y editar mueven «por cobrar» y «facturado», y una cabecera
+   * con la cifra vieja es justo el descuadre que esta pantalla evita. El
+   * consecutivo, además, lo asigna el servidor y no se puede adivinar aquí.
+   */
+  createInvoice(input: ApiInvoiceInput): Observable<ApiInvoice> {
+    return this.api.createInvoice(input).pipe(tap(() => this.loadInvoices()));
+  }
+
+  updateInvoice(id: string, input: ApiInvoiceInput): Observable<ApiInvoice> {
+    return this.api.updateInvoice(id, input).pipe(tap(() => this.loadInvoices()));
+  }
+
+  deleteInvoice(id: string): Observable<void> {
+    return this.api.deleteInvoice(id).pipe(
+      tap(() => {
+        this.invoices.update((list) => list.filter((f) => f.id !== id));
+        this.loadInvoices();
+      }),
+    );
+  }
+
+  // ───────────────────────────── Reparto (0029) ─────────────────────────────
+
+  readonly couriers = signal<readonly { id: string; nombre: string }[]>([]);
+
+  loadCouriers(): void {
+    this.api.couriers().subscribe({
+      next: (lista) => this.couriers.set(lista),
+      // Sin lista no se puede asignar, pero la pantalla de Entregas sigue
+      // sirviendo para confirmar y cobrar: se calla en vez de romperla.
+      error: () => this.couriers.set([]),
+    });
+  }
+
+  /** Asigna, reasigna o suelta el domiciliario, y refresca la calle. */
+  assignCourier(orderId: string, domiciliarioId: string | null) {
+    return this.api.assignCourier(orderId, domiciliarioId).pipe(
+      tap(() => this.loadDeliveries()),
+    );
+  }
+
+  // ────────────────────────────── Cartera (0028) ──────────────────────────────
+
+  readonly payments = signal<readonly ApiPayment[]>([]);
+  readonly paymentsResumen = signal<ApiPaymentSummary | null>(null);
+  readonly paymentsLoading = signal(false);
+  readonly paymentsError = signal<string | null>(null);
+
+  loadPayments(contactId?: string): void {
+    this.paymentsLoading.set(true);
+    this.paymentsError.set(null);
+    this.api.payments(contactId).subscribe({
+      next: (res) => {
+        this.payments.set(res.payments);
+        this.paymentsResumen.set(res.resumen);
+        this.paymentsLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.paymentsError.set(error.message);
+        this.paymentsLoading.set(false);
+      },
+    });
+  }
+
+  deudasDe(contactId: string) {
+    return this.api.deudasDe(contactId);
+  }
+
+  /** El cobro con su reparto: contra qué facturas se aplicó y cuánto a cada una. */
+  paymentDetail(id: string) {
+    return this.api.paymentDetail(id);
+  }
+
+  /**
+   * Las tres escrituras recargan la lista y las facturas.
+   *
+   * Las facturas también, y no por comodidad: un abono cambia el saldo de una
+   * factura, y dejar la pantalla de Facturación con la cifra vieja es
+   * exactamente el descuadre que este módulo viene a cerrar.
+   */
+  createPayment(input: ApiPaymentInput) {
+    return this.api.createPayment(input).pipe(
+      tap(() => {
+        this.loadPayments();
+        this.loadInvoices();
+      }),
+    );
+  }
+
+  updatePayment(id: string, input: Omit<ApiPaymentInput, 'contactId'>) {
+    return this.api.updatePayment(id, input).pipe(
+      tap(() => {
+        this.loadPayments();
+        this.loadInvoices();
+      }),
+    );
+  }
+
+  deletePayment(id: string) {
+    return this.api.deletePayment(id).pipe(
+      tap(() => {
+        this.payments.update((list) => list.filter((p) => p.id !== id));
+        this.loadPayments();
+        this.loadInvoices();
       }),
     );
   }

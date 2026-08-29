@@ -39,6 +39,101 @@ export class DeliveryOrders {
 
   constructor() {
     this.adminApi.loadDeliveries();
+    // La lista de repartidores solo la usa quien asigna. Se pide igual: si el
+    // usuario es domiciliario, el Worker le responde 403 y la señal se queda
+    // vacía, que es justo lo que esconde el selector.
+    this.adminApi.loadCouriers();
+  }
+
+  // ───────────────── Abono de una deuda vieja, en la puerta ─────────────────
+
+  /** Entrega cuyo formulario de abono está abierto. */
+  protected readonly abonandoId = signal<string | null>(null);
+  protected readonly montoAbono = signal(0);
+
+  protected onMontoAbono(event: Event): void {
+    this.montoAbono.set(Number((event.target as HTMLInputElement).value) || 0);
+  }
+
+  protected abrirAbono(entrega: ApiDelivery): void {
+    this.feedback.set(null);
+    this.montoAbono.set(0);
+    this.abonandoId.set(entrega.id);
+  }
+
+  protected cerrarAbono(): void {
+    this.abonandoId.set(null);
+  }
+
+  /**
+   * Registra plata que el cliente paga de deudas anteriores.
+   *
+   * Es distinto de cobrar el pedido que se está entregando: eso lo hace
+   * «Confirmar entrega y pago». Esto es para cuando, ya en la puerta, el
+   * cliente aprovecha y abona de lo que debía de antes — que es donde el
+   * dinero se perdía, porque había que anotarlo en un papel y teclearlo
+   * después.
+   *
+   * El servidor lo aplica a las facturas más viejas primero y lo marca sin
+   * liquidar: esa plata va en el bolsillo del domiciliario hasta que la
+   * entregue en la finca.
+   */
+  protected registrarAbono(entrega: ApiDelivery): void {
+    const monto = this.montoAbono();
+    if (!entrega.contactId || monto <= 0) {
+      this.feedback.set('Escribe cuánto te dio el cliente.');
+      return;
+    }
+
+    this.feedback.set(null);
+    this.workingId.set(entrega.id);
+
+    this.adminApi
+      .createPayment({ contactId: entrega.contactId, monto, metodo: 'efectivo' })
+      .subscribe({
+        next: ({ anticipo }) => {
+          this.workingId.set(null);
+          this.abonandoId.set(null);
+          this.adminApi.loadDeliveries();
+          this.feedback.set(
+            anticipo > 0
+              ? `Abono registrado. Sobraron ${anticipo.toLocaleString('es-CO')}: quedan a favor del cliente.`
+              : 'Abono registrado.',
+          );
+        },
+        error: (fallo: ApiErrorBody) => {
+          this.workingId.set(null);
+          this.feedback.set(fallo.message);
+        },
+      });
+  }
+
+  /**
+   * Asigna, reasigna o suelta el domiciliario de un pedido.
+   *
+   * El selector solo aparece si hay repartidores cargados, y eso solo pasa
+   * para `GESTOR_PEDIDOS`: un domiciliario no se adjudica pedidos a sí mismo.
+   * El Worker lo rechaza igual, esto solo evita ofrecer un control que falla.
+   */
+  protected asignar(orderId: string, event: Event): void {
+    const valor = (event.target as HTMLSelectElement).value;
+    this.feedback.set(null);
+    this.workingId.set(orderId);
+
+    this.adminApi.assignCourier(orderId, valor === '' ? null : valor).subscribe({
+      next: (order) => {
+        this.workingId.set(null);
+        this.feedback.set(
+          order.domiciliarioNombre
+            ? `Se lo lleva ${order.domiciliarioNombre}.`
+            : 'Pedido sin domiciliario asignado.',
+        );
+      },
+      error: (fallo: ApiErrorBody) => {
+        this.workingId.set(null);
+        this.feedback.set(fallo.message);
+      },
+    });
   }
 
   protected total(entrega: ApiDelivery): number {
