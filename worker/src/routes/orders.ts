@@ -565,8 +565,28 @@ export async function ship(env: Env, user: JwtPayload, orderId: string): Promise
  * "dinero recaudado": ese efectivo sigue en el bolsillo del domiciliario hasta
  * que un admin lo liquide (ver liquidar() más abajo).
  */
-export async function markPaid(env: Env, user: JwtPayload, orderId: string): Promise<Response> {
+export async function markPaid(
+  request: Request,
+  env: Env,
+  user: JwtPayload,
+  orderId: string,
+): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS', 'DOMICILIARIO');
+
+  /**
+   * `monto` es opcional: sin él, cobro completo, que sigue siendo el caso de
+   * siempre. Con él, es un abono — el cliente en la puerta solo tenía una
+   * parte — y lo que falte se queda vivo en el saldo de la factura.
+   *
+   * El cuerpo puede llegar vacío (`{}`), que es justo lo que manda hoy el
+   * botón de "cobro completo": por eso se lee con `.catch()` en vez de dejar
+   * que `readJson` reviente por falta de cuerpo.
+   */
+  const body = await readJson<{ monto?: unknown }>(request).catch(() => ({ monto: undefined }));
+  const monto =
+    body.monto === undefined || body.monto === null
+      ? undefined
+      : requireInt(body.monto, 'monto', 1);
 
   const [updateResult] = await env.DB.batch([
     env.DB.prepare(
@@ -585,6 +605,7 @@ export async function markPaid(env: Env, user: JwtPayload, orderId: string): Pro
     ...payments.cobrarPedidoStatements(env, `pay-cod-${orderId}`, orderId, user, {
       metodo: 'efectivo',
       liquidado: 0,
+      monto,
     }),
   ]);
 
@@ -951,6 +972,11 @@ export async function settleCash(env: Env, user: JwtPayload, orderId: string): P
  * en la puerta" vive solo en la traza: se registra 'rechazado', no
  * 'cancelado', el mismo truco que usa 'editado' para no mentir en
  * `orders.estado`.
+ *
+ * También lo puede llamar el `DOMICILIARIO`: es quien está delante cuando el
+ * cliente no paga, y sin este permiso el pedido se le quedaría atascado en su
+ * lista de entregas hasta que alguien de escritorio lo viera y lo cancelara a
+ * mano.
  */
 export async function rejectDelivery(
   request: Request,
@@ -958,7 +984,7 @@ export async function rejectDelivery(
   user: JwtPayload,
   orderId: string,
 ): Promise<Response> {
-  requireRole(user, 'GESTOR_PEDIDOS');
+  requireRole(user, 'GESTOR_PEDIDOS', 'DOMICILIARIO');
 
   const body = await readJson<{ motivo?: unknown }>(request).catch(() => ({ motivo: undefined }));
   const motivo =

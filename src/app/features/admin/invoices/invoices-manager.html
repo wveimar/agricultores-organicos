@@ -258,11 +258,34 @@
         </p>
       </div>
     } @else {
-      <ul class="flex flex-col gap-3">
-        @for (factura of visible(); track factura.id) {
-          @let anulada = factura.estado === 'anulada';
+      <div class="flex flex-col gap-6">
+        @for (grupo of gruposFacturas(); track grupo.key) {
+          <div>
+            <!--
+              Encabezado del cliente. Va siempre, aunque tenga una sola
+              factura: así la lista tiene una sola forma visual y no dos
+              estilos mezclados según cuántos documentos tenga cada quien.
+            -->
+            <div class="mb-2 flex items-baseline justify-between gap-3 px-1">
+              <h2 class="text-sm font-semibold text-ink">
+                {{ grupo.clienteNombre }}
+                <span class="ml-1 font-normal text-ink-muted">
+                  · {{ grupo.facturas.length }}
+                  {{ grupo.facturas.length === 1 ? 'documento' : 'documentos' }}
+                </span>
+              </h2>
+              @if (grupo.totalDebe > 0) {
+                <p class="tabular text-sm font-semibold text-clay-deep">
+                  debe {{ grupo.totalDebe | cop }}
+                </p>
+              }
+            </div>
 
-          <li
+            <ul class="flex flex-col gap-3">
+              @for (factura of grupo.facturas; track factura.id) {
+                @let anulada = factura.estado === 'anulada';
+
+                <li
             class="rounded-2xl border bg-bone"
             [class]="vencida(factura) ? 'border-clay/40' : 'border-sand'"
           >
@@ -411,10 +434,6 @@
                     >
                       {{ factura.numero }}
                     </p>
-                    <p class="text-sm" [class]="anulada ? 'text-ink-muted' : 'text-ink'">
-                      {{ factura.clienteNombre }}
-                    </p>
-
                     @if (esNota(factura)) {
                       <!-- Una nota se distingue de un vistazo: no es algo que
                            se cobre, es una corrección sobre otra cosa. -->
@@ -560,9 +579,12 @@
                 </div>
               </div>
             }
-          </li>
+                </li>
+              }
+            </ul>
+          </div>
         }
-      </ul>
+      </div>
 
       <p class="tabular mt-5 text-sm text-ink-soft">
         {{ visible().length }} factura(s) a la vista · {{ saldoVisible() | cop }} por cobrar

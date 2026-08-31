@@ -206,30 +206,99 @@
       (click)="$event.stopPropagation()"
     >
       @if (entrega) {
-        <p class="text-h3 text-ink">¿Confirmar cobro?</p>
-        <p class="mt-2 text-sm text-ink-soft">
-          {{ entrega.clienteNombre }} · <span class="tabular font-semibold text-ink">{{ total(entrega) | cop }}</span>
-        </p>
-        <p class="mt-3 text-xs text-ink-muted">
-          Marca esto solo después de haber recibido el efectivo en mano.
-        </p>
+        @if (confirmandoRechazo()) {
+          <!--
+            Segundo paso de "no pagó": es irreversible (cancela el pedido y
+            devuelve la mercancía), así que se confirma aparte y no se ofrece
+            junto a los otros dos botones a un toque de distancia.
+          -->
+          <p class="text-h3 text-ink">¿Seguro que no pagó nada?</p>
+          <p class="mt-2 text-sm text-ink-soft">
+            El pedido de {{ entrega.clienteNombre }} se cancela y la mercancía
+            vuelve al inventario. No se puede deshacer desde aquí.
+          </p>
 
-        <div class="mt-5 flex flex-col gap-3">
-          <button
-            type="button"
-            class="flex min-h-12 w-full items-center justify-center rounded-full bg-moss text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep"
-            (click)="confirmPaid(entrega)"
-          >
-            Sí, ya cobré
-          </button>
-          <button
-            type="button"
-            class="flex min-h-12 w-full items-center justify-center rounded-full border border-sand text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
-            (click)="dismissConfirm()"
-          >
-            Todavía no
-          </button>
-        </div>
+          <div class="mt-5 flex flex-col gap-3">
+            <button
+              type="button"
+              class="flex min-h-12 w-full items-center justify-center rounded-full bg-berry text-sm font-semibold text-bone transition-colors duration-200 hover:opacity-90"
+              (click)="confirmarNoPago(entrega)"
+            >
+              Sí, no pagó nada
+            </button>
+            <button
+              type="button"
+              class="flex min-h-12 w-full items-center justify-center rounded-full border border-sand text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
+              (click)="cancelarRechazo()"
+            >
+              Volver
+            </button>
+          </div>
+        } @else {
+          <p class="text-h3 text-ink">¿Cómo te fue con el cobro?</p>
+          <p class="mt-2 text-sm text-ink-soft">
+            {{ entrega.clienteNombre }} ·
+            <span class="tabular font-semibold text-ink">{{ total(entrega) | cop }}</span>
+          </p>
+
+          <div class="mt-5 flex flex-col gap-3">
+            <button
+              type="button"
+              class="flex min-h-12 w-full items-center justify-center rounded-full bg-moss text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep"
+              (click)="confirmPaid(entrega)"
+            >
+              Pagó todo · {{ total(entrega) | cop }}
+            </button>
+
+            <!--
+              El abono va dentro de la misma tarjeta, no en un segundo modal:
+              es un caso frecuente y merece estar a un solo toque, no a dos.
+            -->
+            <div class="rounded-lg border border-sand px-3 py-3">
+              <label for="monto-abono-parcial" class="block text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                Pagó una parte
+              </label>
+              <div class="mt-2 flex items-center gap-2">
+                <input
+                  id="monto-abono-parcial"
+                  type="number"
+                  min="1"
+                  inputmode="numeric"
+                  placeholder="¿Cuánto te dio?"
+                  class="tabular min-h-12 min-w-0 flex-1 rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+                  [value]="montoAbonoParcial() || ''"
+                  (input)="onMontoAbonoParcial($event)"
+                />
+                <button
+                  type="button"
+                  class="min-h-12 shrink-0 rounded-full border border-moss px-4 text-sm font-semibold text-moss-deep transition-colors duration-200 hover:bg-moss hover:text-bone"
+                  (click)="registrarAbonoParcial(entrega)"
+                >
+                  Abonar
+                </button>
+              </div>
+              <p class="mt-2 text-xs text-ink-muted">
+                Queda debiendo el resto: se anota en su cuenta, no se pierde.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              class="flex min-h-12 w-full items-center justify-center rounded-full border border-berry/40 text-sm text-berry transition-colors duration-200 hover:bg-berry/5"
+              (click)="pedirConfirmacionRechazo()"
+            >
+              No pagó nada
+            </button>
+
+            <button
+              type="button"
+              class="text-sm text-ink-soft transition-colors duration-200 hover:text-ink"
+              (click)="dismissConfirm()"
+            >
+              Todavía no sé, cerrar
+            </button>
+          </div>
+        }
       }
     </div>
   </div>

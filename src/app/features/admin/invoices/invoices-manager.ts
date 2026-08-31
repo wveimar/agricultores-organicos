@@ -15,6 +15,14 @@ const ESTADOS = [
 
 type Estado = (typeof ESTADOS)[number]['value'];
 
+/** Las facturas de un mismo cliente, agrupadas para la lista de Facturación. */
+interface GrupoFacturas {
+  readonly key: string;
+  readonly clienteNombre: string;
+  readonly totalDebe: number;
+  readonly facturas: readonly ApiInvoice[];
+}
+
 /**
  * Facturación — el libro de ventas.
  *
@@ -336,6 +344,53 @@ export class InvoicesManager {
         factura.clienteTelefono.includes(termino)
       );
     });
+  });
+
+  /**
+   * `visible()` agrupado por cliente, para que un cliente con varias facturas
+   * aparezca una sola vez con todas debajo, en vez de repetir su nombre en
+   * cada fila.
+   *
+   * La llave es el `contactId` cuando existe. Sin él —una venta de mostrador,
+   * o una nota sobre una factura sin contacto— se agrupa por el nombre tal
+   * cual se facturó: es lo único que hay, y agrupar por nombre puede juntar a
+   * dos personas distintas que se llaman igual, pero es mejor error que uno
+   * por fila para cada una.
+   *
+   * El orden dentro de cada grupo sale gratis: `visible()` ya viene ordenado
+   * por consecutivo descendente (así lo entrega el servidor), así que el
+   * primer elemento de cada grupo es, sin más trabajo, su factura más
+   * reciente — de ahí sale el criterio de desempate del orden de los grupos.
+   */
+  protected readonly gruposFacturas = computed<readonly GrupoFacturas[]>(() => {
+    const porCliente = new Map<string, { clienteNombre: string; facturas: ApiInvoice[] }>();
+
+    for (const factura of this.visible()) {
+      const key = factura.contactId ?? `nombre:${factura.clienteNombre}`;
+      const grupo = porCliente.get(key);
+      if (grupo) {
+        grupo.facturas.push(factura);
+      } else {
+        porCliente.set(key, { clienteNombre: factura.clienteNombre, facturas: [factura] });
+      }
+    }
+
+    return [...porCliente.entries()]
+      .map(([key, grupo]) => ({
+        key,
+        clienteNombre: grupo.clienteNombre,
+        totalDebe: grupo.facturas.reduce((suma, f) => suma + f.saldo, 0),
+        facturas: grupo.facturas,
+      }))
+      .sort(
+        (a, b) =>
+          // Quien más debe, primero: es a quien más urge llamar.
+          b.totalDebe - a.totalDebe ||
+          // A igualdad de deuda (típicamente 0, en Pagadas/Anuladas), el
+          // cliente con movimiento más reciente.
+          b.facturas[0].consecutivo - a.facturas[0].consecutivo ||
+          a.clienteNombre.localeCompare(b.clienteNombre, 'es'),
+      );
   });
 
   /** Cuántas hay en cada pestaña. */

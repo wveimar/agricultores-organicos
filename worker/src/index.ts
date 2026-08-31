@@ -229,9 +229,13 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     }
 
     // Cartera: los cobros y su reparto entre facturas (migración 0028).
-    // `/deudas` va ANTES que el patrón de id, o `deudas` se leería como un id.
+    // `/deudas` y `/deudores` van ANTES que el patrón de id, o se leerían
+    // como un id.
     if (pathname === '/api/admin/payments/deudas' && method === 'GET') {
       return paymentsRoute.deudas(env, user, url);
+    }
+    if (pathname === '/api/admin/payments/deudores' && method === 'GET') {
+      return paymentsRoute.deudores(env, user);
     }
     if (pathname === '/api/admin/payments' && method === 'GET') {
       return paymentsRoute.list(env, user, url);
@@ -287,7 +291,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 
     const payMatch = pathname.match(/^\/api\/admin\/orders\/([\w-]+)\/pagar$/);
     if (payMatch && method === 'POST') {
-      return orders.markPaid(env, user, payMatch[1]);
+      return orders.markPaid(request, env, user, payMatch[1]);
     }
 
     // Equivalente de /pagar para lo que no es contra entrega: no hay nada que

@@ -94,7 +94,9 @@ ok(
 console.log('\n── 2 · Asignar ──');
 
 const catalogo = await api('/api/products');
-const producto = catalogo.body.products.find((p) => p.stock > 2 && !p.parentId);
+// Esta suite crea siete pedidos de un producto cada uno (uno más por cada
+// camino de cobro nuevo): el filtro de stock tiene que cubrir eso de sobra.
+const producto = catalogo.body.products.find((p) => p.stock > 15 && !p.parentId);
 
 async function pedidoEnLaCalle() {
   const nuevo = await api('/api/orders', {
@@ -110,10 +112,12 @@ async function pedidoEnLaCalle() {
   const id = nuevo.body.order.id;
   await api(`/api/admin/orders/${id}/aprobar`, { method: 'POST' });
   await api(`/api/admin/orders/${id}/enviar`, { method: 'POST' });
-  return id;
+  // No hay GET /api/admin/orders/:id — el total sale de la propia respuesta de
+  // creación, que ya lo trae y no cambia entre aprobar y enviar.
+  return { id, total: nuevo.body.order.total };
 }
 
-const pedido = await pedidoEnLaCalle();
+const { id: pedido } = await pedidoEnLaCalle();
 
 const asignado = await api(`/api/admin/orders/${pedido}/domiciliario`, {
   method: 'POST',
@@ -187,8 +191,8 @@ ok(
 
 console.log('\n── 5 · Cada domiciliario ve lo suyo ──');
 
-const mio = await pedidoEnLaCalle();
-const ajeno = await pedidoEnLaCalle();
+const { id: mio } = await pedidoEnLaCalle();
+const { id: ajeno } = await pedidoEnLaCalle();
 await api(`/api/admin/orders/${mio}/domiciliario`, {
   method: 'POST',
   body: JSON.stringify({ domiciliarioId }),
@@ -208,6 +212,75 @@ ok(!ids.includes(ajeno), 'NO ve el del otro domiciliario');
 const comoGestor = await api('/api/admin/entregas');
 const idsGestor = comoGestor.body.entregas.map((e) => e.id);
 ok(idsGestor.includes(mio) && idsGestor.includes(ajeno), 'el gestor ve toda la calle');
+
+console.log('\n── 6 · Los tres caminos del cobro contra entrega ──');
+
+async function facturaDelPedido(orderId) {
+  const lista = await api('/api/admin/invoices');
+  return lista.body.invoices.find((f) => f.orderId === orderId);
+}
+
+// Pago completo: sin `monto`, se cobra el saldo entero — el camino de siempre.
+const { id: pedidoCompleto } = await pedidoEnLaCalle();
+const cobroCompleto = await api(
+  `/api/admin/orders/${pedidoCompleto}/pagar`,
+  { method: 'POST', body: JSON.stringify({}) },
+  tokenDom,
+);
+ok(cobroCompleto.status === 200, 'el domiciliario cobra completo', `status ${cobroCompleto.status}`);
+let factura = await facturaDelPedido(pedidoCompleto);
+ok(factura?.saldo === 0, 'sin monto, la factura queda en cero', `saldo ${factura?.saldo}`);
+ok(factura?.estado === 'pagada', "y en estado 'pagada'", factura?.estado);
+
+// Abono: con `monto` menor al total, el pedido igual pasa a 'pago' —la
+// mercancía salió igual— pero la factura queda debiendo la diferencia.
+const { id: pedidoAbono, total: totalAbono } = await pedidoEnLaCalle();
+const mitad = Math.floor(totalAbono / 2);
+
+const cobroAbono = await api(
+  `/api/admin/orders/${pedidoAbono}/pagar`,
+  { method: 'POST', body: JSON.stringify({ monto: mitad }) },
+  tokenDom,
+);
+ok(cobroAbono.status === 200, 'el domiciliario registra un abono', `status ${cobroAbono.status}`);
+ok(cobroAbono.body?.order?.estado === 'pago', "el pedido pasa a 'pago' igual: la mercancía ya salió");
+
+factura = await facturaDelPedido(pedidoAbono);
+ok(
+  factura?.saldo === totalAbono - mitad,
+  'la factura queda debiendo justo la diferencia',
+  `saldo ${factura?.saldo} vs esperado ${totalAbono - mitad}`,
+);
+ok(factura?.estado === 'pagada_parcial', "y en estado 'pagada_parcial'", factura?.estado);
+
+// Un monto mayor al saldo no puede sobrepagar esta factura por este camino:
+// se cubre justo lo que se debía, no más.
+const { id: pedidoExceso, total: totalExceso } = await pedidoEnLaCalle();
+await api(
+  `/api/admin/orders/${pedidoExceso}/pagar`,
+  { method: 'POST', body: JSON.stringify({ monto: totalExceso + 50_000 }) },
+  tokenDom,
+);
+factura = await facturaDelPedido(pedidoExceso);
+ok(factura?.saldo === 0, 'un monto de más no sobrepaga: queda en cero', `saldo ${factura?.saldo}`);
+
+// No pagó nada: cancela el pedido y anula su factura, y lo puede hacer el
+// domiciliario — es quien está delante cuando el cliente no paga.
+const { id: pedidoRechazo } = await pedidoEnLaCalle();
+const rechazo = await api(
+  `/api/admin/orders/${pedidoRechazo}/rechazar-entrega`,
+  { method: 'POST', body: JSON.stringify({ motivo: 'No pagó en la puerta' }) },
+  tokenDom,
+);
+ok(
+  rechazo.status === 200,
+  'el domiciliario puede marcar "no pagó nada"',
+  `status ${rechazo.status}`,
+);
+ok(rechazo.body?.order?.estado === 'cancelado', 'el pedido queda cancelado', rechazo.body?.order?.estado);
+
+factura = await facturaDelPedido(pedidoRechazo);
+ok(factura?.estado === 'anulada', 'su factura queda anulada, no viva debiendo nada', factura?.estado);
 
 console.log(`\n${fallos === 0 ? 'TODO EN VERDE' : `${fallos} FALLO(S)`}\n`);
 process.exit(fallos === 0 ? 0 : 1);

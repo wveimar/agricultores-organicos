@@ -7,10 +7,11 @@ import { CopPipe } from '../../../shared/pipes/cop.pipe';
  * Lo que ve el domiciliario en la calle: pedidos 'enviado' que todavía tiene
  * pendientes.
  *
- * No todos traen cobro: uno contra entrega necesita `markOrderPaid` (con
- * modal, porque involucra plata); cualquier otro método solo necesita
- * `confirmDelivery` (sin modal — no hay nada que verificar más que la puerta).
- * `isCashOnDelivery()` decide cuál de las dos ofrecer.
+ * No todos traen cobro: uno contra entrega necesita el modal de cobro —tres
+ * caminos: pagó todo, abonó una parte, o no pagó nada— porque involucra plata;
+ * cualquier otro método solo necesita `confirmDelivery` (sin modal — no hay
+ * nada que verificar más que la puerta). `isCashOnDelivery()` decide cuál de
+ * las dos ofrecer.
  *
  * Pantalla deliberadamente distinta del panel de escritorio (`orders-manager`):
  * nada de tabla densa, nada de costo ni margen (esta vista viene de
@@ -154,15 +155,36 @@ export class DeliveryOrders {
     return entrega.metodoPago === 'contraentrega';
   }
 
+  // ─────────────────────── Modal de cobro: los tres caminos ───────────────────────
+  //
+  // Pagó todo, pagó una parte, o no pagó nada. Antes solo existían los dos
+  // extremos («Sí, ya cobré» / «Todavía no», y esta última ni siquiera hacía
+  // nada — solo cerraba el modal). El caso intermedio es real y frecuente: el
+  // cliente saca lo que tiene, no el total, y hasta ahora no había dónde
+  // anotarlo — quedaba en un papel o se perdía.
+
+  /** Monto que el cliente sí dio, cuando es menos que el total. */
+  protected readonly montoAbonoParcial = signal(0);
+  /** Si se está mostrando la confirmación de "no pagó" (es irreversible). */
+  protected readonly confirmandoRechazo = signal(false);
+
+  protected onMontoAbonoParcial(event: Event): void {
+    this.montoAbonoParcial.set(Number((event.target as HTMLInputElement).value) || 0);
+  }
+
   protected askConfirm(entrega: ApiDelivery): void {
     this.confirmingId.set(entrega.id);
+    this.montoAbonoParcial.set(0);
+    this.confirmandoRechazo.set(false);
     this.feedback.set(null);
   }
 
   protected dismissConfirm(): void {
     this.confirmingId.set(null);
+    this.confirmandoRechazo.set(false);
   }
 
+  /** Cobro completo: el camino de siempre, sin `monto` — el Worker cobra el saldo entero. */
   protected confirmPaid(entrega: ApiDelivery): void {
     this.confirmingId.set(null);
     this.workingId.set(entrega.id);
@@ -182,6 +204,80 @@ export class DeliveryOrders {
         // Alguien más pudo haberlo cobrado primero (dos domiciliarios con el
         // mismo pedido, mal asignado): refrescar quita de la lista lo que ya
         // no está pendiente, en vez de dejar un botón que solo va a fallar.
+        this.adminApi.loadDeliveries();
+      },
+    });
+  }
+
+  /**
+   * Abono: el cliente dio menos que el total. Se manda `monto` — el Worker lo
+   * cobra contra la factura de este pedido y deja el resto vivo en su saldo,
+   * que a partir de ahí ya sabe encontrar Cartera.
+   *
+   * Si lo que escribió alcanza o supera el total, no tiene sentido tratarlo
+   * como abono: es un cobro completo, y ese es el camino que ya sabe qué hacer
+   * con un monto de más (no lo hay, se cobra el saldo justo).
+   */
+  protected registrarAbonoParcial(entrega: ApiDelivery): void {
+    const monto = this.montoAbonoParcial();
+    if (monto <= 0) {
+      this.feedback.set('Escribe cuánto te dio el cliente.');
+      return;
+    }
+    if (monto >= this.total(entrega)) {
+      this.confirmPaid(entrega);
+      return;
+    }
+
+    this.confirmingId.set(null);
+    this.workingId.set(entrega.id);
+
+    this.adminApi.markOrderPaid(entrega.id, monto).subscribe({
+      next: () => {
+        this.workingId.set(null);
+        this.feedback.set(
+          `${entrega.referencia}: abonó ${monto.toLocaleString('es-CO')}. Queda debiendo el resto.`,
+        );
+        this.adminApi.loadDeliveries();
+      },
+      error: (error: ApiErrorBody) => {
+        this.workingId.set(null);
+        this.feedback.set(error.message);
+        this.adminApi.loadDeliveries();
+      },
+    });
+  }
+
+  /** Pide la confirmación de "no pagó": es irreversible, devuelve stock y cancela el pedido. */
+  protected pedirConfirmacionRechazo(): void {
+    this.confirmandoRechazo.set(true);
+  }
+
+  protected cancelarRechazo(): void {
+    this.confirmandoRechazo.set(false);
+  }
+
+  /**
+   * No pagó nada: el pedido se cancela y la mercancía vuelve al inventario.
+   *
+   * Reusa `rejectDelivery`, el mismo camino que ya tenía el panel de
+   * escritorio para "el cliente rechazó en la puerta" — ahora también lo
+   * puede tocar el domiciliario, que es quien está delante cuando pasa.
+   */
+  protected confirmarNoPago(entrega: ApiDelivery): void {
+    this.confirmingId.set(null);
+    this.confirmandoRechazo.set(false);
+    this.workingId.set(entrega.id);
+
+    this.adminApi.rejectDelivery(entrega.id, 'No pagó en la puerta').subscribe({
+      next: () => {
+        this.workingId.set(null);
+        this.feedback.set(`${entrega.referencia}: sin pago, vuelve al inventario.`);
+        this.adminApi.loadDeliveries();
+      },
+      error: (error: ApiErrorBody) => {
+        this.workingId.set(null);
+        this.feedback.set(error.message);
         this.adminApi.loadDeliveries();
       },
     });

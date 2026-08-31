@@ -4,6 +4,7 @@ import {
   ApiCashSummary,
   ApiAdminGroup,
   ApiCategory,
+  ApiDeuda,
   ApiClient,
   ApiClosing,
   ApiClosingOrder,
@@ -569,9 +570,12 @@ export class AdminApiService {
     return this.api.orderHistory(id);
   }
 
-  /** El domiciliario (o un admin de respaldo) marca que cobró un pedido contra entrega. */
-  markOrderPaid(id: string): Observable<ApiOrder> {
-    return this.api.markOrderPaid(id).pipe(
+  /**
+   * El domiciliario (o un admin de respaldo) marca que cobró un pedido contra
+   * entrega. `monto` opcional: sin él, cobro completo; con él, un abono.
+   */
+  markOrderPaid(id: string, monto?: number): Observable<ApiOrder> {
+    return this.api.markOrderPaid(id, monto).pipe(
       tap((updated) => {
         this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
       }),
@@ -959,23 +963,50 @@ export class AdminApiService {
     return this.api.deudasDe(contactId);
   }
 
+  /** Todos los clientes con algo pendiente, para el panel de "quién debe" de Cobros. */
+  readonly deudores = signal<readonly ApiDeuda[]>([]);
+  readonly deudoresLoading = signal(false);
+
+  loadDeudores(): void {
+    this.deudoresLoading.set(true);
+    this.api.deudores().subscribe({
+      next: (lista) => {
+        this.deudores.set(lista);
+        this.deudoresLoading.set(false);
+      },
+      // Sin la lista, el formulario de "Registrar cobro" sigue funcionando
+      // eligiendo del desplegable: se calla en vez de romper la pantalla.
+      error: () => {
+        this.deudores.set([]);
+        this.deudoresLoading.set(false);
+      },
+    });
+  }
+
   /** El cobro con su reparto: contra qué facturas se aplicó y cuánto a cada una. */
   paymentDetail(id: string) {
     return this.api.paymentDetail(id);
   }
 
   /**
-   * Las tres escrituras recargan la lista y las facturas.
+   * Las tres escrituras recargan la lista, las facturas y los deudores.
    *
-   * Las facturas también, y no por comodidad: un abono cambia el saldo de una
+   * Las facturas, y no por comodidad: un abono cambia el saldo de una
    * factura, y dejar la pantalla de Facturación con la cifra vieja es
    * exactamente el descuadre que este módulo viene a cerrar.
+   *
+   * Los deudores, porque son la MISMA cifra vista desde el panel de Cobros:
+   * sin este refresco, saldar la deuda de un cliente lo dejaba un momento
+   * fuera de "Quién debe" en Facturación pero todavía ahí, con su tarjeta y su
+   * botón «Cobrar», en la pantalla de al lado — que es justo donde se acababa
+   * de cobrar.
    */
   createPayment(input: ApiPaymentInput) {
     return this.api.createPayment(input).pipe(
       tap(() => {
         this.loadPayments();
         this.loadInvoices();
+        this.loadDeudores();
       }),
     );
   }
@@ -985,6 +1016,7 @@ export class AdminApiService {
       tap(() => {
         this.loadPayments();
         this.loadInvoices();
+        this.loadDeudores();
       }),
     );
   }
@@ -995,6 +1027,7 @@ export class AdminApiService {
         this.payments.update((list) => list.filter((p) => p.id !== id));
         this.loadPayments();
         this.loadInvoices();
+        this.loadDeudores();
       }),
     );
   }

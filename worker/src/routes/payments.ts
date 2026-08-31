@@ -131,17 +131,31 @@ function sentenciasDeCobro(
  * `liquidado` distingue de dónde sale la plata: el efectivo de la puerta sigue
  * en el bolsillo del domiciliario hasta que alguien lo entrega en la finca, así
  * que no puede contar en el cierre todavía. Una transferencia sí.
+ *
+ * `monto` es opcional y es lo que hace posible el abono en la puerta: sin él
+ * (el caso de siempre, cobro completo) se cobra `i.saldo`, todo lo que la
+ * factura debe. Con él —el cliente solo tenía una parte— se cobra
+ * `MIN(i.saldo, monto)`: nunca más de lo que en realidad se debe, así que un
+ * monto mandado de más no puede sobrepagar esta factura por este camino. El
+ * pedido de todas formas pasa a 'pago' — la mercancía salió igual, cobrada del
+ * todo o no—, y lo que falte por cobrar queda vivo en el saldo de la factura,
+ * donde ya lo sabe encontrar Cartera.
  */
 export function cobrarPedidoStatements(
   env: Env,
   paymentId: string,
   orderId: string,
   user: JwtPayload,
-  opciones: { metodo: 'efectivo' | 'transferencia'; liquidado: 0 | 1 },
+  opciones: { metodo: 'efectivo' | 'transferencia'; liquidado: 0 | 1; monto?: number },
 ) {
+  // NULL de verdad y no `?? i.saldo` en JS: la comparación tiene que ocurrir en
+  // SQL contra el saldo real de la factura en el momento del batch, no contra
+  // un valor leído en una consulta aparte que podría quedar desactualizado.
+  const monto = opciones.monto ?? null;
+
   return [
-    // El monto y el cliente salen de la propia factura del pedido, no de lo
-    // que mande quien llama: son la única fuente correcta de cuánto se debía.
+    // El cliente sale de la propia factura del pedido, no de lo que mande
+    // quien llama: es la única fuente correcta de a quién se le cobró.
     env.DB.prepare(
       `INSERT INTO payments (
          id, referencia, contact_id, cliente_nombre, monto, metodo,
@@ -149,21 +163,22 @@ export function cobrarPedidoStatements(
        )
        SELECT ?1,
               'ABONO-' || printf('%06d', (SELECT IFNULL(MAX(CAST(substr(referencia, 7) AS INTEGER)), 0) + 1 FROM payments)),
-              i.contact_id, i.cliente_nombre, i.saldo, ?4,
-              datetime('now'), ?3, ?5, ?6
+              i.contact_id, i.cliente_nombre,
+              CASE WHEN ?7 IS NULL THEN i.saldo ELSE MIN(i.saldo, ?7) END,
+              ?4, datetime('now'), ?3, ?5, ?6
          FROM invoices i
         WHERE i.order_id = ?2 AND i.estado <> 'anulada' AND i.saldo > 0`,
-    ).bind(paymentId, orderId, user.sub, opciones.metodo, user.nombre, opciones.liquidado),
+    ).bind(paymentId, orderId, user.sub, opciones.metodo, user.nombre, opciones.liquidado, monto),
 
-    // Y el reparto: todo el saldo contra esa misma factura. El WHERE del
-    // SELECT hace que si no había factura viva no se inserte nada, en vez de
-    // crear una asignación colgando del vacío.
+    // Y el reparto: lo mismo que se acaba de cobrar, contra esa misma factura.
+    // El WHERE del SELECT hace que si no había factura viva no se inserte
+    // nada, en vez de crear una asignación colgando del vacío.
     env.DB.prepare(
       `INSERT INTO payment_allocations (payment_id, invoice_id, monto)
-       SELECT ?1, i.id, i.saldo
+       SELECT ?1, i.id, CASE WHEN ?3 IS NULL THEN i.saldo ELSE MIN(i.saldo, ?3) END
          FROM invoices i
         WHERE i.order_id = ?2 AND i.estado <> 'anulada' AND i.saldo > 0`,
-    ).bind(paymentId, orderId),
+    ).bind(paymentId, orderId, monto),
 
     // Recalcula por `order_id` porque aquí no se conoce el id de la factura.
     // Misma fórmula que `recalcularStatement`, armada con los mismos
@@ -242,13 +257,40 @@ export async function deudas(env: Env, user: JwtPayload, url: URL): Promise<Resp
   }
 
   const { results } = await env.DB.prepare(
-    `SELECT id, numero, total, saldo, emitida_en AS emitidaEn, vence_en AS venceEn
+    `SELECT id, numero, total, saldo, contact_id AS contactId,
+            cliente_nombre AS clienteNombre, emitida_en AS emitidaEn, vence_en AS venceEn
        FROM invoices
       WHERE contact_id = ?1 AND estado <> 'anulada' AND saldo > 0
       ORDER BY emitida_en, id`,
   )
     .bind(contactId)
     .all();
+
+  return json({ deudas: results });
+}
+
+/**
+ * GET /api/admin/payments/deudores — todos los clientes con algo pendiente,
+ * con el detalle de cada factura.
+ *
+ * Es lo mismo que `deudas()` sin el filtro de un cliente: existe para la
+ * pantalla de Cobros, que necesita mostrar de entrada quién debe qué, no
+ * esperar a que alguien elija un nombre en el desplegable para enterarse.
+ *
+ * Sin el límite de 200 que sí tiene `list()`: esta es la lista que decide a
+ * quién llamar a cobrar, y una deuda vieja que se cayera del límite por
+ * antigüedad es exactamente la que más urge no perder de vista.
+ */
+export async function deudores(env: Env, user: JwtPayload): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const { results } = await env.DB.prepare(
+    `SELECT id, numero, total, saldo, contact_id AS contactId,
+            cliente_nombre AS clienteNombre, emitida_en AS emitidaEn, vence_en AS venceEn
+       FROM invoices
+      WHERE estado <> 'anulada' AND tipo = 'factura' AND saldo > 0
+      ORDER BY contact_id, emitida_en`,
+  ).all();
 
   return json({ deudas: results });
 }

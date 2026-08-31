@@ -17,6 +17,22 @@ const METODOS = [
   { value: 'daviplata', label: 'Daviplata' },
 ] as const;
 
+/** Un cliente con algo pendiente, y todas sus facturas abiertas. */
+interface GrupoDeudor {
+  readonly key: string;
+  readonly contactId: string | null;
+  readonly clienteNombre: string;
+  readonly totalDebe: number;
+  readonly facturas: readonly ApiDeuda[];
+}
+
+/** Los cobros de un mismo cliente, agrupados para el historial. */
+interface GrupoPagos {
+  readonly key: string;
+  readonly clienteNombre: string;
+  readonly pagos: readonly ApiPayment[];
+}
+
 /**
  * Cobros — el dinero que entra.
  *
@@ -74,6 +90,7 @@ export class PaymentsManager {
   constructor() {
     this.adminApi.loadPayments();
     this.adminApi.loadContacts();
+    this.adminApi.loadDeudores();
   }
 
   /** Solo los clientes: a un proveedor no se le cobra, se le paga. */
@@ -93,6 +110,79 @@ export class PaymentsManager {
           pago.clienteNombre.toLowerCase().includes(termino) ||
           pago.referencia.toLowerCase().includes(termino),
       );
+  });
+
+  /**
+   * Quién debe, agrupado por cliente — el «quién llamar hoy» de esta pantalla.
+   *
+   * Siempre visible, sin tener que abrir «Registrar cobro» y buscar un nombre
+   * a ciegas en el desplegable. La llave es el `contactId`; sin él —no
+   * debería pasar aquí, toda factura con saldo viene de un pedido o de un
+   * alta manual con cliente— se agrupa por nombre, igual que en Facturación.
+   *
+   * `deudores()` ya llega ordenado `contact_id, emitida_en` desde el
+   * servidor, así que las facturas de cada grupo salen de la más vieja a la
+   * más nueva sin tener que reordenarlas aquí — es justo el orden en que se
+   * van a cobrar.
+   */
+  protected readonly gruposDeudores = computed<readonly GrupoDeudor[]>(() => {
+    const porCliente = new Map<
+      string,
+      { contactId: string | null; clienteNombre: string; facturas: ApiDeuda[] }
+    >();
+
+    for (const deuda of this.adminApi.deudores()) {
+      const key = deuda.contactId ?? `nombre:${deuda.clienteNombre}`;
+      const grupo = porCliente.get(key);
+      if (grupo) {
+        grupo.facturas.push(deuda);
+      } else {
+        porCliente.set(key, {
+          contactId: deuda.contactId,
+          clienteNombre: deuda.clienteNombre,
+          facturas: [deuda],
+        });
+      }
+    }
+
+    return [...porCliente.entries()]
+      .map(([key, grupo]) => ({
+        key,
+        contactId: grupo.contactId,
+        clienteNombre: grupo.clienteNombre,
+        totalDebe: grupo.facturas.reduce((suma, f) => suma + f.saldo, 0),
+        facturas: grupo.facturas,
+      }))
+      .sort((a, b) => b.totalDebe - a.totalDebe || a.clienteNombre.localeCompare(b.clienteNombre, 'es'));
+  });
+
+  /**
+   * El historial de cobros, agrupado por cliente.
+   *
+   * Sin reordenar nada: `visible()` ya llega del servidor con el más reciente
+   * primero, así que basta con ir metiendo cada cobro en el grupo de su
+   * cliente en el orden en que aparecen — el primer cliente en tener un cobro
+   * es, sin más cálculo, el de movimiento más reciente. Un `Map` conserva el
+   * orden de inserción por eso mismo.
+   */
+  protected readonly gruposPagos = computed<readonly GrupoPagos[]>(() => {
+    const porCliente = new Map<string, { clienteNombre: string; pagos: ApiPayment[] }>();
+
+    for (const pago of this.visible()) {
+      const key = pago.contactId ?? `nombre:${pago.clienteNombre}`;
+      const grupo = porCliente.get(key);
+      if (grupo) {
+        grupo.pagos.push(pago);
+      } else {
+        porCliente.set(key, { clienteNombre: pago.clienteNombre, pagos: [pago] });
+      }
+    }
+
+    return [...porCliente.entries()].map(([key, grupo]) => ({
+      key,
+      clienteNombre: grupo.clienteNombre,
+      pagos: grupo.pagos,
+    }));
   });
 
   /** Cuánto del cobro que se está escribiendo va a quedar sin aplicar. */
@@ -159,6 +249,28 @@ export class PaymentsManager {
     this.deudas.set([]);
     this.form.reset({ contactId: '', monto: 0, metodo: 'efectivo', nota: '' });
     this.editandoId.set(null);
+    this.abierto.set(true);
+  }
+
+  /**
+   * Abre el formulario con este cliente ya elegido, desde el panel de
+   * deudores. Evita el desplegable: quien mira esa lista ya sabe a quién le
+   * va a cobrar, y ya tiene sus facturas delante — no hace falta preguntarle
+   * dos veces.
+   *
+   * Sin `contactId` (grupo agrupado por nombre, sin ficha real) no hay a
+   * quién asignarle el cobro por API, así que no se ofrece el atajo — ver la
+   * plantilla, que solo pinta el botón cuando `grupo.contactId` existe.
+   */
+  protected cobrarA(grupo: GrupoDeudor): void {
+    if (!grupo.contactId) {
+      return;
+    }
+    this.error.set(null);
+    this.aviso.set(null);
+    this.editandoId.set(null);
+    this.form.reset({ contactId: grupo.contactId, monto: 0, metodo: 'efectivo', nota: '' });
+    this.deudas.set(grupo.facturas);
     this.abierto.set(true);
   }
 

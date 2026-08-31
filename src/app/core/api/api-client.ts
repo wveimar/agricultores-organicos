@@ -818,6 +818,14 @@ export interface ApiDeuda {
   readonly saldo: number;
   readonly emitidaEn: string;
   readonly venceEn: string | null;
+  /**
+   * A quién es. En `deudasDe(contactId)` es redundante —ya se sabe de quién
+   * se preguntó— pero en `deudores()`, que trae TODOS los clientes de una
+   * vez, es lo único que permite agruparlas. Se manda en los dos endpoints
+   * para que una sola interfaz sirva a las dos pantallas.
+   */
+  readonly contactId: string | null;
+  readonly clienteNombre: string;
 }
 
 export interface ApiPaymentInput {
@@ -1272,10 +1280,18 @@ export class ApiClient {
       .pipe(map((res) => res.order), catchError(handleError));
   }
 
-  /** El domiciliario (o un admin de respaldo) marca que cobró un pedido contra entrega. */
-  markOrderPaid(id: string): Observable<ApiOrder> {
+  /**
+   * El domiciliario (o un admin de respaldo) marca que cobró un pedido contra
+   * entrega.
+   *
+   * `monto` es opcional: sin él es un cobro completo, que sigue siendo el
+   * camino de siempre. Con él es un abono — el cliente en la puerta solo dio
+   * una parte — y el Worker lo cobra contra la factura del pedido dejando el
+   * resto vivo en su saldo, sin superar nunca lo que en realidad se debía.
+   */
+  markOrderPaid(id: string, monto?: number): Observable<ApiOrder> {
     return this.http
-      .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/pagar`, {})
+      .post<{ order: ApiOrder }>(`/api/admin/orders/${id}/pagar`, monto ? { monto } : {})
       .pipe(map((res) => res.order), catchError(handleError));
   }
 
@@ -1591,6 +1607,13 @@ export class ApiClient {
       .get<{ deudas: ApiDeuda[] }>(
         `/api/admin/payments/deudas?contactId=${encodeURIComponent(contactId)}`,
       )
+      .pipe(map((res) => res.deudas), catchError(handleError));
+  }
+
+  /** Todos los clientes con algo pendiente, con el detalle de cada factura. */
+  deudores(): Observable<readonly ApiDeuda[]> {
+    return this.http
+      .get<{ deudas: ApiDeuda[] }>('/api/admin/payments/deudores')
       .pipe(map((res) => res.deudas), catchError(handleError));
   }
 

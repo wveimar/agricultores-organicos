@@ -50,6 +50,65 @@
       </div>
     }
 
+    <!--
+      Quién debe, siempre a la vista — el punto de entrada real para cobrar,
+      antes de llegar al formulario. Un clic en "Cobrar" abre "Registrar
+      cobro" con el cliente ya elegido y su detalle de deuda ya cargado, sin
+      pasar por el desplegable.
+    -->
+    @if (!abierto() && gruposDeudores().length > 0) {
+      <div class="mb-6">
+        <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-muted">
+          Quién debe
+        </h2>
+        <div class="flex flex-col gap-3">
+          @for (grupo of gruposDeudores(); track grupo.key) {
+            <div class="rounded-2xl border border-sand bg-bone px-6 py-5">
+              <div class="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <p class="text-sm font-semibold text-ink">{{ grupo.clienteNombre }}</p>
+                  <p class="tabular text-xs text-ink-muted">
+                    {{ grupo.facturas.length }}
+                    {{ grupo.facturas.length === 1 ? 'factura' : 'facturas' }} pendiente(s)
+                  </p>
+                </div>
+                <div class="flex items-center gap-4">
+                  <p class="tabular text-sm font-semibold text-clay-deep">
+                    debe {{ grupo.totalDebe | cop }}
+                  </p>
+                  @if (grupo.contactId) {
+                    <button
+                      type="button"
+                      class="rounded-full bg-moss px-4 py-2 text-sm font-semibold text-bone transition-opacity duration-200 hover:opacity-90"
+                      (click)="cobrarA(grupo)"
+                    >
+                      Cobrar
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <!-- El detalle de cada factura, no solo el total: es justo lo
+                   que se pidió — saber qué debe cada una antes de cobrar. -->
+              <ul class="mt-3 flex flex-col gap-1 border-t border-sand pt-3">
+                @for (deuda of grupo.facturas; track deuda.id) {
+                  <li class="tabular flex justify-between text-sm text-ink-soft">
+                    <span>
+                      {{ deuda.numero }} · {{ fecha(deuda.emitidaEn) }}
+                      @if (deuda.venceEn) {
+                        · vence {{ fecha(deuda.venceEn) }}
+                      }
+                    </span>
+                    <span>{{ deuda.saldo | cop }} de {{ deuda.total | cop }}</span>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
     <!-- Formulario -->
     @if (abierto()) {
       <form
@@ -64,16 +123,35 @@
         <div class="grid gap-4 sm:grid-cols-2">
           <div>
             <label for="pago-cliente" class="block text-sm font-semibold text-ink">Cliente</label>
+            <!--
+              `[selected]` por cada opción, no `[value]` en el propio
+              `<select>`.
+
+              Con `[value]` en el select, Angular fija esa propiedad en la
+              misma pasada en que crea el elemento — antes de que existan sus
+              `<option>` dinámicos, generados por el `@for` de abajo. Nunca se
+              notó porque `abrir()` siempre arranca con `contactId: ''`, que
+              SÍ coincide con la opción vacía de más abajo, esa fija en el
+              HTML y no generada por el `@for`. `cobrarA()` es la primera vez
+              que el valor inicial es un cliente real: el select se creaba con
+              ese id ya puesto, no encontraba su opción todavía y volvía a
+              caer en «Elige un cliente…», dejando el desplegable vacío pese a
+              que el formulario ya tenía el cliente correcto por dentro.
+              `[selected]` no tiene ese problema: se evalúa por cada opción a
+              medida que se crea, así que no importa en qué orden se creen los
+              elementos.
+            -->
             <select
               id="pago-cliente"
               class="mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none disabled:opacity-60"
               [disabled]="editandoId() !== null"
-              [value]="form.controls.contactId.value"
               (change)="onCliente($event)"
             >
-              <option value="">Elige un cliente…</option>
+              <option value="" [selected]="!form.controls.contactId.value">Elige un cliente…</option>
               @for (cliente of clientes(); track cliente.id) {
-                <option [value]="cliente.id">{{ cliente.nombre }}</option>
+                <option [value]="cliente.id" [selected]="cliente.id === form.controls.contactId.value">
+                  {{ cliente.nombre }}
+                </option>
               }
             </select>
             @if (editandoId()) {
@@ -203,11 +281,21 @@
         </p>
       </div>
     } @else {
-      <ul class="flex flex-col gap-3">
-        @for (pago of visible(); track pago.id) {
-          @let sinAplicar = pago.monto - (pago.asignado ?? 0);
+      <div class="flex flex-col gap-6">
+        @for (grupo of gruposPagos(); track grupo.key) {
+          <div>
+            <h2 class="mb-2 px-1 text-sm font-semibold text-ink">
+              {{ grupo.clienteNombre }}
+              <span class="ml-1 font-normal text-ink-muted">
+                · {{ grupo.pagos.length }} {{ grupo.pagos.length === 1 ? 'cobro' : 'cobros' }}
+              </span>
+            </h2>
 
-          <li class="rounded-2xl border border-sand bg-bone">
+            <ul class="flex flex-col gap-3">
+              @for (pago of grupo.pagos; track pago.id) {
+                @let sinAplicar = pago.monto - (pago.asignado ?? 0);
+
+                <li class="rounded-2xl border border-sand bg-bone">
             @if (borrandoId() === pago.id) {
               <div class="flex flex-wrap items-center gap-4 px-6 py-5">
                 <p class="flex-1 text-sm text-ink-soft">
@@ -235,7 +323,6 @@
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center gap-2">
                     <p class="tabular text-sm font-semibold text-ink">{{ pago.referencia }}</p>
-                    <p class="text-sm text-ink">{{ pago.clienteNombre }}</p>
                     <span
                       class="text-overline rounded-full bg-linen px-2 py-0.5 font-semibold uppercase text-ink-soft"
                     >
@@ -305,9 +392,12 @@
                 </div>
               </div>
             }
-          </li>
+                </li>
+              }
+            </ul>
+          </div>
         }
-      </ul>
+      </div>
     }
 
     <!-- Reparto del cobro que se está mirando -->
