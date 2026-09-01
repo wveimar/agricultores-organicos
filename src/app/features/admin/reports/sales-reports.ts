@@ -3,7 +3,7 @@ import { AdminApiService } from '../../../core/services/admin-api.service';
 import {
   ApiClosing,
   ApiClosingOrder,
-  ApiCodPending,
+  ApiEfectivoPendiente,
   ApiErrorBody,
   ApiSalesRow,
 } from '../../../core/api/api-client';
@@ -69,7 +69,7 @@ export class SalesReports {
     this.adminApi.loadSalesReport();
     this.adminApi.loadCashSummary();
     this.adminApi.loadClosings();
-    this.adminApi.loadCodPending();
+    this.adminApi.loadEfectivoPendiente();
     this.adminApi.loadAdminGroups();
     // Para el contador «En cartera» de los KPIs: lo fiado que aún no ha
     // entrado, al lado de lo que sí entró.
@@ -79,17 +79,29 @@ export class SalesReports {
   protected readonly settlingId = signal<string | null>(null);
 
   /**
-   * Confirma que el efectivo de un pedido contra entrega ya llegó a la finca.
-   * Sin modal de confirmación aparte —a diferencia de cerrar caja— porque no
-   * archiva nada ni es irreversible en el mismo sentido: solo cambia una
-   * bandera de un pedido concreto.
+   * Confirma que este efectivo ya llegó a la finca. Sin modal de confirmación
+   * aparte —a diferencia de cerrar caja— porque no archiva nada ni es
+   * irreversible en el mismo sentido: solo cambia una bandera de una fila.
+   *
+   * Dos endpoints según el origen de la fila, no uno: un cobro en la puerta
+   * (`pendiente.orderId` puesto) también tiene que soltar
+   * `orders.efectivo_liquidado`, que es lo que decide si esa VENTA cuenta como
+   * recaudada en el cierre — una pregunta que un abono suelto ni se plantea,
+   * porque no es una venta, es un cobro sin pedido detrás.
    */
-  protected settleCod(pendiente: ApiCodPending): void {
+  protected settleCash(pendiente: ApiEfectivoPendiente): void {
     this.settlingId.set(pendiente.id);
-    this.adminApi.settleOrderCash(pendiente.id).subscribe({
-      next: () => this.settlingId.set(null),
-      error: () => this.settlingId.set(null),
-    });
+    const listo = () => this.settlingId.set(null);
+
+    // Dos observables de tipos distintos (uno resuelve el pedido actualizado,
+    // el otro no devuelve nada): se llama a uno u otro en vez de intentar
+    // unificarlos en una sola variable, que es lo que TypeScript no puede
+    // tipar de forma coherente entre las dos formas de `subscribe()`.
+    if (pendiente.orderId) {
+      this.adminApi.settleOrderCash(pendiente.orderId).subscribe({ next: listo, error: listo });
+    } else {
+      this.adminApi.liquidarPago(pendiente.id).subscribe({ next: listo, error: listo });
+    }
   }
 
   protected readonly visibleSales = computed<readonly ApiSalesRow[]>(() => {

@@ -66,12 +66,7 @@ export class CheckoutPage {
   protected readonly copied = signal(false);
   protected readonly placing = signal(false);
 
-  /**
-   * Forma de pago. Signal y no un control del formulario reactivo: siempre
-   * tiene un valor válido (nunca está "vacío" ni necesita validador), así que
-   * un `FormControl` solo añadiría ceremonia sin ganar nada.
-   */
-  protected readonly metodoPago = signal<'transferencia' | 'contraentrega'>('contraentrega');
+  protected readonly metodoPago = this.checkout.metodoPago;
 
   /** Se muestra solo tras un intento de envío con el formulario incompleto,
    *  o cuando el servidor rechaza el pedido por un motivo que no es stock. */
@@ -177,6 +172,10 @@ export class CheckoutPage {
     } catch {
       // Sin permiso de portapapeles no pasa nada: el número está a la vista.
     }
+  }
+
+  protected onMetodoPagoChange(valor: string): void {
+    this.metodoPago.set(valor as 'contraentrega' | 'transferencia' | 'entrega_en_tienda');
   }
 
   protected submit(): void {

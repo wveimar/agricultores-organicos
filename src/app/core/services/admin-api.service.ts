@@ -10,7 +10,7 @@ import {
   ApiClosingOrder,
   ApiContact,
   ApiCarteraRow,
-  ApiCodPending,
+  ApiEfectivoPendiente,
   ApiConsolidation,
   ApiDelivery,
   ApiErrorBody,
@@ -631,9 +631,22 @@ export class AdminApiService {
         // El resumen de caja acaba de cambiar de significado: este pedido
         // pasa a contar como recaudado, y sale de la lista de pendientes.
         this.loadCashSummary();
-        if (this.codPending().length > 0) {
-          this.loadCodPending();
+        if (this.efectivoPendiente().length > 0) {
+          this.loadEfectivoPendiente();
         }
+      }),
+    );
+  }
+
+  /**
+   * Libera un abono suelto: el mismo hecho que `settleOrderCash`, pero para un
+   * cobro que no está atado a ningún pedido contra entrega puntual.
+   */
+  liquidarPago(id: string): Observable<void> {
+    return this.api.liquidarPago(id).pipe(
+      tap(() => {
+        this.loadCashSummary();
+        this.efectivoPendiente.update((list) => list.filter((p) => p.id !== id));
       }),
     );
   }
@@ -1082,11 +1095,11 @@ export class AdminApiService {
       .reduce((suma, deuda) => suma + deuda.total, 0),
   );
 
-  /** Efectivo contra entrega cobrado, esperando que un admin confirme que llegó a la finca. */
-  readonly codPending = signal<readonly ApiCodPending[]>([]);
+  /** Todo el efectivo cobrado, esperando que un admin confirme que llegó a la finca. */
+  readonly efectivoPendiente = signal<readonly ApiEfectivoPendiente[]>([]);
 
-  loadCodPending(): void {
-    this.api.codPending().subscribe({ next: (list) => this.codPending.set(list) });
+  loadEfectivoPendiente(): void {
+    this.api.efectivoPendiente().subscribe({ next: (list) => this.efectivoPendiente.set(list) });
   }
 
   // ──────────────── Gastos operativos y pago a las fincas ────────────────

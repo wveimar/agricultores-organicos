@@ -46,11 +46,17 @@ export class CheckoutService {
   /** Comprobante opcional: se puede confirmar el pedido y adjuntarlo después. */
   readonly proof = signal<PaymentProof | null>(null);
 
+  /** Forma de pago: default es contraentrega. */
+  readonly metodoPago = signal<'contraentrega' | 'transferencia' | 'entrega_en_tienda'>('contraentrega');
+
   readonly subtotal = this.cart.subtotal;
 
-  readonly shipping = computed(() =>
-    this.cart.isEmpty() || this.subtotal() >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST,
-  );
+  readonly shipping = computed(() => {
+    const metodo = this.metodoPago();
+    if (metodo === 'entrega_en_tienda') return 0;
+    if (this.cart.isEmpty() || this.subtotal() >= FREE_SHIPPING_THRESHOLD) return 0;
+    return SHIPPING_COST;
+  });
 
   readonly total = computed(() => this.subtotal() + this.shipping());
 
@@ -92,7 +98,7 @@ export class CheckoutService {
     name: string;
     phone: string;
     address: string;
-    metodoPago: 'transferencia' | 'contraentrega';
+    metodoPago: 'transferencia' | 'contraentrega' | 'entrega_en_tienda';
   }): Observable<Order> {
     const cartLines = this.cart.items();
     // Un comprobante no significa nada en contra entrega: no hay nada que

@@ -44,8 +44,10 @@ interface CreateOrderBody {
 }
 
 /** `'transferencia'` si no viene o viene basura: es el único método que existió hasta ahora. */
-function readMetodoPago(value: unknown): 'transferencia' | 'contraentrega' {
-  return value === 'contraentrega' ? 'contraentrega' : 'transferencia';
+function readMetodoPago(value: unknown): 'transferencia' | 'contraentrega' | 'entrega_en_tienda' {
+  if (value === 'contraentrega') return 'contraentrega';
+  if (value === 'entrega_en_tienda') return 'entrega_en_tienda';
+  return 'transferencia';
 }
 
 interface StockRow {
@@ -238,10 +240,6 @@ export async function create(request: Request, env: Env): Promise<Response> {
     0,
   );
 
-  // Sobre el subtotal ya descontado: es el importe que el cliente paga de
-  // verdad, y es el que decide si alcanza el envío gratis.
-  const envio = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST;
-
   const comprobanteNombre =
     typeof body.comprobanteNombre === 'string' ? body.comprobanteNombre.slice(0, 200) : null;
 
@@ -254,6 +252,11 @@ export async function create(request: Request, env: Env): Promise<Response> {
   // 'verificacion' ya significa "pedido web, pendiente de revisión humana",
   // no "pendiente de comprobante" — el comprobante siempre fue opcional.
   const metodoPago = readMetodoPago(body.metodoPago);
+
+  // Sobre el subtotal ya descontado: es el importe que el cliente paga de
+  // verdad, y es el que decide si alcanza el envío gratis. Excepto entrega en
+  // tienda, que siempre es envío 0.
+  const envio = metodoPago === 'entrega_en_tienda' ? 0 : subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST;
 
   // Ficha en la agenda. Va FUERA del batch a propósito: es un dato de
   // conveniencia, no parte del pedido. Si fallara, no debe tumbar una compra

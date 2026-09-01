@@ -198,6 +198,30 @@
           </div>
         </div>
 
+        <!--
+          "¿Ya está en caja?" — solo con efectivo, y solo al crear.
+
+          Editar no lo toca: cambiar de bolsillo a caja algo que ya se guardó
+          es exactamente lo que resuelve la pantalla de "Efectivo por
+          liquidar", no este formulario — ahí es donde se confirma que llegó,
+          no aquí donde se corrige un dato.
+        -->
+        @if (!editandoId() && valorForm().metodo === 'efectivo') {
+          <label class="mt-4 flex items-start gap-2.5 rounded-lg border border-sand bg-linen/40 px-4 py-3">
+            <input
+              type="checkbox"
+              formControlName="enCaja"
+              class="mt-0.5 size-4 rounded border-sand text-moss focus:ring-moss"
+            />
+            <span class="text-sm text-ink-soft">
+              <span class="font-medium text-ink">Ya está en la caja.</span>
+              Destíldalo si esto es un abono que un domiciliario cobró en la calle
+              y todavía no ha entregado — quedará en "Efectivo por liquidar" hasta
+              que confirmes que llegó a la finca.
+            </span>
+          </label>
+        }
+
         <!-- Contra qué se va a aplicar. Se enseña antes de guardar porque el
              reparto lo decide el servidor, y ver la deuda evita la sorpresa. -->
         @if (deudas().length > 0) {

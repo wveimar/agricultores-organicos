@@ -227,19 +227,29 @@
   </div>
 </div>
 
-<!-- ──────────── Efectivo contra entrega pendiente de liquidar ──────────── -->
-@if (adminApi.codPending().length > 0) {
+<!-- ──────────────────── Efectivo pendiente de liquidar ──────────────────── -->
+@if (adminApi.efectivoPendiente().length > 0) {
   <section class="mt-8 rounded-lg border border-honey/50 bg-honey/10 p-6">
-    <h2 class="text-h3 text-ink">Efectivo contra entrega por liquidar</h2>
+    <h2 class="text-h3 text-ink">Efectivo por liquidar</h2>
     <p class="mt-1 text-sm text-ink-soft">
-      Ya lo cobró un domiciliario. No cuenta en el recaudo de arriba hasta que
-      confirmes que el dinero llegó a la finca. Las cifras son el efectivo que
-      trae en mano —domicilio incluido—, no la venta: por eso pueden ser
-      mayores que lo que este pedido suma en las ventas brutas.
+      Plata que ya se cobró en efectivo y todavía no confirmas que llegó a la
+      finca — el cobro en la puerta de un contra entrega, y también un abono
+      que un domiciliario cobró en la calle de una deuda vieja (aunque lo
+      hayas registrado tú desde aquí, si sabías que la plata seguía con él).
+      No cuenta en el recaudo de arriba hasta que la confirmes.
     </p>
 
     <ul class="mt-4 flex flex-col divide-y divide-honey/30">
-      @for (pendiente of adminApi.codPending(); track pendiente.id) {
+      @for (pendiente of adminApi.efectivoPendiente(); track pendiente.id) {
+        <!--
+          Solo tiene sentido "abonó parte" cuando la fila viene de un pedido:
+          un abono suelto puede repartirse entre varias facturas de golpe, así
+          que no hay un único "lo que vale el pedido" contra el que compararlo.
+        -->
+        @let esDeContraentrega = pendiente.orderId !== null;
+        @let totalConDomicilio = (pendiente.totalPedido ?? 0) + (pendiente.envio ?? 0);
+        @let esAbonoParcial = esDeContraentrega && pendiente.cobrado < totalConDomicilio;
+
         <li class="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
           <div class="min-w-0">
             <p class="text-sm font-medium text-ink">
@@ -251,15 +261,31 @@
               } @else {
                 Sin registro de quién lo cobró
               }
+              @if (!esDeContraentrega) {
+                · abono suelto, sin pedido puntual
+              }
             </p>
+            <!--
+              El aviso de abono va aquí y no solo en la cifra de la derecha:
+              es la diferencia entre "recibiste esto" y "el pedido valía más,
+              el resto quedó en la cuenta del cliente" — sin la frase, un
+              admin podría pensar que falta plata en vez de que fue una
+              decisión ya tomada en la puerta.
+            -->
+            @if (esAbonoParcial) {
+              <p class="mt-0.5 text-xs text-clay-deep">
+                Abonó parte: el pedido valía {{ totalConDomicilio | cop }}, quedó
+                debiendo {{ totalConDomicilio - pendiente.cobrado | cop }} en su cuenta.
+              </p>
+            }
           </div>
           <div class="flex items-center gap-3">
-            <!-- El efectivo real que hay que recibir, no la venta. -->
+            <!-- El efectivo real que trae en la mano, no lo que vale el pedido. -->
             <p class="tabular text-right text-sm font-semibold text-ink">
-              {{ pendiente.total + pendiente.envio | cop }}
-              @if (pendiente.envio > 0) {
+              {{ pendiente.cobrado | cop }}
+              @if (!esAbonoParcial && esDeContraentrega && (pendiente.envio ?? 0) > 0) {
                 <span class="block text-xs font-normal text-ink-muted">
-                  incluye {{ pendiente.envio | cop }} de domicilio
+                  incluye {{ pendiente.envio ?? 0 | cop }} de domicilio
                 </span>
               }
             </p>
@@ -267,7 +293,7 @@
               type="button"
               class="rounded-full bg-moss px-4 py-2 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-60"
               [disabled]="settlingId() === pendiente.id"
-              (click)="settleCod(pendiente)"
+              (click)="settleCash(pendiente)"
             >
               {{ settlingId() === pendiente.id ? 'Liquidando…' : 'Marcar liquidado' }}
             </button>

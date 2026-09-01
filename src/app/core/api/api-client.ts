@@ -320,7 +320,7 @@ export interface ApiOrder {
    */
   readonly tieneComprobante?: number | null;
   readonly aprobadoEn?: string | null;
-  readonly metodoPago: 'transferencia' | 'contraentrega' | 'credito';
+  readonly metodoPago: 'transferencia' | 'contraentrega' | 'credito' | 'entrega_en_tienda';
   /** Solo importa para contra entrega — ver la migración 0015. */
   readonly efectivoLiquidado: number;
   /**
@@ -352,7 +352,7 @@ export interface ApiDelivery {
   readonly clienteDireccion: string;
   readonly total: number;
   readonly creadoEn: string;
-  readonly metodoPago: 'transferencia' | 'contraentrega' | 'credito';
+  readonly metodoPago: 'transferencia' | 'contraentrega' | 'credito' | 'entrega_en_tienda';
   /** Quién lo lleva (migración 0029). `null` = todavía sin asignar. */
   readonly domiciliarioId: string | null;
   /** Copia congelada del nombre: sobrevive a que se borre la cuenta. */
@@ -835,6 +835,15 @@ export interface ApiPaymentInput {
   readonly nota?: string | null;
   /** Sin reparto explícito se aplica a lo más viejo primero. */
   readonly allocations?: readonly { invoiceId: string; monto: number }[];
+  /**
+   * Solo importa con `metodo: 'efectivo'`, y solo lo lee el servidor cuando
+   * quien registra NO es domiciliario — un domiciliario nunca puede marcar su
+   * propio cobro como "ya en caja". `false` es para el caso de oficina
+   * anotando un cobro que un domiciliario hizo en la calle y todavía no ha
+   * entregado: sin esto, ese abono nacía "ya en caja" sin excepción y jamás
+   * aparecía en "Efectivo por liquidar". Por defecto `true`.
+   */
+  readonly enCaja?: boolean;
 }
 
 export interface ApiPaymentSummary {
@@ -870,17 +879,35 @@ export interface ApiCarteraRow {
   readonly tramo: 'corriente' | '30' | '60' | '90';
 }
 
-/** Efectivo contra entrega ya cobrado por un domiciliario, pendiente de liquidar. */
-export interface ApiCodPending {
+/**
+ * Un cobro en efectivo que todavía no se confirma que llegó a la finca.
+ *
+ * Dos orígenes distintos conviven en la misma fila:
+ *
+ *  · El cobro en la puerta de un contra entrega — `orderId` viene puesto, y
+ *    con él `totalPedido`/`envio`, para poder avisar si `cobrado` es menos
+ *    de lo que el pedido valía (un abono parcial). Se libera con
+ *    `settleCash(orderId)`, el mismo camino que ya existía.
+ *  · Un abono suelto que el domiciliario cobró en la calle —de una deuda
+ *    vieja, sin pedido puntual detrás— o que oficina registró por él con
+ *    "todavía no está en caja" marcado. `orderId` es `null`: no hay un solo
+ *    pedido al que atarlo, un abono puede repartirse entre varias facturas
+ *    de golpe. Se libera con `liquidarPago(id)`.
+ */
+export interface ApiEfectivoPendiente {
   readonly id: string;
   readonly referencia: string;
   readonly clienteNombre: string;
-  /** Solo producto: el domicilio va aparte, en `envio`. */
-  readonly total: number;
-  /** Domicilio cobrado. No es venta, pero el efectivo que trae el
-   *  domiciliario sí lo incluye: al cuadrar hay que contar `total + envio`. */
-  readonly envio: number;
-  /** Quién y cuándo lo cobró. `null` si el pedido es de antes de este flujo. */
+  /** Lo que trae en la mano de verdad — siempre sale de `payments.monto`. */
+  readonly cobrado: number;
+  /** Solo con un contra entrega: `null` en un abono suelto. */
+  readonly orderId: string | null;
+  /** Solo producto, sin domicilio. `null` en un abono suelto. */
+  readonly totalPedido: number | null;
+  /** Domicilio del pedido. `null` en un abono suelto. */
+  readonly envio: number | null;
+  /** Quién lo registró y cuándo — no necesariamente quien tiene la plata:
+   *  puede ser oficina anotando lo que un domiciliario avisó por teléfono. */
   readonly cobradoPor: string | null;
   readonly cobradoEn: string | null;
 }
@@ -1230,7 +1257,7 @@ export class ApiClient {
      * una cuenta con cupo, no algo que se elija en el checkout. El Worker lo
      * vuelve a comprobar con lista blanca por si alguien llama a la API a mano.
      */
-    metodoPago?: 'transferencia' | 'contraentrega';
+    metodoPago?: 'transferencia' | 'contraentrega' | 'entrega_en_tienda';
   }): Observable<ApiOrder> {
     return this.http
       .post<{ order: ApiOrder }>('/api/orders', input)
@@ -1654,11 +1681,18 @@ export class ApiClient {
       .pipe(map((res) => res.deudores), catchError(handleError));
   }
 
-  /** Efectivo contra entrega ya cobrado, esperando que un admin lo liquide. */
-  codPending(): Observable<readonly ApiCodPending[]> {
+  /** Todo el efectivo cobrado que aún no se confirma que llegó a la finca. */
+  efectivoPendiente(): Observable<readonly ApiEfectivoPendiente[]> {
     return this.http
-      .get<{ pendientes: ApiCodPending[] }>('/api/admin/reports/cod-pendiente')
+      .get<{ pendientes: ApiEfectivoPendiente[] }>('/api/admin/reports/efectivo-pendiente')
       .pipe(map((res) => res.pendientes), catchError(handleError));
+  }
+
+  /** Libera un abono suelto (sin pedido contra entrega detrás). */
+  liquidarPago(id: string): Observable<void> {
+    return this.http
+      .post<{ payment: unknown }>(`/api/admin/payments/${id}/liquidar`, {})
+      .pipe(map(() => undefined), catchError(handleError));
   }
 
   // ──────────────── Gastos operativos y pago a las fincas ────────────────

@@ -120,40 +120,16 @@
           <section class="mt-12">
             <h2 class="text-h3 text-ink">Forma de pago</h2>
 
-            <div class="mt-5 grid gap-3 sm:grid-cols-2">
-              <label
-                class="flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors duration-200"
-                [class]="metodoPago() === 'contraentrega' ? 'border-moss bg-sage-light/40' : 'border-sand hover:border-stone'"
+            <div class="mt-5">
+              <select
+                [value]="metodoPago()"
+                (change)="onMetodoPagoChange($any($event.target).value)"
+                class="block w-full rounded-lg border border-sand px-4 py-3 text-sm text-ink focus:border-moss focus:outline-none focus:ring-2 focus:ring-moss/20"
               >
-                <input
-                  type="radio"
-                  name="metodoPago"
-                  class="mt-0.5"
-                  [checked]="metodoPago() === 'contraentrega'"
-                  (change)="metodoPago.set('contraentrega')"
-                />
-                <span>
-                  <span class="block text-sm font-semibold text-ink">Pago contra entrega</span>
-                  <span class="block text-xs text-ink-soft">Pagas en efectivo cuando te lo llevemos.</span>
-                </span>
-              </label>
-
-              <label
-                class="flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors duration-200"
-                [class]="metodoPago() === 'transferencia' ? 'border-moss bg-sage-light/40' : 'border-sand hover:border-stone'"
-              >
-                <input
-                  type="radio"
-                  name="metodoPago"
-                  class="mt-0.5"
-                  [checked]="metodoPago() === 'transferencia'"
-                  (change)="metodoPago.set('transferencia')"
-                />
-                <span>
-                  <span class="block text-sm font-semibold text-ink">Transferencia</span>
-                  <span class="block text-xs text-ink-soft">Consignas y nos envías el comprobante.</span>
-                </span>
-              </label>
+                <option value="contraentrega">Pago contra entrega — Pagas en efectivo cuando te lo llevemos</option>
+                <option value="entrega_en_tienda">Entrega en tienda — Retira tu pedido sin costo de envío</option>
+                <option value="transferencia">Transferencia — Consignas y nos envías el comprobante</option>
+              </select>
             </div>
           </section>
 
@@ -213,6 +189,16 @@
               <div class="mt-5">
                 <app-proof-uploader (proofChange)="onProofChange($event)" />
               </div>
+            </section>
+          } @else if (metodoPago() === 'entrega_en_tienda') {
+            <!-- Retiro en tienda: sin envío ni pago por adelantado -->
+            <section class="mt-12 rounded-lg border border-moss/30 bg-sage-light/20 p-5">
+              <h2 class="text-h3 text-ink">Retira en la tienda</h2>
+              <p class="mt-2 text-sm text-ink-soft">
+                Tu pedido estará listo para retirar en nuestro punto de venta el
+                <span class="font-medium text-ink">{{ dispatchDay }} después del mediodía</span>.
+                No hay costo de envío.
+              </p>
             </section>
           } @else {
             <!-- Contra entrega: nada que pagar por adelantado ni comprobante que subir. -->
@@ -370,6 +356,8 @@
               @if (metodoPago() === 'transferencia') {
                 Demo sin pasarela de pago: el cobro es manual por transferencia y la
                 verificación la hace una persona.
+              } @else if (metodoPago() === 'entrega_en_tienda') {
+                Demo sin pasarela de pago: el pago lo haces en tienda cuando retires tu pedido.
               } @else {
                 Demo sin pasarela de pago: el cobro es en efectivo al momento de la
                 entrega.

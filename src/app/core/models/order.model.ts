@@ -55,7 +55,7 @@ export function isEditable(status: OrderStatus): boolean {
 }
 
 /** Cómo se paga el pedido. Fuente: `orders.metodo_pago`. */
-export type PaymentMethod = 'transferencia' | 'contraentrega' | 'credito';
+export type PaymentMethod = 'transferencia' | 'contraentrega' | 'credito' | 'entrega_en_tienda';
 
 /**
  * Las acciones que mueven un pedido, no los estados a los que llega.
@@ -300,7 +300,7 @@ export interface Order {
   readonly paymentProof?: PaymentProof;
 
   /** Siempre presente: todo pedido nace con un método, no solo los contra entrega. */
-  readonly metodoPago: 'transferencia' | 'contraentrega';
+  readonly metodoPago: 'transferencia' | 'contraentrega' | 'entrega_en_tienda';
 
   /**
    * Cierre de caja que archivó este pedido. Tenerlo apuntando al cierre (en

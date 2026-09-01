@@ -90,7 +90,7 @@ export class DeliveryOrders {
     this.workingId.set(entrega.id);
 
     this.adminApi
-      .createPayment({ contactId: entrega.contactId, monto, metodo: 'efectivo' })
+      .createPayment({ contactId: entrega.contactId, monto, metodo: 'efectivo', enCaja: false })
       .subscribe({
         next: ({ anticipo }) => {
           this.workingId.set(null);

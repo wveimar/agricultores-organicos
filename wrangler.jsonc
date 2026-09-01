@@ -27,9 +27,10 @@
 	},
 "d1_databases": [
   {
-    "binding": "DB", 
+    "binding": "DB",
     "database_name": "agricultores-organicos",
-    "database_id": "e7a92980-202a-4a69-b728-af7fcfdf6281" 
+    "database_id": "e7a92980-202a-4a69-b728-af7fcfdf6281",
+    "migrations_dir": "worker/migrations"
   }
 ],
 	"observability": {

@@ -318,6 +318,54 @@ export async function detail(env: Env, user: JwtPayload, id: string): Promise<Re
   return json({ payment, allocations: repartoRes.results });
 }
 
+/**
+ * POST /api/admin/payments/:id/liquidar — confirma que este efectivo ya
+ * llegó a la finca.
+ *
+ * Es el mismo hecho que `orders.settleCash` para un pedido contra entrega,
+ * generalizado a cualquier cobro en efectivo sin liquidar — incluido el
+ * abono de una deuda vieja que un domiciliario cobró en la calle y no está
+ * atado a ningún pedido puntual. Sin este endpoint, esa plata solo se podía
+ * liberar editando el cobro a mano, que ni siquiera tocaba `liquidado`.
+ *
+ * No hace falta nada más que el flag: a diferencia de un pedido contra
+ * entrega, un abono suelto no tiene `orders.efectivo_liquidado` que
+ * sincronizar — esa columna es específica del flujo de venta y aquí no hay
+ * venta que recaudar, solo dinero que confirmar recibido.
+ */
+export async function liquidar(env: Env, user: JwtPayload, id: string): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS');
+
+  const result = await env.DB.prepare(
+    `UPDATE payments SET liquidado = 1 WHERE id = ?1 AND metodo = 'efectivo' AND liquidado = 0`,
+  )
+    .bind(id)
+    .run();
+
+  if (result.meta.changes === 0) {
+    const pago = await env.DB.prepare(`SELECT metodo, liquidado FROM payments WHERE id = ?1`)
+      .bind(id)
+      .first<{ metodo: string; liquidado: number }>();
+
+    if (!pago) {
+      throw ApiError.notFound('Ese cobro no existe.');
+    }
+    if (pago.metodo !== 'efectivo') {
+      throw ApiError.conflict(
+        'no-es-efectivo',
+        'Ese cobro no es en efectivo: no hay nada físico que confirmar que llegó.',
+      );
+    }
+    throw ApiError.conflict('ya-liquidado', 'Ese cobro ya estaba liquidado.');
+  }
+
+  const actualizado = await env.DB.prepare(`SELECT ${COLUMNS} FROM payments p WHERE p.id = ?1`)
+    .bind(id)
+    .first();
+
+  return json({ payment: actualizado });
+}
+
 interface PaymentBody {
   contactId?: unknown;
   monto?: unknown;
@@ -325,6 +373,44 @@ interface PaymentBody {
   nota?: unknown;
   /** Reparto explícito. Sin él se aplica a lo más viejo primero. */
   allocations?: unknown;
+  /**
+   * Solo la lee `create()`, y solo le importa a quien NO es domiciliario.
+   *
+   * Cubre el caso real que se coló: un domiciliario cobra en la calle y avisa
+   * por teléfono, y quien contesta —de oficina— registra el abono en el
+   * sistema. Ese efectivo sigue en el bolsillo de quien lo cobró, no en la
+   * caja, aunque quien lo tecleó sea `GESTOR_PEDIDOS`. Sin esta bandera, todo
+   * cobro registrado desde oficina nacía "ya en caja" sin excepción, y esa
+   * plata jamás aparecía en "Efectivo por liquidar".
+   *
+   * `false` explícito es lo único que cambia el resultado — ver `leerEnCaja`.
+   */
+  enCaja?: unknown;
+}
+
+/**
+ * Decide si el efectivo de un cobro ya está en la caja o todavía en la calle.
+ *
+ * Tres reglas, en este orden:
+ *  1. Lo que no es efectivo siempre está "en caja": una transferencia llega
+ *     directo a la cuenta, nunca pasa por el bolsillo de nadie.
+ *  2. Si quien registra es el domiciliario, nunca está en caja — es
+ *     literalmente la persona que tiene el billete en la mano, y no se le
+ *     puede dejar autocertificar que ya lo entregó.
+ *  3. Si es oficina, se confía en lo que diga el formulario: por defecto SÍ
+ *     está en caja (alguien pagó en el mostrador o transfirió, que sigue
+ *     siendo el caso más común), y solo si se marca `enCaja: false` a
+ *     propósito queda pendiente — el caso del domiciliario que avisó por
+ *     teléfono.
+ */
+function estaEnCaja(metodo: string, esDomiciliario: boolean, enCajaDelFormulario: unknown): boolean {
+  if (metodo !== 'efectivo') {
+    return true;
+  }
+  if (esDomiciliario) {
+    return false;
+  }
+  return enCajaDelFormulario !== false;
 }
 
 const METODOS = ['efectivo', 'transferencia', 'nequi', 'daviplata'] as const;
@@ -432,11 +518,7 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
       user.sub,
       user.nombre,
       nota,
-      // Lo que cobra un domiciliario nace SIN liquidar: esa plata está en su
-      // bolsillo, no en la finca, y contarla en el cierre sería contar dinero
-      // que nadie ha visto. Se libera cuando lo entrega. Un cobro registrado
-      // desde el panel sí entra directo: ahí la plata ya llegó.
-      esDomiciliario ? 0 : 1,
+      estaEnCaja(metodo, esDomiciliario, body.enCaja) ? 1 : 0,
     ),
     ...sentenciasDeCobro(env, id, repartos),
   ]);

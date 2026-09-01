@@ -231,38 +231,46 @@ export async function cashSummary(env: Env, user: JwtPayload): Promise<Response>
 }
 
 /**
- * GET /api/admin/reports/cod-pendiente — efectivo contra entrega ya cobrado
- * por un domiciliario, esperando que un admin confirme que llegó a la finca.
+ * GET /api/admin/reports/efectivo-pendiente — todo el efectivo ya cobrado que
+ * un admin todavía no ha confirmado que llegó a la finca.
+ *
+ * Antes se llamaba `codPending` y solo miraba `orders` con
+ * `metodo_pago = 'contraentrega'`: cubría el cobro en la puerta, pero no el
+ * caso real que delató el reporte del negocio — un domiciliario cobra un
+ * abono de una deuda vieja en la calle (o lo avisa por teléfono y alguien de
+ * oficina lo registra por él), y esa plata también sigue en un bolsillo, no
+ * en la caja. Ese abono no tiene pedido contra entrega detrás, así que nunca
+ * iba a aparecer buscando en `orders`.
+ *
+ * La pregunta correcta no es "¿qué pedidos contra entrega faltan por
+ * liquidar?", es "¿qué cobros en efectivo tienen `liquidado = 0`?" — y esa
+ * pregunta se responde leyendo `payments` directamente, sin pasar por
+ * `orders` en absoluto. Cubre los dos orígenes con la misma fila:
+ *
+ *   · el cobro en la puerta (`markPaid`, id `pay-cod-<orderId>`) — el
+ *     LEFT JOIN lo liga de vuelta a su pedido, y de ahí sale `totalPedido` y
+ *     `envio` para poder avisar si fue un abono parcial;
+ *   · un abono suelto (`payments.create`, id `pay-<uuid>`) — no hay pedido
+ *     con el que unir, así que `orderId`/`totalPedido`/`envio` quedan NULL:
+ *     no hay "lo que valía el pedido" que mostrar, porque un abono puede
+ *     repartirse entre varias facturas de golpe.
  *
  * Separado de cashSummary() a propósito: ese resumen son números agregados,
- * esto es una lista de pedidos concretos con acción propia (liquidar() en
- * orders.ts). "Quién cobró" no está denormalizado en `orders` — sale de
- * `order_status_log` con el mismo índice que ya usa el resto del panel para
- * la traza (`idx_status_log_order`), de sobra para el volumen de esta tienda.
- *
- * ── `total` aquí es solo producto ──
- *
- * Como en el resto de los informes, el domicilio no cuenta como venta. Pero
- * el efectivo que el domiciliario trae en el bolsillo **sí** incluye el
- * domicilio, así que `envio` viaja aparte y la pantalla muestra las dos
- * cifras: sin eso, cuadrar lo que entrega contra lo que dice el panel daría
- * de menos por exactamente el valor de los domicilios de esa jornada.
+ * esto es una lista de cobros concretos con acción propia
+ * (`orders.settleCash` para los de la puerta, `payments.liquidar` para el
+ * resto).
  */
-export async function codPending(env: Env, user: JwtPayload): Promise<Response> {
+export async function efectivoPendiente(env: Env, user: JwtPayload): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS');
 
   const { results } = await env.DB.prepare(
-    `SELECT o.id, o.referencia, o.cliente_nombre AS clienteNombre,
-            o.subtotal AS total, o.envio,
-            (SELECT actor_nombre FROM order_status_log
-              WHERE order_id = o.id AND estado = 'pago'
-              ORDER BY creado_en DESC LIMIT 1) AS cobradoPor,
-            (SELECT creado_en FROM order_status_log
-              WHERE order_id = o.id AND estado = 'pago'
-              ORDER BY creado_en DESC LIMIT 1) AS cobradoEn
-       FROM orders o
-      WHERE o.estado = 'pago' AND o.metodo_pago = 'contraentrega' AND o.efectivo_liquidado = 0
-      ORDER BY cobradoEn ASC`,
+    `SELECT p.id, p.referencia, p.cliente_nombre AS clienteNombre, p.monto AS cobrado,
+            p.recibido_por_nombre AS cobradoPor, p.recibido_en AS cobradoEn,
+            o.id AS orderId, o.subtotal AS totalPedido, o.envio
+       FROM payments p
+       LEFT JOIN orders o ON p.id = 'pay-cod-' || o.id
+      WHERE p.metodo = 'efectivo' AND p.liquidado = 0
+      ORDER BY p.recibido_en ASC`,
   ).all();
 
   return json({ pendientes: results });

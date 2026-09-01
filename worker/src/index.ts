@@ -255,6 +255,13 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return paymentsRoute.remove(env, user, paymentMatch[1]);
     }
 
+    // Confirma que un cobro en efectivo ya llegó a la finca (el que no está
+    // atado a un pedido contra entrega: ver `orders.settleCash` para ese).
+    const paymentLiquidarMatch = pathname.match(/^\/api\/admin\/payments\/([\w-]+)\/liquidar$/);
+    if (paymentLiquidarMatch && method === 'POST') {
+      return paymentsRoute.liquidar(env, user, paymentLiquidarMatch[1]);
+    }
+
     // Reparto: quién lleva cada pedido (migración 0029).
     if (pathname === '/api/admin/couriers' && method === 'GET') {
       return orders.couriers(env, user);
@@ -382,8 +389,8 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     if (pathname === '/api/admin/reports/cash/close' && method === 'POST') {
       return reports.closeCash(env, user);
     }
-    if (pathname === '/api/admin/reports/cod-pendiente' && method === 'GET') {
-      return reports.codPending(env, user);
+    if (pathname === '/api/admin/reports/efectivo-pendiente' && method === 'GET') {
+      return reports.efectivoPendiente(env, user);
     }
     if (pathname === '/api/admin/reports/cartera' && method === 'GET') {
       return reports.cartera(env, user);

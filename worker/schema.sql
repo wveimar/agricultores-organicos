@@ -483,7 +483,7 @@ CREATE TABLE orders (
   -- pedido, es de dónde sale el dinero. Un pedido fiado sigue recorriendo
   -- aprobado → enviado como cualquier otro. Ver la migración 0017.
   metodo_pago        TEXT    NOT NULL DEFAULT 'transferencia'
-                             CHECK (metodo_pago IN ('transferencia', 'contraentrega', 'credito')),
+                             CHECK (metodo_pago IN ('transferencia', 'contraentrega', 'credito', 'entrega_en_tienda')),
 
   -- Cuándo vence la deuda. NULL en todo lo que no sea 'credito': no hay nada
   -- que vencer donde el dinero ya entró o se cobra en la puerta.

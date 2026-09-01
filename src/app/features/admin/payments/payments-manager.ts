@@ -81,9 +81,29 @@ export class PaymentsManager {
     monto: [0, [Validators.required, Validators.min(1)]],
     metodo: ['efectivo'],
     nota: [''],
+    /**
+     * "¿Ya está en la caja?" — solo importa con `metodo: 'efectivo'`.
+     *
+     * Por defecto `true`: la mayoría de lo que se registra aquí es alguien
+     * pagando en el mostrador o una transferencia, plata que ya está donde
+     * tiene que estar. Se destilda para el caso real que motivó este campo:
+     * un domiciliario cobra en la calle y avisa por teléfono, y quien
+     * contesta anota el abono desde acá — esa plata sigue en su bolsillo, no
+     * en la caja, así que sin este interruptor nunca aparecía en "Efectivo
+     * por liquidar" y se perdía de vista hasta que alguien se acordaba.
+     */
+    enCaja: [true],
   });
 
-  private readonly valorForm = toSignal(this.form.valueChanges, {
+  /**
+   * `protected` y no `private`: la plantilla lo lee para mostrar el
+   * interruptor "¿ya está en caja?" solo cuando `metodo === 'efectivo'` — un
+   * `[disabled]`/`@if` sobre `form.controls.metodo.value` a secas no se
+   * refresca sola en zoneless, por la misma razón que forzó el cambio a
+   * `[selected]` en el `<select>` de cliente: una lectura directa del
+   * `FormControl` no es una señal, así que no dispara change detection.
+   */
+  protected readonly valorForm = toSignal(this.form.valueChanges, {
     initialValue: this.form.getRawValue(),
   });
 
@@ -247,7 +267,7 @@ export class PaymentsManager {
     this.error.set(null);
     this.aviso.set(null);
     this.deudas.set([]);
-    this.form.reset({ contactId: '', monto: 0, metodo: 'efectivo', nota: '' });
+    this.form.reset({ contactId: '', monto: 0, metodo: 'efectivo', nota: '', enCaja: true });
     this.editandoId.set(null);
     this.abierto.set(true);
   }
@@ -269,7 +289,13 @@ export class PaymentsManager {
     this.error.set(null);
     this.aviso.set(null);
     this.editandoId.set(null);
-    this.form.reset({ contactId: grupo.contactId, monto: 0, metodo: 'efectivo', nota: '' });
+    this.form.reset({
+      contactId: grupo.contactId,
+      monto: 0,
+      metodo: 'efectivo',
+      nota: '',
+      enCaja: true,
+    });
     this.deudas.set(grupo.facturas);
     this.abierto.set(true);
   }
@@ -325,6 +351,9 @@ export class PaymentsManager {
           monto: valor.monto,
           metodo: valor.metodo,
           nota: valor.nota || null,
+          // Solo importa con efectivo; el servidor ya lo ignora para
+          // cualquier otro método, pero no hace falta mandarlo entonces.
+          enCaja: valor.metodo === 'efectivo' ? valor.enCaja : undefined,
         });
 
     this.error.set(null);

@@ -253,6 +253,104 @@ ok(
 );
 ok(factura?.estado === 'pagada_parcial', "y en estado 'pagada_parcial'", factura?.estado);
 
+// La pantalla de "por liquidar" tiene que enseñar lo que el domiciliario
+// TRAE en la mano —el abono real—, no lo que vale el pedido completo. Este es
+// el defecto que se reportó viendo la pantalla real: antes de este arreglo la
+// tarjeta mostraba `subtotal + envio` sin importar cuánto se hubiera cobrado.
+const porLiquidar = await api('/api/admin/reports/efectivo-pendiente');
+const pendienteAbono = porLiquidar.body.pendientes.find((p) => p.orderId === pedidoAbono);
+ok(!!pendienteAbono, 'el pedido con abono aparece en "por liquidar"');
+ok(
+  pendienteAbono?.cobrado === mitad,
+  'la cifra es lo que de verdad se cobró, no el total del pedido',
+  `cobrado ${pendienteAbono?.cobrado} vs esperado ${mitad}`,
+);
+ok(
+  pendienteAbono?.cobrado < pendienteAbono?.totalPedido + pendienteAbono?.envio,
+  'y por eso es menor que lo que vale el pedido con domicilio',
+);
+
+// Con cobro completo, "cobrado" y "lo que vale el pedido" coinciden —el
+// caso de siempre, que no debía cambiar con este arreglo.
+const pendienteCompleto = porLiquidar.body.pendientes.find((p) => p.orderId === pedidoCompleto);
+ok(
+  pendienteCompleto?.cobrado === pendienteCompleto?.totalPedido + pendienteCompleto?.envio,
+  'con cobro completo, cobrado = total del pedido, como siempre',
+  `cobrado ${pendienteCompleto?.cobrado} vs total ${pendienteCompleto?.totalPedido}`,
+);
+
+// ─────── El defecto real reportado: un abono suelto también trae plata ───────
+//
+// El domiciliario cobró $50.000 de una factura vieja en la calle, y oficina
+// lo registró marcando "todavía no está en caja". Esa plata TAMBIÉN la trae
+// encima, aunque no venga de un pedido contra entrega — antes de este arreglo
+// la pantalla de "por liquidar" ni se enteraba, porque solo miraba `orders`.
+async function crearClienteQA(nombre) {
+  const res = await api('/api/admin/contacts', {
+    method: 'POST',
+    body: JSON.stringify({
+      nombre,
+      telefono: `31${Math.floor(Math.random() * 100000000)}`,
+      esCliente: 1,
+      esProveedor: 0,
+    }),
+  });
+  return res.body.contacto.id;
+}
+
+const clienteAbonoSuelto = await crearClienteQA('Deuda Vieja QA');
+
+const abonoSuelto = await api('/api/admin/payments', {
+  method: 'POST',
+  body: JSON.stringify({
+    contactId: clienteAbonoSuelto,
+    monto: 50_000,
+    metodo: 'efectivo',
+    enCaja: false,
+  }),
+});
+ok(abonoSuelto.status === 201, 'oficina registra el abono que avisó el domiciliario', `status ${abonoSuelto.status}`);
+ok(
+  abonoSuelto.body?.payment?.liquidado === 0,
+  '"enCaja: false" lo deja SIN liquidar aunque lo registre un GESTOR_PEDIDOS',
+  `liquidado ${abonoSuelto.body?.payment?.liquidado}`,
+);
+
+const porLiquidarConAbono = await api('/api/admin/reports/efectivo-pendiente');
+const filaSuelta = porLiquidarConAbono.body.pendientes.find((p) => p.id === abonoSuelto.body.payment.id);
+ok(!!filaSuelta, 'el abono suelto SÍ aparece en "por liquidar" — el defecto reportado', 'no apareció');
+ok(filaSuelta?.orderId === null, 'sin pedido detrás: no es un contra entrega', filaSuelta?.orderId);
+ok(filaSuelta?.cobrado === 50_000, 'con el monto real cobrado', filaSuelta?.cobrado);
+
+// Sin marcar "enCaja: false" (el caso normal: alguien paga en el mostrador),
+// sigue liquidándose de una, como siempre.
+const cobroNormal = await api('/api/admin/payments', {
+  method: 'POST',
+  body: JSON.stringify({ contactId: clienteAbonoSuelto, monto: 10_000, metodo: 'efectivo' }),
+});
+ok(
+  cobroNormal.body?.payment?.liquidado === 1,
+  'sin "enCaja", un cobro de oficina sigue liquidándose directo, como antes',
+  `liquidado ${cobroNormal.body?.payment?.liquidado}`,
+);
+
+// Y liquidar el abono suelto lo saca de la lista sin tocar `orders` para nada.
+const liquidarSuelto = await api(`/api/admin/payments/${abonoSuelto.body.payment.id}/liquidar`, {
+  method: 'POST',
+});
+ok(liquidarSuelto.status === 200, 'se libera el abono suelto', `status ${liquidarSuelto.status}`);
+
+const porLiquidarTrasLiberar = await api('/api/admin/reports/efectivo-pendiente');
+ok(
+  !porLiquidarTrasLiberar.body.pendientes.some((p) => p.id === abonoSuelto.body.payment.id),
+  'y ya no aparece en "por liquidar"',
+);
+
+const reintentoLiquidar = await api(`/api/admin/payments/${abonoSuelto.body.payment.id}/liquidar`, {
+  method: 'POST',
+});
+ok(reintentoLiquidar.status === 409, 'liquidar dos veces el mismo abono se rechaza', `status ${reintentoLiquidar.status}`);
+
 // Un monto mayor al saldo no puede sobrepagar esta factura por este camino:
 // se cubre justo lo que se debía, no más.
 const { id: pedidoExceso, total: totalExceso } = await pedidoEnLaCalle();
