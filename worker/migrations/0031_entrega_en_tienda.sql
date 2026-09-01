@@ -1,67 +1,30 @@
 -- ────────────────────────────── Entrega en tienda ────────────────────────────────
 --
--- Nueva forma de compra: retira directamente en la tienda sin costo de envío.
--- Antes: solo 'transferencia', 'contraentrega', y 'credito' (solo panel).
--- Ahora: además 'entrega_en_tienda' en web.
+-- ⚠ MIGRACIÓN ANULADA A PROPÓSITO. No hace nada, y así debe quedarse.
+--
+-- Su versión original recreaba `orders` para meter 'entrega_en_tienda' en el
+-- CHECK de `metodo_pago`. Ese procedimiento —DROP TABLE + RENAME— NO FUNCIONA
+-- sobre una base D1 que ya tiene pedidos: el DELETE implícito del DROP choca
+-- con el RESTRICT de `invoices.order_id` y dispararía los CASCADE de
+-- `order_items`, `order_status_log` y `order_item_components`.
+--
+-- Pasó en local únicamente porque la base estaba recién reseteada y vacía. En
+-- producción habría fallado en el primer intento de despliegue. Se probaron
+-- las cuatro salidas posibles (foreign_keys = OFF, defer_foreign_keys,
+-- legacy_alter_table con doble renombrado, y el DROP directo) y ninguna la
+-- salva; el detalle medido está en la cabecera de 0032_pos.sql.
+--
+-- La funcionalidad no se perdió: se rehizo sin tocar ningún CHECK. Un pedido
+-- que se retira en la tienda es ahora
+--
+--     metodo_pago = 'contraentrega'  +  medio_pago = 'entrega_en_tienda'
+--
+-- donde `medio_pago` es una columna nueva y sin CHECK que añade 0032_pos.sql,
+-- junto con el UPDATE que reescribe al modelo nuevo las filas que esta
+-- migración alcanzó a dejar en las bases locales.
+--
+-- No se borra el fichero: wrangler lleva la cuenta de las migraciones
+-- aplicadas por nombre, y quitarlo descuadraría esa cuenta en cualquier base
+-- donde esta ya conste como aplicada.
 
--- SQLite no permite ALTER TABLE para agregar CHECK: hay que recrear.
--- Para evitar problemas de foreign keys, borramos primero los índices que referencian la tabla.
-
-DROP INDEX IF EXISTS idx_orders_domiciliario;
-DROP INDEX IF EXISTS idx_orders_estado;
-DROP INDEX IF EXISTS idx_orders_closing;
-DROP INDEX IF EXISTS idx_orders_user;
-DROP INDEX IF EXISTS idx_orders_credito;
-DROP INDEX IF EXISTS idx_orders_contact;
-
--- Crear tabla temporal con la nueva definición
-CREATE TABLE orders_new (
-  id                  TEXT    PRIMARY KEY,
-  referencia          TEXT    NOT NULL UNIQUE,
-  user_id             TEXT    REFERENCES users(id) ON DELETE SET NULL,
-  contact_id          TEXT    REFERENCES contacts(id) ON DELETE SET NULL,
-  cliente_nombre      TEXT    NOT NULL,
-  cliente_telefono    TEXT    NOT NULL,
-  cliente_direccion   TEXT    NOT NULL,
-  estado              TEXT    NOT NULL DEFAULT 'pendiente'
-                              CHECK (estado IN ('verificacion', 'pendiente', 'aprobado', 'enviado', 'cancelado', 'pago')),
-  stock_reservado     INTEGER NOT NULL DEFAULT 0 CHECK (stock_reservado IN (0, 1)),
-  subtotal            INTEGER NOT NULL DEFAULT 0 CHECK (subtotal >= 0),
-  envio               INTEGER NOT NULL DEFAULT 0 CHECK (envio >= 0),
-  total               INTEGER NOT NULL DEFAULT 0 CHECK (total >= 0),
-  comprobante_nombre  TEXT,
-  comprobante_url     TEXT,
-  aprobado_por        TEXT    REFERENCES users(id) ON DELETE SET NULL,
-  aprobado_en         TEXT,
-  aprobacion_token    TEXT,
-  cancelacion_token   TEXT,
-  cancelado_por       TEXT    REFERENCES users(id) ON DELETE SET NULL,
-  cancelado_en        TEXT,
-  motivo_cancelacion  TEXT,
-  closing_id          TEXT    REFERENCES cash_closings(id) ON DELETE SET NULL,
-  creado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
-  -- Nuevo: ahora incluye 'entrega_en_tienda'
-  metodo_pago         TEXT    NOT NULL DEFAULT 'transferencia'
-                              CHECK (metodo_pago IN ('transferencia', 'contraentrega', 'credito', 'entrega_en_tienda')),
-  vence_en            TEXT,
-  efectivo_liquidado  INTEGER NOT NULL DEFAULT 0 CHECK (efectivo_liquidado IN (0, 1)),
-  entregado_en        TEXT,
-  domiciliario_id     TEXT    REFERENCES users(id) ON DELETE SET NULL,
-  domiciliario_nombre TEXT
-);
-
--- Copiar datos
-INSERT INTO orders_new SELECT * FROM orders;
-
--- Borrar tabla vieja y renombrar la nueva
-DROP TABLE orders;
-ALTER TABLE orders_new RENAME TO orders;
-
--- Recrear índices
-CREATE INDEX idx_orders_domiciliario
-  ON orders (domiciliario_id, estado) WHERE domiciliario_id IS NOT NULL;
-CREATE INDEX idx_orders_estado  ON orders (estado, creado_en DESC);
-CREATE INDEX idx_orders_closing ON orders (closing_id);
-CREATE INDEX idx_orders_user    ON orders (user_id);
-CREATE INDEX idx_orders_credito ON orders (metodo_pago, estado, vence_en);
-CREATE INDEX idx_orders_contact ON orders (contact_id);
+SELECT 'migracion 0031 anulada: ver 0032_pos.sql' AS nota;

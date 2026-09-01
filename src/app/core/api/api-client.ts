@@ -168,6 +168,12 @@ export interface ApiProduct {
   /** Solo en las madres: 'presentación', 'sabor'… */
   readonly varianteEtiqueta?: string | null;
   /**
+   * Código de barras impreso, si lo tiene. Solo viaja en las respuestas del
+   * panel: la tienda pública no lo necesita y es un dato de operación interna.
+   * Es lo único contra lo que puede comparar el lector de la caja.
+   */
+  readonly codigoBarras?: string | null;
+  /**
    * Qué lleva dentro, si es una canasta. Solo lo que el cliente puede saber:
    * nombre y cuánto entra, nunca el stock ni el costo de cada componente.
    */
@@ -387,6 +393,110 @@ export interface ApiSalesRow {
   readonly imagenAlt: string;
   readonly categoriaAbc: 'A' | 'B' | 'C';
   readonly participacion: number;
+}
+
+/** De qué caja hablamos: la tienda web o el mostrador físico. */
+export type PosCanal = 'ecommerce' | 'pos';
+
+/** Cómo se pagó de verdad, cuando el método de pago se queda corto. */
+export type PosMedioPago = 'efectivo' | 'tarjeta' | 'entrega_en_tienda';
+
+export interface ApiPosItemInput {
+  readonly productId: string;
+  readonly cantidad: number;
+  /** Precio que el cajero fijó a mano. Si difiere del calculado, exige motivo. */
+  readonly precioManual?: number;
+  readonly motivoAjuste?: string;
+}
+
+export interface ApiPosSellInput {
+  readonly contactId?: string | null;
+  readonly clienteNombre?: string;
+  readonly clienteTelefono?: string;
+  readonly items: readonly ApiPosItemInput[];
+  readonly metodoPago: 'efectivo' | 'tarjeta' | 'credito';
+  readonly reciboSolicitado: boolean;
+}
+
+export interface ApiPosVentaItem {
+  readonly productId: string;
+  readonly productoNombre: string;
+  readonly precioUnitario: number;
+  readonly cantidad: number;
+  readonly motivoAjuste: string | null;
+}
+
+export interface ApiPosVenta {
+  readonly id: string;
+  readonly referencia: string;
+  readonly contactId: string | null;
+  readonly clienteNombre: string;
+  readonly clienteTelefono: string;
+  readonly estado: string;
+  readonly subtotal: number;
+  readonly envio: number;
+  readonly total: number;
+  readonly metodoPago: string;
+  readonly medioPago: PosMedioPago | null;
+  readonly canal: PosCanal;
+  readonly reciboSolicitado: number;
+  readonly venceEn: string | null;
+  readonly creadoEn: string;
+  readonly items: readonly ApiPosVentaItem[];
+  readonly factura: {
+    readonly id: string;
+    readonly numero: string;
+    readonly total: number;
+    readonly saldo: number;
+    readonly estado: string;
+    readonly emitidaEn: string;
+  } | null;
+}
+
+/** Fila del historial de caja. Trae sus líneas para no pedirlas una a una. */
+export interface ApiPosVentaResumen {
+  readonly id: string;
+  readonly referencia: string;
+  readonly clienteNombre: string;
+  readonly contactId: string | null;
+  readonly estado: string;
+  readonly subtotal: number;
+  readonly total: number;
+  readonly metodoPago: string;
+  readonly medioPago: PosMedioPago | null;
+  readonly reciboSolicitado: number;
+  readonly closingId: string | null;
+  readonly creadoEn: string;
+  readonly invoiceId: string | null;
+  readonly invoiceNumero: string | null;
+  readonly items: readonly ApiPosVentaItem[];
+}
+
+export interface ApiCashConsolidadoFila {
+  readonly canal: PosCanal;
+  readonly cierres: number;
+  readonly pedidos: number;
+  readonly unidades: number;
+  readonly ventaProducto: number;
+  readonly costoProducto: number;
+  readonly ganancia: number;
+  readonly enviosCobrados: number;
+  readonly totalRecaudado: number;
+  readonly totalGastos: number;
+  readonly totalCobrado: number;
+}
+
+export interface ApiCashConsolidado {
+  readonly porCanal: readonly ApiCashConsolidadoFila[];
+  readonly total: Omit<ApiCashConsolidadoFila, 'canal'>;
+  readonly desde: string | null;
+  readonly hasta: string | null;
+}
+
+export interface ApiAjuste {
+  readonly clave: string;
+  readonly descripcion: string;
+  readonly valor: string;
 }
 
 export interface ApiCashSummary {
@@ -1204,6 +1314,8 @@ export class ApiClient {
       stockSeguridad: number;
       /** 1 = se ofrece esta semana · 0 = sin oferta del agricultor. */
       activo: 0 | 1;
+      /** Código de barras para la caja. Cadena vacía lo borra. */
+      codigoBarras: string;
     }>,
   ): Observable<ApiProduct> {
     return this.http
@@ -1492,15 +1604,110 @@ export class ApiClient {
       .pipe(catchError(handleError));
   }
 
-  cashSummary(): Observable<ApiCashSummary> {
+  /**
+   * `canal` elige qué caja se resume: la tienda web o el mostrador.
+   *
+   * Se omite por defecto para que las pantallas de siempre sigan pidiendo lo
+   * mismo que pedían — el Worker interpreta la ausencia como 'ecommerce'.
+   */
+  cashSummary(canal?: PosCanal): Observable<ApiCashSummary> {
+    const query = canal ? `?canal=${canal}` : '';
     return this.http
-      .get<ApiCashSummary>('/api/admin/reports/cash')
+      .get<ApiCashSummary>(`/api/admin/reports/cash${query}`)
       .pipe(catchError(handleError));
   }
 
-  closeCash(): Observable<{ closing: ApiClosing; pedidosArchivados: number }> {
+  closeCash(canal?: PosCanal): Observable<{ closing: ApiClosing; pedidosArchivados: number }> {
+    const query = canal ? `?canal=${canal}` : '';
     return this.http
-      .post<{ closing: ApiClosing; pedidosArchivados: number }>('/api/admin/reports/cash/close', {})
+      .post<{ closing: ApiClosing; pedidosArchivados: number }>(
+        `/api/admin/reports/cash/close${query}`,
+        {},
+      )
+      .pipe(catchError(handleError));
+  }
+
+  // ────────────────────────── Punto de venta (0032) ──────────────────────────
+
+  /**
+   * Cierra una venta de mostrador: pedido, factura y cobro en una sola llamada.
+   *
+   * El navegador manda **qué y cuánto**, y el precio solo cuando el cajero lo
+   * cambia a mano. Todo lo demás —el precio de lista, el descuento de mayorista
+   * que le toque a la ficha, el total— lo calcula el Worker: aquí no se decide
+   * cuánto se cobra, igual que en el checkout de la tienda.
+   */
+  posSell(input: ApiPosSellInput): Observable<ApiPosVenta> {
+    return this.http
+      .post<{ venta: ApiPosVenta }>('/api/admin/pos/sell', input)
+      .pipe(map((res) => res.venta), catchError(handleError));
+  }
+
+  /** El historial de la caja, con las líneas de cada venta. */
+  posVentas(opciones: { hoy?: boolean; limit?: number } = {}): Observable<{
+    ventas: readonly ApiPosVentaResumen[];
+    resumen: { cantidad: number; total: number };
+  }> {
+    const params = new URLSearchParams();
+    if (opciones.hoy) {
+      params.set('hoy', '1');
+    }
+    if (opciones.limit) {
+      params.set('limit', String(opciones.limit));
+    }
+    const query = params.toString();
+
+    return this.http
+      .get<{ ventas: ApiPosVentaResumen[]; resumen: { cantidad: number; total: number } }>(
+        `/api/admin/pos/ventas${query ? `?${query}` : ''}`,
+      )
+      .pipe(catchError(handleError));
+  }
+
+  /**
+   * Devuelve mercancía de una venta de mostrador.
+   *
+   * Emite la nota crédito y devuelve el stock en la misma transacción del
+   * Worker: el dinero y el inventario se mueven juntos o no se mueve ninguno.
+   */
+  posDevolucion(
+    orderId: string,
+    input: { items: readonly { productId: string; cantidad: number }[]; motivo: string },
+  ): Observable<{ nota: ApiInvoice; venta: ApiPosVenta; unidadesDevueltas: number }> {
+    return this.http
+      .post<{ nota: ApiInvoice; venta: ApiPosVenta; unidadesDevueltas: number }>(
+        `/api/admin/pos/${orderId}/devolucion`,
+        input,
+      )
+      .pipe(catchError(handleError));
+  }
+
+  /** Banderas de operación que un SUPER_ADMIN cambia sin desplegar. */
+  settings(): Observable<readonly ApiAjuste[]> {
+    return this.http
+      .get<{ ajustes: ApiAjuste[] }>('/api/admin/settings')
+      .pipe(map((res) => res.ajustes), catchError(handleError));
+  }
+
+  updateSetting(clave: string, valor: string): Observable<{ clave: string; valor: string }> {
+    return this.http
+      .put<{ clave: string; valor: string }>('/api/admin/settings', { clave, valor })
+      .pipe(catchError(handleError));
+  }
+
+  /** Las dos cajas sumadas, para cuadrar el día completo. */
+  cashConsolidado(rango: { desde?: string; hasta?: string } = {}): Observable<ApiCashConsolidado> {
+    const params = new URLSearchParams();
+    if (rango.desde) {
+      params.set('desde', rango.desde);
+    }
+    if (rango.hasta) {
+      params.set('hasta', rango.hasta);
+    }
+    const query = params.toString();
+
+    return this.http
+      .get<ApiCashConsolidado>(`/api/admin/reports/cash/consolidado${query ? `?${query}` : ''}`)
       .pipe(catchError(handleError));
   }
 

@@ -65,6 +65,15 @@ class CheckoutStub {
   readonly subtotal = signal(50_000);
   readonly shipping = signal(9_900);
   readonly total = signal(59_900);
+  /**
+   * La forma de pago vive en el servicio, no en el componente: es lo que hace
+   * que elegir "entrega en tienda" ponga el envío en 0 sin que la página tenga
+   * que saber la regla. La plantilla la lee, así que el doble tiene que
+   * traerla o no llega ni a pintarse.
+   */
+  readonly metodoPago = signal<'contraentrega' | 'transferencia' | 'entrega_en_tienda'>(
+    'contraentrega',
+  );
   placeOrder = () => of({ id: 'o-1' });
   setProof = () => undefined;
 }

@@ -1,4 +1,4 @@
-import { ApiError, json, readJson, requireInt } from '../http';
+import { ApiError, json, readJson, requireInt, requireString } from '../http';
 import { Env, JwtPayload } from '../types';
 import { optionalAuth, requireRole } from '../auth/middleware';
 import { discountedPrice, loadDiscounts, loadUserRoles } from '../pricing';
@@ -78,6 +78,9 @@ const ADMIN_COLUMNS = `
   stock_seguridad AS stockSeguridad,
   categoria_abc AS categoriaAbc,
   activo,
+  -- Lo que teclea el lector del mostrador. Solo en el panel: en la tienda
+  -- pública no le sirve a nadie y es un dato de operación interna.
+  codigo_barras AS codigoBarras,
   (precio - precio_costo) AS margenUnitario,
   -- Las dos formas de no tener inventario propio. Ambas tienen stock_actual = 0
   -- por definición: la canasta lo deriva de sus componentes y la madre de sus
@@ -305,6 +308,8 @@ interface UpdateBody {
   activo?: unknown;
   /** 1 = aparece en "Más vendidos" de la portada. */
   destacado?: unknown;
+  /** Lo que teclea el lector del mostrador. '' lo borra. */
+  codigoBarras?: unknown;
 }
 
 /**
@@ -350,6 +355,18 @@ export async function update(
       throw ApiError.badRequest('destacado-invalido', 'El campo \"destacado\" debe ser 0 o 1.');
     }
     push('destacado', body.destacado);
+  }
+
+  if (body.codigoBarras !== undefined) {
+    // Cadena vacía → NULL, no ''. El índice único es parcial y excluye los
+    // vacíos, pero guardar '' haría que el buscador de la caja encontrara este
+    // producto al escanear cualquier cosa que llegue vacía.
+    const codigo =
+      body.codigoBarras === null || body.codigoBarras === ''
+        ? null
+        : requireString(body.codigoBarras, 'codigoBarras', 64);
+    bindings.push(codigo);
+    sets.push(`codigo_barras = ?${bindings.length}`);
   }
 
   if (sets.length === 0) {

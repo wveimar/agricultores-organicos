@@ -81,6 +81,22 @@ export const ADMIN_ROUTES: Routes = [
         loadComponent: () => import('./orders/orders-manager').then((m) => m.OrdersManager),
       },
       {
+        path: 'caja',
+        // Quien atiende el mostrador es quien ya gestiona pedidos, cobra y
+        // fía: la venta de caja son esas mismas operaciones fusionadas en un
+        // paso, así que no hace falta un rol nuevo. Devolver sí exige
+        // SUPER_ADMIN, y eso lo comprueba el Worker.
+        canActivate: [roleGuard('GESTOR_PEDIDOS')],
+        title: 'Caja · Panel',
+        loadComponent: () => import('./pos/pos-sell').then((m) => m.PosSell),
+      },
+      {
+        path: 'caja/historial',
+        canActivate: [roleGuard('GESTOR_PEDIDOS')],
+        title: 'Historial de caja · Panel',
+        loadComponent: () => import('./pos/pos-history').then((m) => m.PosHistory),
+      },
+      {
         path: 'reportes',
         // Ventas interesan tanto a compras como a quien gestiona pedidos.
         canActivate: [roleGuard('GESTOR_PEDIDOS', 'ADMIN_INVENTARIO')],

@@ -1,4 +1,5 @@
 import { ApiError, json, readJson, requireInt, requireString } from '../http';
+import { translateConstraint } from '../db-errors';
 import { Env, JwtPayload } from '../types';
 import { optionalAuth, requireRole } from '../auth/middleware';
 import { discountedPrice, loadDiscounts, loadUserRoles } from '../pricing';
@@ -27,7 +28,7 @@ import * as payments from './payments';
 const FREE_SHIPPING_THRESHOLD = 70_000;
 const SHIPPING_COST = 5_000;
 
-interface IncomingItem {
+export interface IncomingItem {
   productId?: unknown;
   cantidad?: unknown;
 }
@@ -50,7 +51,36 @@ function readMetodoPago(value: unknown): 'transferencia' | 'contraentrega' | 'en
   return 'transferencia';
 }
 
-interface StockRow {
+/**
+ * Cómo se guarda en la base lo que el cliente eligió.
+ *
+ * 'entrega_en_tienda' NO es un valor de `metodo_pago`: esa columna tiene un
+ * CHECK que no se puede ampliar sin recrear la tabla, y recrear `orders` es
+ * imposible en una base D1 que ya tiene pedidos (ver la cabecera de la
+ * migración 0032 para las cuatro vías que se probaron y por qué fallan todas).
+ *
+ * Retirar en la tienda es, en el fondo, pagar al recibir: se guarda como
+ * 'contraentrega' y el matiz vive en `medio_pago`. Como efecto secundario,
+ * RECAUDADO_WHERE ya lo cuenta bien sin tocar esa constante.
+ */
+function columnasDePago(metodo: 'transferencia' | 'contraentrega' | 'entrega_en_tienda') {
+  return metodo === 'entrega_en_tienda'
+    ? { metodoPago: 'contraentrega', medioPago: 'entrega_en_tienda' }
+    : { metodoPago: metodo, medioPago: null };
+}
+
+/**
+ * Lo que la API devuelve como `metodoPago`, reconstruido desde las dos
+ * columnas. Sin esto, un pedido que se retira en la tienda se leería como
+ * 'contraentrega' y el panel diría que sale a la calle un pedido que el
+ * cliente viene a recoger. Sin alias de tabla: las tres consultas que lo usan
+ * seleccionan de `orders` sin aliarla.
+ */
+const METODO_PAGO_SQL = `CASE WHEN medio_pago = 'entrega_en_tienda'
+                              THEN 'entrega_en_tienda'
+                              ELSE metodo_pago END AS metodoPago`;
+
+export interface StockRow {
   id: string;
   nombre: string;
   precio: number;
@@ -61,7 +91,7 @@ interface StockRow {
 }
 
 /** Faltante concreto, para que el cliente sepa qué ajustar. */
-interface Shortfall {
+export interface Shortfall {
   productId: string;
   productName: string;
   requested: number;
@@ -76,7 +106,7 @@ interface Shortfall {
  * todas se llevarían más unidades de las que hay. La restricción
  * UNIQUE(order_id, product_id) del esquema cierra el mismo agujero en la base.
  */
-function aggregate(items: readonly IncomingItem[]): Map<string, number> {
+export function aggregate(items: readonly IncomingItem[]): Map<string, number> {
   const required = new Map<string, number>();
 
   for (const item of items) {
@@ -100,7 +130,7 @@ function aggregate(items: readonly IncomingItem[]): Map<string, number> {
  * disponibilidad —crear, aprobar y editar líneas—, y no en cada una: así
  * ninguna puede quedarse sin enterarse de qué es una canasta.
  */
-async function loadProducts(env: Env, ids: readonly string[]): Promise<Map<string, StockRow>> {
+export async function loadProducts(env: Env, ids: readonly string[]): Promise<Map<string, StockRow>> {
   const placeholders = ids.map((_, index) => `?${index + 1}`).join(', ');
   const { results } = await env.DB.prepare(
     `SELECT p.id, p.nombre, p.precio, p.precio_costo, p.stock_actual,
@@ -131,7 +161,7 @@ async function loadProducts(env: Env, ids: readonly string[]): Promise<Map<strin
  * que elegir de cuál. La tienda ya no lo ofrece; esto es para quien llame a la
  * API a mano.
  */
-function rejectParents(ids: Iterable<string>, products: Map<string, StockRow>): void {
+export function rejectParents(ids: Iterable<string>, products: Map<string, StockRow>): void {
   for (const productId of ids) {
     const product = products.get(productId);
     if (product?.tiene_variantes) {
@@ -251,12 +281,18 @@ export async function create(request: Request, env: Env): Promise<Response> {
   // reserva evita sobreventa sin importar cómo se vaya a cobrar, y
   // 'verificacion' ya significa "pedido web, pendiente de revisión humana",
   // no "pendiente de comprobante" — el comprobante siempre fue opcional.
-  const metodoPago = readMetodoPago(body.metodoPago);
+  const metodoElegido = readMetodoPago(body.metodoPago);
+  const { metodoPago, medioPago } = columnasDePago(metodoElegido);
 
   // Sobre el subtotal ya descontado: es el importe que el cliente paga de
   // verdad, y es el que decide si alcanza el envío gratis. Excepto entrega en
-  // tienda, que siempre es envío 0.
-  const envio = metodoPago === 'entrega_en_tienda' ? 0 : subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST;
+  // tienda, que siempre es envío 0 — no hay domicilio que cobrar.
+  const envio =
+    metodoElegido === 'entrega_en_tienda'
+      ? 0
+      : subtotal >= FREE_SHIPPING_THRESHOLD
+        ? 0
+        : SHIPPING_COST;
 
   // Ficha en la agenda. Va FUERA del batch a propósito: es un dato de
   // conveniencia, no parte del pedido. Si fallara, no debe tumbar una compra
@@ -286,11 +322,11 @@ export async function create(request: Request, env: Env): Promise<Response> {
          id, referencia, user_id, contact_id,
          cliente_nombre, cliente_telefono, cliente_direccion,
          estado, stock_reservado, subtotal, envio, total,
-         comprobante_nombre, comprobante_url, metodo_pago
+         comprobante_nombre, comprobante_url, metodo_pago, medio_pago
        ) VALUES (
          ?1,
          'ORD-' || (SELECT COALESCE(MAX(CAST(substr(referencia, 5) AS INTEGER)), 1000) + 1 FROM orders),
-         ?2, ?3, ?4, ?5, ?6, 'verificacion', 1, ?7, ?8, ?9, ?10, ?11, ?12
+         ?2, ?3, ?4, ?5, ?6, 'verificacion', 1, ?7, ?8, ?9, ?10, ?11, ?12, ?13
        )`,
     ).bind(
       orderId,
@@ -312,6 +348,7 @@ export async function create(request: Request, env: Env): Promise<Response> {
       // solo desde GET /api/admin/orders/:id/comprobante.
       comprobanteUrl,
       metodoPago,
+      medioPago,
     ),
     // Traza de la primera transición, en el mismo batch: si el pedido no llega
     // a crearse, tampoco debe quedar un registro de que "nació".
@@ -1642,7 +1679,8 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
             -- cuando el admin abre el pedido concreto que quiere revisar.
             (comprobante_url IS NOT NULL) AS tieneComprobante,
             aprobado_en AS aprobadoEn,
-            metodo_pago AS metodoPago, efectivo_liquidado AS efectivoLiquidado, vence_en AS venceEn,
+            ${METODO_PAGO_SQL}, canal, medio_pago AS medioPago,
+            efectivo_liquidado AS efectivoLiquidado, vence_en AS venceEn,
             closing_id AS closingId, creado_en AS creadoEn,
             domiciliario_id AS domiciliarioId, domiciliario_nombre AS domiciliarioNombre
        FROM orders ${where}
@@ -1841,7 +1879,7 @@ export async function deliveries(env: Env, user: JwtPayload): Promise<Response> 
   const { results: orders } = await env.DB.prepare(
     `SELECT id, referencia, cliente_nombre AS clienteNombre,
             cliente_telefono AS clienteTelefono, cliente_direccion AS clienteDireccion,
-            total, creado_en AS creadoEn, metodo_pago AS metodoPago,
+            total, creado_en AS creadoEn, ${METODO_PAGO_SQL},
             domiciliario_id AS domiciliarioId,
             domiciliario_nombre AS domiciliarioNombre,
             contact_id AS contactId,
@@ -1858,6 +1896,12 @@ export async function deliveries(env: Env, user: JwtPayload): Promise<Response> 
        FROM orders
       WHERE estado = 'enviado'
         AND (metodo_pago = 'contraentrega' OR entregado_en IS NULL)
+        -- Ni las ventas de mostrador ni las compras que el cliente viene a
+        -- recoger salen a la calle. Las dos se guardan como 'contraentrega'
+        -- —se paga al recibir— así que sin esta línea aparecerían en la ruta
+        -- del domiciliario, que tendría que adivinar que no debe llevarlas.
+        AND canal = 'ecommerce'
+        AND COALESCE(medio_pago, '') <> 'entrega_en_tienda'
         ${filtroMio}
       ORDER BY creado_en ASC`,
   )
@@ -1989,7 +2033,8 @@ async function loadOrder(env: Env, orderId: string): Promise<unknown> {
               subtotal, envio, total, comprobante_nombre AS comprobanteNombre,
               (comprobante_url IS NOT NULL) AS tieneComprobante,
               aprobado_en AS aprobadoEn,
-              metodo_pago AS metodoPago, efectivo_liquidado AS efectivoLiquidado, vence_en AS venceEn,
+              ${METODO_PAGO_SQL}, canal, medio_pago AS medioPago,
+              efectivo_liquidado AS efectivoLiquidado, vence_en AS venceEn,
               closing_id AS closingId, creado_en AS creadoEn,
               domiciliario_id AS domiciliarioId, domiciliario_nombre AS domiciliarioNombre
          FROM orders WHERE id = ?1`,
@@ -2024,19 +2069,6 @@ async function loadOrder(env: Env, orderId: string): Promise<unknown> {
  * Traduce la violación del CHECK de stock a un 400 comprensible. Sin esto, una
  * carrera perdida le llegaría al cliente como un 500 opaco.
  */
-function translateConstraint(error: unknown): ApiError {
-  const message = error instanceof Error ? error.message : String(error);
-
-  if (message.includes('CHECK constraint failed') && message.includes('stock_actual')) {
-    return ApiError.badRequest(
-      'stock-insuficiente',
-      'Otra venta se llevó esas unidades mientras procesábamos el pedido. No se aplicó ningún cambio.',
-    );
-  }
-
-  if (message.includes('UNIQUE constraint failed')) {
-    return ApiError.conflict('duplicado', 'Ese registro ya existe.');
-  }
-
-  return new ApiError(500, 'error-base-datos', 'No se pudo completar la operación.');
-}
+// `translateConstraint` se mudó a `../db-errors`: el punto de venta arma los
+// mismos batches y choca con los mismos CHECK, así que la traducción tenía que
+// dejar de vivir dentro de este fichero.

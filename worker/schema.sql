@@ -50,6 +50,8 @@ DROP TABLE IF EXISTS categories;
 -- Después de `products` y `categories`, que le apuntan desde la 0025.
 DROP TABLE IF EXISTS admin_groups;
 DROP TABLE IF EXISTS login_attempts;
+-- Sin FK en ninguna dirección: da igual dónde vaya, pero tiene que estar.
+DROP TABLE IF EXISTS app_settings;
 
 -- ────────────────────────────── Usuarios y roles ──────────────────────────────
 
@@ -317,8 +319,20 @@ CREATE TABLE products (
   -- Qué distingue a las hijas, escrito en el padre: 'presentación', 'sabor'.
   variante_etiqueta TEXT,
 
+  -- Lo que teclea el lector del mostrador (migración 0032). Nullable porque
+  -- casi nada del catálogo de una finca trae código impreso: la fruta a granel
+  -- no lo tiene, así que la búsqueda por nombre sigue siendo el camino
+  -- principal de la caja y el escaneo es el atajo cuando lo hay.
+  codigo_barras   TEXT,
+
   actualizado_en  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Único pero parcial, mismo patrón que `idx_contacts_telefono`: dos productos
+-- no pueden compartir código, pero los muchos que no tienen ninguno no chocan
+-- entre sí ni ocupan sitio en el índice.
+CREATE UNIQUE INDEX idx_products_codigo_barras
+  ON products (codigo_barras) WHERE codigo_barras IS NOT NULL AND codigo_barras <> '';
 
 -- El catálogo público filtra por activo y agrupa por categoría: un índice
 -- parcial deja fuera las filas inactivas y mantiene el escaneo mínimo.
@@ -411,10 +425,23 @@ CREATE TABLE cash_closings (
   -- se VENDIÓ (migración 0028). Las dos conviven porque responden preguntas
   -- distintas: esta cuadra con el dinero del cajón —incluidos abonos de
   -- facturas viejas—, la otra con el informe de ventas del día.
-  total_cobrado      INTEGER NOT NULL DEFAULT 0 CHECK (total_cobrado      >= 0)
+  total_cobrado      INTEGER NOT NULL DEFAULT 0 CHECK (total_cobrado      >= 0),
+
+  -- Qué caja se cerró (migración 0032): la tienda web o el mostrador. El
+  -- consolidado agrupa por esta columna para sumar las dos.
+  --
+  -- Sin CHECK a propósito, al contrario que `orders.canal`. Esta tabla es
+  -- padre de `orders`, `payments` y `expenses`, y añadirle un CHECK habría
+  -- exigido recrearla: en SQLite eso pasa por un DROP TABLE que, con las FK
+  -- activas, dispara los borrados en cascada de sus hijas. No vale la pena
+  -- arriesgar el histórico contable por una restricción declarativa cuando el
+  -- único escritor de la columna es el Worker.
+  canal              TEXT    NOT NULL DEFAULT 'ecommerce'
 );
 
 CREATE INDEX idx_closings_fecha ON cash_closings (cerrado_en DESC);
+-- "Los cierres de esta caja", que es lo que agrupa el consolidado.
+CREATE INDEX idx_closings_canal ON cash_closings (canal, cerrado_en DESC);
 
 -- ────────────────────────────────── Pedidos ──────────────────────────────────
 
@@ -482,8 +509,31 @@ CREATE TABLE orders (
   -- 'credito' vive aquí y no en `estado` a propósito: fiar no es una fase del
   -- pedido, es de dónde sale el dinero. Un pedido fiado sigue recorriendo
   -- aprobado → enviado como cualquier otro. Ver la migración 0017.
+  -- ⚠ ESTA LISTA NO SE PUEDE AMPLIAR. Añadir un valor exige recrear la tabla, y
+  -- eso es imposible en una base D1 que ya tiene pedidos: el DROP TABLE choca
+  -- con el RESTRICT de `invoices.order_id` y arrastraría los CASCADE de
+  -- `order_items`, `order_status_log` y `order_item_components`. Ninguno de los
+  -- pragmas de SQLite lo evita bajo wrangler — está medido y documentado en la
+  -- cabecera de la migración 0032. La 0031 se anuló justo por intentarlo.
+  --
+  -- Si hace falta un matiz nuevo de pago, va en `medio_pago`, no aquí.
   metodo_pago        TEXT    NOT NULL DEFAULT 'transferencia'
-                             CHECK (metodo_pago IN ('transferencia', 'contraentrega', 'credito', 'entrega_en_tienda')),
+                             CHECK (metodo_pago IN ('transferencia', 'contraentrega', 'credito')),
+
+  -- Cómo se pagó de verdad, cuando `metodo_pago` se queda corto (migración
+  -- 0032). Sin CHECK, para que ampliarlo nunca vuelva a exigir recrear la
+  -- tabla. NULL = "lo que diga metodo_pago, sin matices", que es el caso de
+  -- toda compra web de siempre.
+  --
+  --   'efectivo' | 'tarjeta'   sobre 'contraentrega' → venta en el mostrador
+  --   'entrega_en_tienda'      sobre 'contraentrega' → compra web que se retira
+  --
+  -- 'contraentrega' no es un apaño para ninguno de los dos: significa "se paga
+  -- al recibir", que es literalmente lo que ocurre en una caja y lo que ocurre
+  -- cuando alguien va a recoger su pedido. El efecto secundario es bueno:
+  -- RECAUDADO_WHERE ya cuenta 'contraentrega' con estado 'pago' y
+  -- efectivo_liquidado = 1, así que la venta de caja entra sola en el cierre.
+  medio_pago         TEXT,
 
   -- Cuándo vence la deuda. NULL en todo lo que no sea 'credito': no hay nada
   -- que vencer donde el dinero ya entró o se cobra en la puerta.
@@ -506,7 +556,25 @@ CREATE TABLE orders (
   -- se borra, el pedido sigue existiendo — se pierde el vínculo, no la venta.
   -- Por eso el nombre se copia congelado, igual que `cliente_nombre`.
   domiciliario_id     TEXT REFERENCES users(id) ON DELETE SET NULL,
-  domiciliario_nombre TEXT
+  domiciliario_nombre TEXT,
+
+  -- De dónde salió la venta (migración 0032). Es lo que permite tener dos
+  -- cierres de caja separados —el de la tienda web y el del mostrador— que
+  -- luego se suman en un consolidado. Va como columna y no como una tabla
+  -- `pos_cash_closings` aparte a propósito: una tabla paralela obligaría a
+  -- duplicar RECAUDADO_WHERE y closeCash(), y dos verdades sobre el mismo
+  -- hecho es justo lo que advierte el comentario de esa constante.
+  --
+  -- Se llama `canal` y no `origen` porque `products.origen` ya significa "de
+  -- qué finca viene": reusar el nombre confundiría al leer el código.
+  -- Sin CHECK por la misma razón que `medio_pago`: que ampliarlo mañana no
+  -- obligue a recrear una tabla que no se puede recrear.
+  canal               TEXT NOT NULL DEFAULT 'ecommerce',
+
+  -- Si el cliente pidió recibo impreso en el mostrador. Dato operativo; NO
+  -- condiciona la reimpresión: cualquier factura se puede volver a imprimir
+  -- siempre desde GET /api/admin/invoices/:id.
+  recibo_solicitado   INTEGER NOT NULL DEFAULT 0
 );
 
 -- "¿Qué llevo yo hoy?". Parcial: casi ningún pedido tiene domiciliario.
@@ -523,6 +591,9 @@ CREATE INDEX idx_orders_user    ON orders (user_id);
 CREATE INDEX idx_orders_credito ON orders (metodo_pago, estado, vence_en);
 -- "Todos los pedidos de este cliente", que es la ficha de la agenda.
 CREATE INDEX idx_orders_contact ON orders (contact_id);
+-- "Las ventas de caja de hoy", que es lo que pregunta el historial del POS en
+-- cada carga. Parcial: la caja física es una fracción de todos los pedidos.
+CREATE INDEX idx_orders_canal   ON orders (canal, creado_en DESC) WHERE canal = 'pos';
 
 CREATE TABLE order_items (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -538,6 +609,17 @@ CREATE TABLE order_items (
   precio_unitario  INTEGER NOT NULL CHECK (precio_unitario >= 0),
   costo_unitario   INTEGER NOT NULL DEFAULT 0 CHECK (costo_unitario >= 0),
   cantidad         INTEGER NOT NULL CHECK (cantidad > 0),
+
+  -- Por qué esta línea no salió al precio calculado (migración 0032). NULL =
+  -- precio automático, de lista o con el descuento de mayorista que le toque
+  -- al cliente. Con texto = el cajero lo cambió a mano en el mostrador, y esto
+  -- es la razón que dio.
+  --
+  -- El negocio decidió no poner tope al descuento manual: el control es que
+  -- quede registrado, no un límite en el código. El "quién" no se duplica
+  -- aquí — ya lo captura `order_status_log.actor_id` en la fila 'editado' que
+  -- se escribe en la misma transacción.
+  motivo_ajuste    TEXT,
 
   -- Una sola línea por producto y pedido. Sin esto, dos líneas del mismo
   -- producto pasarían la validación de stock por separado y entre las dos se
@@ -745,11 +827,30 @@ CREATE TABLE payments (
   closing_id          TEXT    REFERENCES cash_closings(id) ON DELETE SET NULL,
 
   comprobante_url     TEXT,
-  nota                TEXT
+  nota                TEXT,
+
+  -- En qué caja entró la plata (migración 0032). `payments` no tiene FK a
+  -- `orders`, así que sin esta columna el cierre del mostrador no podría
+  -- distinguir sus cobros de los de cartera al barrer `closing_id IS NULL`.
+  -- Es también lo que hace que un abono que alguien viene a pagar a la tienda
+  -- cuadre contra el cierre del POS: ese billete está en ESE cajón.
+  --
+  -- Sin CHECK, por el mismo motivo que en `cash_closings`: recrear esta tabla
+  -- para añadirlo dispararía el CASCADE de `payment_allocations` y se llevaría
+  -- la asignación de cobros a facturas, que es la cartera entera.
+  canal               TEXT    NOT NULL DEFAULT 'ecommerce',
+
+  -- Mismo papel que `orders.medio_pago`: el CHECK de `metodo` de arriba tampoco
+  -- admite 'tarjeta' y tampoco se puede ampliar. Un cobro con datáfono se
+  -- registra como 'efectivo' —para el cierre lo que importa es que la plata
+  -- está en la caja desde el primer segundo, sin el desfase de `liquidado` que
+  -- sí tiene el domiciliario— y el instrumento real queda aquí.
+  medio_pago          TEXT
 );
 
 CREATE INDEX idx_payments_closing ON payments (closing_id, liquidado);
 CREATE INDEX idx_payments_contact ON payments (contact_id, recibido_en DESC);
+CREATE INDEX idx_payments_canal   ON payments (canal, closing_id);
 
 -- Cuánto de este pago salda esta factura. La suma de las asignaciones de un
 -- pago nunca pasa de su monto; lo que sobra es anticipo. Esa invariante no
@@ -836,3 +937,17 @@ CREATE TABLE provider_purchase_items (
 
 CREATE INDEX idx_purchase_items_purchase ON provider_purchase_items (purchase_id);
 CREATE INDEX idx_purchase_items_product  ON provider_purchase_items (product_id);
+
+-- ─────────────────────── Ajustes de operación (0032) ───────────────────────
+-- Banderas que un SUPER_ADMIN cambia en vivo desde el panel, sin desplegar.
+-- Clave-valor y no una columna por ajuste: son opciones de operación, no
+-- entidades, y añadir la siguiente no puede costar otra migración.
+CREATE TABLE app_settings (
+  clave          TEXT PRIMARY KEY,
+  valor          TEXT NOT NULL,
+  actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Si la caja imprime recibo por defecto. El cajero puede cambiarlo en cada
+-- venta —preguntándole al cliente—; esto solo decide cómo llega la casilla.
+INSERT INTO app_settings (clave, valor) VALUES ('pos_recibo_por_defecto', '1');

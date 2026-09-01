@@ -61,6 +61,39 @@ const RECAUDADO_WHERE = `(
          OR (o.metodo_pago = 'credito' AND o.estado = 'pago')
        ) AND o.closing_id IS NULL`;
 
+/**
+ * Las dos cajas: la tienda web y el mostrador.
+ *
+ * El negocio cierra cada una por separado y luego las suma en un consolidado.
+ * Una venta de mostrador ya encaja en la segunda rama de RECAUDADO_WHERE —se
+ * guarda como 'contraentrega' con estado 'pago' y liquidada desde el primer
+ * segundo, porque el billete está en el cajón— así que lo único que hace falta
+ * es poder preguntar por una caja a la vez.
+ */
+export type Canal = 'ecommerce' | 'pos';
+
+function leerCanal(url: URL): Canal {
+  return url.searchParams.get('canal') === 'pos' ? 'pos' : 'ecommerce';
+}
+
+/**
+ * RECAUDADO_WHERE acotado a una caja, o a todas si no se dice cuál.
+ *
+ * Es una función y no cuatro cadenas sueltas por la misma razón que la
+ * constante era una: `closeCash()` la usa para sumar y para archivar, y si las
+ * dos versiones dejaran de decir exactamente lo mismo, un pedido se contaría en
+ * el recibo de un cierre pero nunca recibiría `closing_id`, y volvería a
+ * contarse en todos los cierres siguientes para siempre.
+ *
+ * El canal se interpola como literal y no como parámetro a propósito: viene de
+ * `leerCanal()`, que solo puede devolver uno de dos valores fijos, y mezclarlo
+ * con los `?N` posicionales de las consultas de abajo obligaría a renumerarlos
+ * en cada llamada.
+ */
+function recaudadoWhere(canal?: Canal): string {
+  return canal ? `${RECAUDADO_WHERE} AND o.canal = '${canal}'` : RECAUDADO_WHERE;
+}
+
 /** `YYYY-MM-DD` y nada más: lo que entra va directo a `datetime()` de SQLite. */
 function optionalDate(value: string | null, field: string): string | null {
   if (value === null || value === '') {
@@ -169,23 +202,25 @@ export async function sales(env: Env, user: JwtPayload): Promise<Response> {
  * GET /api/admin/reports/cash — estado de la jornada abierta.
  * Una sola consulta agregada; nada de traer los pedidos para sumarlos aquí.
  */
-export async function cashSummary(env: Env, user: JwtPayload): Promise<Response> {
+export async function cashSummary(env: Env, user: JwtPayload, url: URL): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS');
+
+  const canal = leerCanal(url);
 
   const summary = await env.DB.prepare(
     `SELECT COUNT(DISTINCT o.id)                                  AS pedidos,
             COALESCE(SUM(o.envio), 0)                             AS enviosCobrados,
             COALESCE((SELECT SUM(i.cantidad)
                         FROM order_items i JOIN orders o ON o.id = i.order_id
-                       WHERE ${RECAUDADO_WHERE}), 0) AS unidades,
+                       WHERE ${recaudadoWhere(canal)}), 0) AS unidades,
             COALESCE((SELECT SUM(i.precio_unitario * i.cantidad)
                         FROM order_items i JOIN orders o ON o.id = i.order_id
-                       WHERE ${RECAUDADO_WHERE}), 0) AS ventaProducto,
+                       WHERE ${recaudadoWhere(canal)}), 0) AS ventaProducto,
             COALESCE((SELECT SUM(i.costo_unitario * i.cantidad)
                         FROM order_items i JOIN orders o ON o.id = i.order_id
-                       WHERE ${RECAUDADO_WHERE}), 0) AS costoProducto
+                       WHERE ${recaudadoWhere(canal)}), 0) AS costoProducto
        FROM orders o
-      WHERE ${RECAUDADO_WHERE}`,
+      WHERE ${recaudadoWhere(canal)}`,
   ).first<{
     pedidos: number;
     enviosCobrados: number;
@@ -213,7 +248,7 @@ export async function cashSummary(env: Env, user: JwtPayload): Promise<Response>
   const { results: porMetodo } = await env.DB.prepare(
     `SELECT o.metodo_pago AS metodo, COUNT(DISTINCT o.id) AS pedidos, COALESCE(SUM(o.subtotal), 0) AS total
        FROM orders o
-      WHERE ${RECAUDADO_WHERE}
+      WHERE ${recaudadoWhere(canal)}
       GROUP BY o.metodo_pago`,
   ).all<{ metodo: string; pedidos: number; total: number }>();
 
@@ -355,14 +390,16 @@ export async function cartera(env: Env, user: JwtPayload): Promise<Response> {
  * vender, y es de ahí de donde sale `costo_producto`. Restar además el pago a
  * la finca contaría el mismo costo dos veces.
  */
-export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
+export async function closeCash(env: Env, user: JwtPayload, url: URL): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS');
+
+  const canal = leerCanal(url);
 
   const totals = await env.DB.prepare(
     `SELECT COUNT(DISTINCT o.id)              AS pedidos,
             COALESCE(SUM(o.envio), 0)         AS enviosCobrados
        FROM orders o
-      WHERE ${RECAUDADO_WHERE}`,
+      WHERE ${recaudadoWhere(canal)}`,
   ).first<{ pedidos: number; enviosCobrados: number }>();
 
   if (!totals || totals.pedidos === 0) {
@@ -378,7 +415,7 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
             COALESCE(SUM(i.costo_unitario  * i.cantidad), 0)   AS costoProducto
        FROM order_items i
        JOIN orders o ON o.id = i.order_id
-      WHERE ${RECAUDADO_WHERE}`,
+      WHERE ${recaudadoWhere(canal)}`,
   ).first<{ unidades: number; ventaProducto: number; costoProducto: number }>();
 
   const unidades = productTotals?.unidades ?? 0;
@@ -388,9 +425,16 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
   // Gastos de la jornada: los huérfanos son, por definición, los que todavía
   // no ha adoptado ningún cierre. El mismo batch de abajo se los queda, así
   // que este número y las filas que se marcan describen el mismo conjunto.
-  const gastos = await env.DB.prepare(
-    `SELECT COALESCE(SUM(monto), 0) AS totalGastos FROM expenses WHERE closing_id IS NULL`,
-  ).first<{ totalGastos: number }>();
+  // Los gastos NO se dividen por caja: un gasto de transporte o de empaque no
+  // nace en el mostrador ni en la tienda web, es de la operación. Se quedan
+  // todos en el cierre de ecommerce, que sigue siendo el principal; el de la
+  // caja física solo responde por lo que pasó por su cajón.
+  const gastos =
+    canal === 'ecommerce'
+      ? await env.DB.prepare(
+          `SELECT COALESCE(SUM(monto), 0) AS totalGastos FROM expenses WHERE closing_id IS NULL`,
+        ).first<{ totalGastos: number }>()
+      : { totalGastos: 0 };
 
   const totalGastos = gastos?.totalGastos ?? 0;
 
@@ -406,10 +450,15 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
    * entregado no está en la finca, así que no puede contar. Mismo criterio que
    * `efectivo_liquidado` en los pedidos.
    */
+  // Acotado a la misma caja que se está cerrando: un abono que alguien vino a
+  // pagar al mostrador está físicamente en ESE cajón, no en el de la finca, y
+  // contarlo en el cierre de la tienda web descuadraría los dos a la vez.
   const cobros = await env.DB.prepare(
     `SELECT COALESCE(SUM(monto), 0) AS totalCobrado
-       FROM payments WHERE closing_id IS NULL AND liquidado = 1`,
-  ).first<{ totalCobrado: number }>();
+       FROM payments WHERE closing_id IS NULL AND liquidado = 1 AND canal = ?1`,
+  )
+    .bind(canal)
+    .first<{ totalCobrado: number }>();
 
   const totalCobrado = cobros?.totalCobrado ?? 0;
 
@@ -430,12 +479,13 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
       `INSERT INTO cash_closings (
          id, referencia, cerrado_por, cerrado_por_nombre, cerrado_en,
          pedidos_count, unidades_count, venta_producto, costo_producto,
-         ganancia, envios_cobrados, total_recaudado, total_gastos, total_cobrado
+         ganancia, envios_cobrados, total_recaudado, total_gastos, total_cobrado,
+         canal
        ) VALUES (
          ?1,
          'CIERRE-' || printf('%04d',
            (SELECT COALESCE(MAX(CAST(substr(referencia, 8) AS INTEGER)), 0) + 1 FROM cash_closings)),
-         ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12
+         ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13
        )`,
     ).bind(
       closingId,
@@ -453,6 +503,7 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
       ventaProducto,
       totalGastos,
       totalCobrado,
+      canal,
     ),
     // Marca exactamente el mismo conjunto que se acaba de sumar. Al ir en el
     // mismo batch, ningún pedido puede colarse entre el cálculo y el archivado.
@@ -472,16 +523,21 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
     // constante para la consecuencia exacta de que esto se desincronice.
     env.DB.prepare(
       `UPDATE orders AS o SET closing_id = ?1, comprobante_url = NULL
-        WHERE ${RECAUDADO_WHERE}`,
+        WHERE ${recaudadoWhere(canal)}`,
     ).bind(closingId),
 
     // Los gastos huérfanos pasan a ser de este cierre. Mismo predicado que la
     // suma de `totalGastos` de arriba: en el batch nadie puede meter un gasto
     // entre las dos, así que la cifra congelada y las filas marcadas
     // coinciden siempre. A partir de aquí ya no se pueden borrar.
+    // Solo el cierre de ecommerce adopta gastos, igual que solo él los sumó
+    // arriba: la cifra congelada y las filas marcadas tienen que describir el
+    // mismo conjunto o la contabilidad queda a medias. En el cierre del
+    // mostrador esta sentencia no marca nada, a propósito.
     env.DB.prepare(
-      `UPDATE expenses SET closing_id = ?1 WHERE closing_id IS NULL`,
-    ).bind(closingId),
+      `UPDATE expenses SET closing_id = ?1
+        WHERE closing_id IS NULL AND ?2 = 'ecommerce'`,
+    ).bind(closingId, canal),
 
     // Los cobros de la jornada pasan a ser de este cierre. Mismo predicado que
     // la suma de `totalCobrado`: en el batch nadie puede registrar un abono
@@ -489,8 +545,9 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
     // el mismo conjunto. A partir de aquí el cobro ya no se puede editar ni
     // borrar — lo defiende `payments.exigirAbierto`.
     env.DB.prepare(
-      `UPDATE payments SET closing_id = ?1 WHERE closing_id IS NULL AND liquidado = 1`,
-    ).bind(closingId),
+      `UPDATE payments SET closing_id = ?1
+        WHERE closing_id IS NULL AND liquidado = 1 AND canal = ?2`,
+    ).bind(closingId, canal),
   ]);
 
   const closing = await env.DB.prepare(
@@ -498,7 +555,7 @@ export async function closeCash(env: Env, user: JwtPayload): Promise<Response> {
             pedidos_count AS pedidos, unidades_count AS unidades,
             venta_producto AS ventaProducto, costo_producto AS costoProducto,
             ganancia, envios_cobrados AS enviosCobrados, total_recaudado AS totalRecaudado,
-            total_gastos AS totalGastos, total_cobrado AS totalCobrado
+            total_gastos AS totalGastos, total_cobrado AS totalCobrado, canal
        FROM cash_closings WHERE id = ?1`,
   )
     .bind(closingId)
@@ -622,7 +679,15 @@ export async function consolidation(
 
   // El WHERE se arma con fragmentos fijos y valores enlazados: lo que viene de
   // la URL nunca se concatena en el SQL.
-  const filtros: string[] = [`o.estado IN ('aprobado', 'enviado')`];
+  //
+  // Solo la tienda web. Este informe audita el cobro del domicilio —recalcula
+  // lo que debió cobrarse y señala los pedidos donde no cuadra— y una venta de
+  // mostrador no tiene domicilio que auditar: el cliente se lleva la compra.
+  //
+  // Sin este filtro, el informe contaría ventas de caja que el resumen de caja
+  // de la tienda web ya no cuenta, y las dos cifras que están pensadas para
+  // cuadrar entre sí dejarían de hacerlo. Lo detectó `qa-consolidado.mjs`.
+  const filtros: string[] = [`o.estado IN ('aprobado', 'enviado')`, `o.canal = 'ecommerce'`];
   const params: string[] = [];
 
   if (desde) {
@@ -823,11 +888,94 @@ export async function closings(env: Env, user: JwtPayload): Promise<Response> {
             pedidos_count AS pedidos, unidades_count AS unidades,
             venta_producto AS ventaProducto, costo_producto AS costoProducto,
             ganancia, envios_cobrados AS enviosCobrados, total_recaudado AS totalRecaudado,
-            total_gastos AS totalGastos, total_cobrado AS totalCobrado
+            total_gastos AS totalGastos, total_cobrado AS totalCobrado, canal
        FROM cash_closings
       ORDER BY cerrado_en DESC
       LIMIT 50`,
   ).all();
 
   return json({ closings: results });
+}
+
+/**
+ * GET /api/admin/reports/cash/consolidado — las dos cajas, sumadas.
+ *
+ * Es lo que pide el negocio: la tienda web y el mostrador se cierran por
+ * separado —cada cajón cuadra con lo suyo— pero al final del día hay que ver
+ * cuánto entró en total.
+ *
+ * Sale de `cash_closings` y no de `orders` a propósito: las cifras de un cierre
+ * están CONGELADAS, así que este informe siempre dice lo mismo que dijeron los
+ * recibos que se imprimieron ese día. Recalcularlo desde los pedidos daría
+ * cifras que se mueven cuando alguien edita algo viejo.
+ *
+ * `desde`/`hasta` son opcionales y en hora local, igual que el resto del
+ * informe: sin ellos vienen todos los cierres que existan.
+ */
+export async function cashConsolidado(env: Env, user: JwtPayload, url: URL): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS', 'ADMIN_INVENTARIO');
+
+  const desde = optionalDate(url.searchParams.get('desde'), 'desde');
+  const hasta = optionalDate(url.searchParams.get('hasta'), 'hasta');
+
+  const filtros: string[] = [];
+  const bindings: unknown[] = [];
+
+  if (desde) {
+    filtros.push(`date(cerrado_en, '${COLOMBIA_OFFSET}') >= ?${bindings.push(desde)}`);
+  }
+  if (hasta) {
+    filtros.push(`date(cerrado_en, '${COLOMBIA_OFFSET}') <= ?${bindings.push(hasta)}`);
+  }
+
+  const where = filtros.length > 0 ? `WHERE ${filtros.join(' AND ')}` : '';
+
+  const { results: porCanal } = await env.DB.prepare(
+    `SELECT canal,
+            COUNT(*)                            AS cierres,
+            COALESCE(SUM(pedidos_count), 0)     AS pedidos,
+            COALESCE(SUM(unidades_count), 0)    AS unidades,
+            COALESCE(SUM(venta_producto), 0)    AS ventaProducto,
+            COALESCE(SUM(costo_producto), 0)    AS costoProducto,
+            COALESCE(SUM(ganancia), 0)          AS ganancia,
+            COALESCE(SUM(envios_cobrados), 0)   AS enviosCobrados,
+            COALESCE(SUM(total_recaudado), 0)   AS totalRecaudado,
+            COALESCE(SUM(total_gastos), 0)      AS totalGastos,
+            COALESCE(SUM(total_cobrado), 0)     AS totalCobrado
+       FROM cash_closings ${where}
+      GROUP BY canal
+      ORDER BY canal`,
+  )
+    .bind(...bindings)
+    .all<Record<string, number | string>>();
+
+  // El total se suma aquí y no con un ROLLUP: son dos filas como mucho, y
+  // hacerlo en SQL obligaría a distinguir la fila del total de las de cada
+  // canal por un NULL, que es justo el tipo de dato ambiguo que después se
+  // pinta mal en pantalla.
+  const numero = (fila: Record<string, number | string>, campo: string) =>
+    Number(fila[campo] ?? 0);
+
+  const CAMPOS = [
+    'cierres',
+    'pedidos',
+    'unidades',
+    'ventaProducto',
+    'costoProducto',
+    'ganancia',
+    'enviosCobrados',
+    'totalRecaudado',
+    'totalGastos',
+    'totalCobrado',
+  ] as const;
+
+  const total: Record<string, number> = Object.fromEntries(CAMPOS.map((campo) => [campo, 0]));
+
+  for (const fila of porCanal) {
+    for (const campo of CAMPOS) {
+      total[campo] += numero(fila, campo);
+    }
+  }
+
+  return json({ porCanal, total, desde, hasta });
 }

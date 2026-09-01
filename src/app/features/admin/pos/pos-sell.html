@@ -1,0 +1,337 @@
+<section class="mx-auto w-full max-w-6xl px-4 py-6">
+  <header class="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="font-serif text-2xl text-ink">Caja</h1>
+      <p class="mt-1 text-sm text-ink/60">
+        Escanea el código de barras o busca por nombre. El cursor vuelve solo al buscador
+        después de cada producto.
+      </p>
+    </div>
+    <a
+      routerLink="/admin/caja/historial"
+      class="rounded-lg border border-sand px-4 py-2 text-sm text-ink transition hover:border-moss hover:text-moss"
+    >
+      Historial y cierre
+    </a>
+  </header>
+
+  @if (ultimaVenta(); as venta) {
+    <!--
+      El recibo tapa la pantalla a propósito: es el momento en que el cajero le
+      dice el total al cliente, y tener el ticket a medio ver detrás invita a
+      equivocarse de venta.
+    -->
+    <div class="mb-6 rounded-2xl border border-moss/30 bg-moss/5 p-5">
+      <div class="no-imprimir mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="font-medium text-moss">Venta registrada · {{ venta.referencia }}</p>
+          <p class="text-sm text-ink/70">
+            Total cobrado: <strong>{{ venta.total | cop }}</strong>
+          </p>
+        </div>
+        <div class="flex gap-2">
+          @if (venta.reciboSolicitado === 1) {
+            <button
+              type="button"
+              (click)="imprimir()"
+              class="rounded-lg bg-moss px-4 py-2 text-sm font-medium text-white transition hover:bg-moss/90"
+            >
+              Imprimir recibo
+            </button>
+          } @else {
+            <button
+              type="button"
+              (click)="imprimir()"
+              class="rounded-lg border border-sand px-4 py-2 text-sm text-ink transition hover:border-moss"
+            >
+              Imprimir de todos modos
+            </button>
+          }
+          <button
+            type="button"
+            (click)="cerrarRecibo()"
+            class="rounded-lg border border-sand px-4 py-2 text-sm text-ink transition hover:border-moss"
+          >
+            Siguiente cliente
+          </button>
+        </div>
+      </div>
+
+      <div class="mx-auto max-w-sm">
+        <app-pos-receipt [venta]="venta" />
+      </div>
+    </div>
+  }
+
+  <div class="grid gap-6 lg:grid-cols-[1.15fr_1fr]">
+    <!-- ── Buscador y catálogo ─────────────────────────────────────────── -->
+    <div class="space-y-4">
+      <div>
+        <label for="pos-buscador" class="mb-1 block text-sm font-medium text-ink">
+          Producto
+        </label>
+        <input
+          id="pos-buscador"
+          #buscador
+          type="text"
+          autofocus
+          autocomplete="off"
+          [value]="busqueda()"
+          (input)="busqueda.set($any($event.target).value)"
+          (keydown.enter)="onBuscadorEnter()"
+          placeholder="Escanea o escribe el nombre…"
+          class="block w-full rounded-lg border border-sand px-4 py-3 text-base text-ink focus:border-moss focus:outline-none focus:ring-2 focus:ring-moss/20"
+        />
+        @if (sinCoincidencia(); as termino) {
+          <p class="mt-2 text-sm text-clay">
+            No hay ningún producto con «{{ termino }}». Revisa el código o búscalo por nombre.
+          </p>
+        }
+      </div>
+
+      @if (resultados().length > 0) {
+        <ul class="divide-y divide-sand overflow-hidden rounded-xl border border-sand bg-white">
+          @for (producto of resultados(); track producto.id) {
+            <li>
+              <button
+                type="button"
+                (click)="agregar(producto)"
+                class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-cream"
+              >
+                <span>
+                  <span class="block text-sm font-medium text-ink">{{ producto.nombre }}</span>
+                  <span class="block text-xs text-ink/60">
+                    {{ producto.precio | cop }} · quedan {{ producto.stock }}
+                    @if (producto.codigoBarras) {
+                      · {{ producto.codigoBarras }}
+                    }
+                  </span>
+                </span>
+                <span class="text-sm text-moss">Agregar</span>
+              </button>
+            </li>
+          }
+        </ul>
+      }
+
+      <!-- ── Cliente ────────────────────────────────────────────────────── -->
+      <div class="rounded-xl border border-sand bg-white p-4">
+        <p class="text-sm font-medium text-ink">Cliente</p>
+
+        @if (contactoElegido(); as cliente) {
+          <div class="mt-2 flex items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-medium text-ink">{{ cliente.nombre }}</p>
+              <p class="text-xs text-ink/60">
+                @if (cliente.cupoCredito > 0) {
+                  Cupo de crédito: {{ cliente.cupoCredito | cop }}
+                } @else {
+                  Sin cupo de crédito
+                }
+              </p>
+            </div>
+            <button
+              type="button"
+              (click)="quitarCliente()"
+              class="text-sm text-clay underline-offset-2 hover:underline"
+            >
+              Quitar
+            </button>
+          </div>
+        } @else {
+          <p class="mt-1 text-xs text-ink/60">
+            Sin identificar se vende igual, como «Cliente de mostrador». Identifícalo si tiene
+            descuento de mayorista o va a pagar a crédito.
+          </p>
+          <input
+            type="text"
+            autocomplete="off"
+            [value]="clienteBusqueda()"
+            (input)="clienteBusqueda.set($any($event.target).value)"
+            placeholder="Nombre, teléfono o documento…"
+            class="mt-2 block w-full rounded-lg border border-sand px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none focus:ring-2 focus:ring-moss/20"
+          />
+          @if (clientesFiltrados().length > 0) {
+            <ul class="mt-2 divide-y divide-sand overflow-hidden rounded-lg border border-sand">
+              @for (contacto of clientesFiltrados(); track contacto.id) {
+                <li>
+                  <button
+                    type="button"
+                    (click)="elegirCliente(contacto)"
+                    class="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-cream"
+                  >
+                    <span class="text-ink">{{ contacto.nombre }}</span>
+                    <span class="text-xs text-ink/50">{{ contacto.telefono }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+        }
+      </div>
+    </div>
+
+    <!-- ── Ticket ──────────────────────────────────────────────────────── -->
+    <aside class="lg:sticky lg:top-24 lg:self-start">
+      <div class="rounded-2xl border border-sand bg-white p-5">
+        <div class="flex items-center justify-between">
+          <h2 class="font-serif text-lg text-ink">Ticket</h2>
+          @if (!ticket.vacio()) {
+            <button
+              type="button"
+              (click)="ticket.vaciar()"
+              class="text-sm text-clay underline-offset-2 hover:underline"
+            >
+              Vaciar
+            </button>
+          }
+        </div>
+
+        @if (ticket.vacio()) {
+          <p class="mt-4 text-sm text-ink/60">
+            Todavía no hay nada. Escanea un producto para empezar.
+          </p>
+        } @else {
+          <ul class="mt-4 divide-y divide-sand">
+            @for (linea of ticket.items(); track linea.product.id) {
+              <li class="py-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="truncate text-sm font-medium text-ink">
+                      {{ linea.product.nombre }}
+                    </p>
+                    <p class="text-xs text-ink/60">
+                      {{ (linea.precioManual ?? linea.product.precio) | cop }} c/u
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="ticket.quitar(linea.product.id)"
+                    class="shrink-0 text-xs text-clay underline-offset-2 hover:underline"
+                  >
+                    Quitar
+                  </button>
+                </div>
+
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  <label class="flex items-center gap-1 text-xs text-ink/60">
+                    Cant.
+                    <input
+                      type="number"
+                      min="1"
+                      [max]="linea.product.stock"
+                      [value]="linea.cantidad"
+                      (input)="setCantidad(linea.product.id, $any($event.target).value)"
+                      class="w-16 rounded border border-sand px-2 py-1 text-sm text-ink focus:border-moss focus:outline-none"
+                    />
+                  </label>
+
+                  <label class="flex items-center gap-1 text-xs text-ink/60">
+                    Precio
+                    <input
+                      type="number"
+                      min="0"
+                      [value]="linea.precioManual"
+                      (input)="setPrecio(linea.product.id, $any($event.target).value)"
+                      [placeholder]="linea.product.precio"
+                      class="w-24 rounded border border-sand px-2 py-1 text-sm text-ink focus:border-moss focus:outline-none"
+                    />
+                  </label>
+                </div>
+
+                <!--
+                  El motivo solo aparece cuando de verdad hay un cambio de
+                  precio: pedirlo siempre lo convertiría en un campo que se
+                  rellena en automático sin leerlo, y entonces no auditaría nada.
+                -->
+                @if (linea.precioManual !== null && linea.precioManual !== linea.product.precio) {
+                  <input
+                    type="text"
+                    [value]="linea.motivoAjuste"
+                    (input)="setMotivo(linea.product.id, $any($event.target).value)"
+                    placeholder="¿Por qué este precio? (obligatorio)"
+                    class="mt-2 block w-full rounded border px-2 py-1 text-xs text-ink focus:outline-none"
+                    [class.border-clay]="linea.motivoAjuste.trim() === ''"
+                    [class.border-sand]="linea.motivoAjuste.trim() !== ''"
+                  />
+                }
+              </li>
+            }
+          </ul>
+
+          <div class="mt-4 border-t border-sand pt-4">
+            <div class="flex justify-between text-base font-semibold text-ink">
+              <span>Total</span>
+              <span>{{ ticket.subtotal() | cop }}</span>
+            </div>
+            @if (contactoElegido()) {
+              <p class="mt-1 text-xs text-ink/60">
+                Si este cliente tiene descuento de mayorista, el total definitivo se calcula al
+                cobrar y saldrá más bajo.
+              </p>
+            }
+          </div>
+        }
+
+        <!-- ── Forma de pago ──────────────────────────────────────────── -->
+        <div class="mt-5 space-y-3 border-t border-sand pt-4">
+          <div>
+            <label for="pos-metodo" class="mb-1 block text-sm font-medium text-ink">
+              Forma de pago
+            </label>
+            <select
+              id="pos-metodo"
+              (change)="onMetodoChange($any($event.target).value)"
+              class="block w-full rounded-lg border border-sand px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none focus:ring-2 focus:ring-moss/20"
+            >
+              <option value="efectivo" [selected]="metodoPago() === 'efectivo'">Efectivo</option>
+              <option value="tarjeta" [selected]="metodoPago() === 'tarjeta'">Tarjeta</option>
+              <option
+                value="credito"
+                [selected]="metodoPago() === 'credito'"
+                [disabled]="!puedeFiar()"
+              >
+                Crédito @if (!puedeFiar()) { — identifica al cliente primero }
+              </option>
+            </select>
+          </div>
+
+          <label class="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              [checked]="reciboSolicitado()"
+              (change)="reciboSolicitado.set($any($event.target).checked)"
+              class="h-4 w-4 rounded border-sand text-moss focus:ring-moss/30"
+            />
+            El cliente quiere recibo impreso
+          </label>
+        </div>
+
+        @if (ajustesSinMotivo().length > 0) {
+          <p class="mt-4 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay">
+            Falta explicar el precio de: {{ ajustesSinMotivo().join(', ') }}.
+          </p>
+        }
+
+        @if (error(); as mensaje) {
+          <p class="mt-4 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">
+            {{ mensaje }}
+          </p>
+        }
+
+        <button
+          type="button"
+          (click)="vender()"
+          [disabled]="!puedeVender()"
+          class="mt-5 w-full rounded-lg bg-moss px-4 py-3 text-base font-medium text-white transition hover:bg-moss/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          @if (guardando()) {
+            Registrando…
+          } @else {
+            Cobrar {{ ticket.subtotal() | cop }}
+          }
+        </button>
+      </div>
+    </aside>
+  </div>
+</section>

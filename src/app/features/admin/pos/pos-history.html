@@ -1,0 +1,294 @@
+<section class="mx-auto w-full max-w-6xl px-4 py-6">
+  <header class="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="font-serif text-2xl text-ink">Caja · historial y cierre</h1>
+      <p class="mt-1 text-sm text-ink/60">
+        Lo vendido en el mostrador. El cierre de aquí es solo el de esta caja: la tienda web
+        tiene el suyo, y abajo se suman las dos.
+      </p>
+    </div>
+    <a
+      routerLink="/admin/caja"
+      class="rounded-lg bg-moss px-4 py-2 text-sm font-medium text-white transition hover:bg-moss/90"
+    >
+      Volver a vender
+    </a>
+  </header>
+
+  @if (mensaje(); as texto) {
+    <p class="mb-4 rounded-lg bg-moss/10 px-4 py-3 text-sm text-moss" role="status">{{ texto }}</p>
+  }
+  @if (error(); as texto) {
+    <p class="mb-4 rounded-lg bg-clay/10 px-4 py-3 text-sm text-clay" role="alert">{{ texto }}</p>
+  }
+
+  <!-- ── Estado de la caja del mostrador ──────────────────────────────── -->
+  <div class="mb-6 rounded-2xl border border-sand bg-white p-5">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h2 class="font-serif text-lg text-ink">Jornada abierta · mostrador</h2>
+        @if (caja(); as resumen) {
+          <p class="mt-1 text-sm text-ink/70">
+            {{ resumen.pedidos }} venta(s) · {{ resumen.unidades }} unidad(es)
+          </p>
+          <p class="mt-2 text-2xl font-semibold text-ink">
+            {{ resumen.totalRecaudado | cop }}
+          </p>
+          <p class="text-xs text-ink/60">
+            Ganancia estimada: {{ resumen.ganancia | cop }}
+          </p>
+        } @else {
+          <p class="mt-1 text-sm text-ink/60">Sin datos de la caja ahora mismo.</p>
+        }
+      </div>
+
+      <button
+        type="button"
+        (click)="cerrarCaja()"
+        [disabled]="cerrando() || (caja()?.pedidos ?? 0) === 0"
+        class="rounded-lg border border-moss px-4 py-2 text-sm font-medium text-moss transition hover:bg-moss hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        @if (cerrando()) {
+          Cerrando…
+        } @else {
+          Cerrar caja del mostrador
+        }
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Consolidado de las dos cajas ─────────────────────────────────── -->
+  @if (consolidado(); as datos) {
+    <div class="mb-6 overflow-hidden rounded-2xl border border-sand bg-white">
+      <div class="border-b border-sand px-5 py-4">
+        <h2 class="font-serif text-lg text-ink">Consolidado</h2>
+        <p class="mt-1 text-sm text-ink/60">
+          Cierres ya hechos, sumando la tienda web y el mostrador.
+        </p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-cream text-left text-xs uppercase tracking-wide text-ink/60">
+            <tr>
+              <th class="px-5 py-2 font-medium">Caja</th>
+              <th class="px-5 py-2 text-right font-medium">Cierres</th>
+              <th class="px-5 py-2 text-right font-medium">Ventas</th>
+              <th class="px-5 py-2 text-right font-medium">Recaudado</th>
+              <th class="px-5 py-2 text-right font-medium">Cobrado</th>
+              <th class="px-5 py-2 text-right font-medium">Ganancia</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-sand">
+            @for (fila of datos.porCanal; track fila.canal) {
+              <tr>
+                <td class="px-5 py-2 text-ink">
+                  {{ fila.canal === 'pos' ? 'Mostrador' : 'Tienda web' }}
+                </td>
+                <td class="px-5 py-2 text-right">{{ fila.cierres }}</td>
+                <td class="px-5 py-2 text-right">{{ fila.pedidos }}</td>
+                <td class="px-5 py-2 text-right">{{ fila.totalRecaudado | cop }}</td>
+                <td class="px-5 py-2 text-right">{{ fila.totalCobrado | cop }}</td>
+                <td class="px-5 py-2 text-right">{{ fila.ganancia | cop }}</td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="6" class="px-5 py-4 text-center text-ink/60">
+                  Todavía no hay ningún cierre.
+                </td>
+              </tr>
+            }
+          </tbody>
+          @if (datos.porCanal.length > 0) {
+            <tfoot class="border-t-2 border-sand bg-cream/50 font-semibold text-ink">
+              <tr>
+                <td class="px-5 py-2">Total</td>
+                <td class="px-5 py-2 text-right">{{ datos.total.cierres }}</td>
+                <td class="px-5 py-2 text-right">{{ datos.total.pedidos }}</td>
+                <td class="px-5 py-2 text-right">{{ datos.total.totalRecaudado | cop }}</td>
+                <td class="px-5 py-2 text-right">{{ datos.total.totalCobrado | cop }}</td>
+                <td class="px-5 py-2 text-right">{{ datos.total.ganancia | cop }}</td>
+              </tr>
+            </tfoot>
+          }
+        </table>
+      </div>
+    </div>
+  }
+
+  <!-- ── Ventas ───────────────────────────────────────────────────────── -->
+  <div class="overflow-hidden rounded-2xl border border-sand bg-white">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-sand px-5 py-4">
+      <div>
+        <h2 class="font-serif text-lg text-ink">
+          {{ soloHoy() ? 'Ventas de hoy' : 'Últimas ventas' }}
+        </h2>
+        <p class="mt-1 text-sm text-ink/60">
+          {{ resumen().cantidad }} venta(s) · {{ resumen().total | cop }}
+        </p>
+      </div>
+      <button
+        type="button"
+        (click)="alternarPeriodo()"
+        class="rounded-lg border border-sand px-3 py-1.5 text-sm text-ink transition hover:border-moss hover:text-moss"
+      >
+        {{ soloHoy() ? 'Ver todas' : 'Ver solo hoy' }}
+      </button>
+    </div>
+
+    @if (cargando()) {
+      <p class="px-5 py-8 text-center text-sm text-ink/60">Cargando…</p>
+    } @else if (errorLista(); as texto) {
+      <p class="px-5 py-8 text-center text-sm text-clay">{{ texto }}</p>
+    } @else {
+      <ul class="divide-y divide-sand">
+        @for (venta of ventas(); track venta.id) {
+          <li class="px-5 py-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-ink">
+                  {{ venta.referencia }}
+                  @if (venta.invoiceNumero) {
+                    <span class="text-ink/50">· {{ venta.invoiceNumero }}</span>
+                  }
+                </p>
+                <p class="text-xs text-ink/60">
+                  {{ venta.clienteNombre }} · {{ venta.creadoEn }}
+                  @if (venta.closingId) {
+                    · <span class="text-moss">ya cerrada en caja</span>
+                  }
+                </p>
+                <p class="mt-1 text-xs text-ink/60">
+                  @for (item of venta.items; track item.productId) {
+                    {{ item.cantidad }}× {{ item.productoNombre }}@if (!$last) { · }
+                  }
+                </p>
+              </div>
+
+              <div class="flex shrink-0 items-center gap-3">
+                <span class="text-base font-semibold text-ink">{{ venta.total | cop }}</span>
+                <button
+                  type="button"
+                  (click)="reimprimir(venta)"
+                  class="rounded-lg border border-sand px-3 py-1.5 text-xs text-ink transition hover:border-moss hover:text-moss"
+                >
+                  Reimprimir
+                </button>
+                @if (puedeDevolver() && !venta.closingId) {
+                  <button
+                    type="button"
+                    (click)="abrirDevolucion(venta)"
+                    class="rounded-lg border border-clay/40 px-3 py-1.5 text-xs text-clay transition hover:bg-clay hover:text-white"
+                  >
+                    Devolución
+                  </button>
+                }
+              </div>
+            </div>
+          </li>
+        } @empty {
+          <li class="px-5 py-8 text-center text-sm text-ink/60">
+            Todavía no hay ventas de mostrador.
+          </li>
+        }
+      </ul>
+    }
+  </div>
+</section>
+
+<!-- ── Recibo reimpreso ───────────────────────────────────────────────── -->
+@if (reimprimiendo(); as venta) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
+    <div class="max-h-full w-full max-w-sm overflow-y-auto">
+      <div class="no-imprimir mb-3 flex justify-end gap-2">
+        <button
+          type="button"
+          (click)="imprimir()"
+          class="rounded-lg bg-moss px-4 py-2 text-sm font-medium text-white transition hover:bg-moss/90"
+        >
+          Imprimir
+        </button>
+        <button
+          type="button"
+          (click)="cerrarReimpresion()"
+          class="rounded-lg bg-white px-4 py-2 text-sm text-ink transition hover:bg-cream"
+        >
+          Cerrar
+        </button>
+      </div>
+      <app-pos-receipt [venta]="venta" />
+    </div>
+  </div>
+}
+
+<!-- ── Devolución ─────────────────────────────────────────────────────── -->
+@if (devolviendo(); as venta) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
+    <div class="max-h-full w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6">
+      <h2 class="font-serif text-xl text-ink">Devolución · {{ venta.referencia }}</h2>
+      <p class="mt-1 text-sm text-ink/60">
+        Marca cuánto vuelve de cada producto. Se emite una nota crédito por lo que se cobró ese
+        día y el stock regresa al inventario, todo a la vez.
+      </p>
+
+      <ul class="mt-4 divide-y divide-sand">
+        @for (item of venta.items; track item.productId) {
+          <li class="flex items-center justify-between gap-3 py-3">
+            <div class="min-w-0">
+              <p class="truncate text-sm text-ink">{{ item.productoNombre }}</p>
+              <p class="text-xs text-ink/60">
+                Se vendieron {{ item.cantidad }} a {{ item.precioUnitario | cop }}
+              </p>
+            </div>
+            <input
+              type="number"
+              min="0"
+              [max]="item.cantidad"
+              placeholder="0"
+              (input)="setCantidadDevuelta(item.productId, $any($event.target).value)"
+              class="w-20 shrink-0 rounded border border-sand px-2 py-1 text-sm text-ink focus:border-moss focus:outline-none"
+            />
+          </li>
+        }
+      </ul>
+
+      <label class="mt-4 block">
+        <span class="mb-1 block text-sm font-medium text-ink">Motivo</span>
+        <input
+          type="text"
+          [value]="motivoDevolucion()"
+          (input)="motivoDevolucion.set($any($event.target).value)"
+          placeholder="Por qué se devuelve (obligatorio)"
+          class="block w-full rounded-lg border border-sand px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none focus:ring-2 focus:ring-moss/20"
+        />
+      </label>
+
+      @if (error(); as texto) {
+        <p class="mt-3 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">
+          {{ texto }}
+        </p>
+      }
+
+      <div class="mt-5 flex justify-end gap-2">
+        <button
+          type="button"
+          (click)="cerrarDevolucion()"
+          class="rounded-lg border border-sand px-4 py-2 text-sm text-ink transition hover:border-moss"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          (click)="confirmarDevolucion()"
+          [disabled]="!puedeConfirmarDevolucion()"
+          class="rounded-lg bg-clay px-4 py-2 text-sm font-medium text-white transition hover:bg-clay/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          @if (devolviendoEnCurso()) {
+            Registrando…
+          } @else {
+            Confirmar devolución
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+}

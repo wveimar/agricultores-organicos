@@ -1,7 +1,12 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
 import {
+  ApiAjuste,
   ApiCashSummary,
+  ApiPosSellInput,
+  ApiPosVenta,
+  ApiPosVentaResumen,
+  PosCanal,
   ApiAdminGroup,
   ApiCategory,
   ApiDeuda,
@@ -1279,6 +1284,88 @@ export class AdminApiService {
     return this.api.markPurchasePaid(id).pipe(
       tap((actualizada) => {
         this.purchases.update((list) => list.map((c) => (c.id === id ? actualizada : c)));
+      }),
+    );
+  }
+
+  // ────────────────────────── Punto de venta (0032) ──────────────────────────
+
+  readonly posVentas = signal<readonly ApiPosVentaResumen[]>([]);
+  readonly posResumen = signal<{ cantidad: number; total: number }>({ cantidad: 0, total: 0 });
+  readonly posLoading = signal(false);
+  readonly posError = signal<string | null>(null);
+
+  loadPosVentas(opciones: { hoy?: boolean } = { hoy: true }): void {
+    this.posLoading.set(true);
+    this.posError.set(null);
+    this.api.posVentas(opciones).subscribe({
+      next: (res) => {
+        this.posVentas.set(res.ventas);
+        this.posResumen.set(res.resumen);
+        this.posLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.posError.set(error.message);
+        this.posLoading.set(false);
+      },
+    });
+  }
+
+  /**
+   * Una venta de mostrador. Refresca el inventario además del historial: la
+   * venta acaba de descontar stock, y la pantalla de caja lo está mostrando.
+   */
+  posSell(input: ApiPosSellInput): Observable<ApiPosVenta> {
+    return this.api.posSell(input).pipe(
+      tap(() => {
+        this.loadPosVentas();
+        this.loadProducts();
+      }),
+    );
+  }
+
+  posDevolucion(
+    orderId: string,
+    input: { items: readonly { productId: string; cantidad: number }[]; motivo: string },
+  ) {
+    return this.api.posDevolucion(orderId, input).pipe(
+      tap(() => {
+        this.loadPosVentas();
+        this.loadProducts();
+      }),
+    );
+  }
+
+  /** El resumen de una caja concreta, sin tocar la señal del cierre de siempre. */
+  posCashSummary(canal: PosCanal = 'pos') {
+    return this.api.cashSummary(canal);
+  }
+
+  closePosCash(canal: PosCanal = 'pos') {
+    return this.api.closeCash(canal);
+  }
+
+  cashConsolidado(rango: { desde?: string; hasta?: string } = {}) {
+    return this.api.cashConsolidado(rango);
+  }
+
+  readonly ajustes = signal<readonly ApiAjuste[]>([]);
+
+  loadAjustes(): void {
+    this.api.settings().subscribe({
+      // Si fallan, la caja sigue funcionando con los valores por defecto: son
+      // preferencias de comodidad, no algo sin lo que no se pueda vender.
+      next: (lista) => this.ajustes.set(lista),
+      error: () => this.ajustes.set([]),
+    });
+  }
+
+  updateSetting(clave: string, valor: string) {
+    return this.api.updateSetting(clave, valor).pipe(
+      tap(() => {
+        this.ajustes.update((lista) =>
+          lista.map((a) => (a.clave === clave ? { ...a, valor } : a)),
+        );
       }),
     );
   }

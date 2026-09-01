@@ -1,0 +1,37 @@
+/*
+ * Al imprimir queda solo el recibo, a lo ancho del papel.
+ *
+ * `visibility` y no `display: none`: ocultar el panel entero con display
+ * sacaría el recibo del flujo junto con sus antecesores y no se imprimiría
+ * nada. Con visibility, los ancestros siguen ocupando su sitio pero no pintan,
+ * y el recibo se reposiciona arriba del todo.
+ *
+ * El CSS vive en el componente y no en los estilos globales a propósito: una
+ * regla `@media print` que esconde toda la página es demasiado agresiva para
+ * un fichero compartido, y acabaría afectando a pantallas que no tienen nada
+ * que ver con la caja.
+ */
+@media print {
+  :host {
+    position: absolute;
+    inset: 0;
+    visibility: visible;
+  }
+
+  :host ::ng-deep * {
+    visibility: visible;
+  }
+
+  .recibo {
+    width: 100%;
+    max-width: 80mm;
+    margin: 0;
+    border: 0;
+    box-shadow: none;
+    font-size: 11px;
+  }
+
+  .no-imprimir {
+    display: none !important;
+  }
+}

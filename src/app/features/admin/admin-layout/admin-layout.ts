@@ -37,6 +37,9 @@ export class AdminLayout {
     // producto, y quien las toca es la misma persona.
     { path: '/admin/categorias', label: 'Categorías', roles: ['ADMIN_INVENTARIO'] },
     { path: '/admin/grupos', label: 'Grupos', roles: ['ADMIN_INVENTARIO'] },
+    // Primero la caja: es la pantalla que se abre al empezar el día en la
+    // tienda física y la única que se usa con un cliente esperando enfrente.
+    { path: '/admin/caja', label: 'Caja', roles: ['GESTOR_PEDIDOS'] },
     {
       path: '/admin/pedidos',
       label: 'Pedidos',

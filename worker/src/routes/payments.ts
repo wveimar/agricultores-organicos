@@ -146,12 +146,31 @@ export function cobrarPedidoStatements(
   paymentId: string,
   orderId: string,
   user: JwtPayload,
-  opciones: { metodo: 'efectivo' | 'transferencia'; liquidado: 0 | 1; monto?: number },
+  opciones: {
+    metodo: 'efectivo' | 'transferencia';
+    liquidado: 0 | 1;
+    monto?: number;
+    /**
+     * En qué caja entra la plata. Por defecto 'ecommerce', para que las
+     * llamadas de siempre —`orders.markPaid`, `collectCredit`— sigan
+     * comportándose igual sin tocarlas.
+     */
+    canal?: 'ecommerce' | 'pos';
+    /**
+     * El instrumento real, cuando `metodo` se queda corto: 'tarjeta'. Su CHECK
+     * no se puede ampliar (recrear `payments` dispararía el CASCADE de
+     * `payment_allocations` y se llevaría la cartera entera), así que un cobro
+     * con datáfono se registra como 'efectivo' y el detalle vive aquí.
+     */
+    medioPago?: string | null;
+  },
 ) {
   // NULL de verdad y no `?? i.saldo` en JS: la comparación tiene que ocurrir en
   // SQL contra el saldo real de la factura en el momento del batch, no contra
   // un valor leído en una consulta aparte que podría quedar desactualizado.
   const monto = opciones.monto ?? null;
+  const canal = opciones.canal ?? 'ecommerce';
+  const medioPago = opciones.medioPago ?? null;
 
   return [
     // El cliente sale de la propia factura del pedido, no de lo que mande
@@ -159,16 +178,27 @@ export function cobrarPedidoStatements(
     env.DB.prepare(
       `INSERT INTO payments (
          id, referencia, contact_id, cliente_nombre, monto, metodo,
-         recibido_en, recibido_por, recibido_por_nombre, liquidado
+         recibido_en, recibido_por, recibido_por_nombre, liquidado,
+         canal, medio_pago
        )
        SELECT ?1,
               'ABONO-' || printf('%06d', (SELECT IFNULL(MAX(CAST(substr(referencia, 7) AS INTEGER)), 0) + 1 FROM payments)),
               i.contact_id, i.cliente_nombre,
               CASE WHEN ?7 IS NULL THEN i.saldo ELSE MIN(i.saldo, ?7) END,
-              ?4, datetime('now'), ?3, ?5, ?6
+              ?4, datetime('now'), ?3, ?5, ?6, ?8, ?9
          FROM invoices i
         WHERE i.order_id = ?2 AND i.estado <> 'anulada' AND i.saldo > 0`,
-    ).bind(paymentId, orderId, user.sub, opciones.metodo, user.nombre, opciones.liquidado, monto),
+    ).bind(
+      paymentId,
+      orderId,
+      user.sub,
+      opciones.metodo,
+      user.nombre,
+      opciones.liquidado,
+      monto,
+      canal,
+      medioPago,
+    ),
 
     // Y el reparto: lo mismo que se acaba de cobrar, contra esa misma factura.
     // El WHERE del SELECT hace que si no había factura viva no se inserte

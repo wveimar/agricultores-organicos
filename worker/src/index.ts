@@ -16,6 +16,8 @@ import * as users from './routes/users';
 import * as wholesale from './routes/wholesale';
 import * as components from './routes/components';
 import * as passwordReset from './routes/password-reset';
+import * as pos from './routes/pos';
+import * as settings from './routes/settings';
 
 /**
  * Punto de entrada del Worker.
@@ -379,15 +381,43 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return wholesale.set(request, env, user, wholesaleItemMatch[1], wholesaleItemMatch[2]);
     }
 
+    // Punto de venta. Las rutas literales van antes que la de `:orderId`,
+    // como el resto de este router.
+    if (pathname === '/api/admin/pos/sell' && method === 'POST') {
+      return pos.sell(request, env, user);
+    }
+    if (pathname === '/api/admin/pos/ventas' && method === 'GET') {
+      return pos.ventas(env, user, url);
+    }
+    const devolucionMatch = pathname.match(/^\/api\/admin\/pos\/([\w-]+)\/devolucion$/);
+    if (devolucionMatch && method === 'POST') {
+      return pos.devolucion(request, env, user, devolucionMatch[1]);
+    }
+
+    // Ajustes de operación
+    if (pathname === '/api/admin/settings' && method === 'GET') {
+      return settings.list(env, user);
+    }
+    if (pathname === '/api/admin/settings' && method === 'PUT') {
+      return settings.update(request, env, user);
+    }
+
     // Reportes
     if (pathname === '/api/admin/reports/sales' && method === 'GET') {
       return reports.sales(env, user);
     }
+    // El consolidado va ANTES que /cash: si no, nada lo alcanzaría —la
+    // comparación es por igualdad, pero el orden literal-antes-que-genérico es
+    // la convención de este router y romperla aquí confundiría al siguiente.
+    if (pathname === '/api/admin/reports/cash/consolidado' && method === 'GET') {
+      return reports.cashConsolidado(env, user, url);
+    }
+    // `?canal=pos` elige qué caja se resume o se cierra. Sin él, la de siempre.
     if (pathname === '/api/admin/reports/cash' && method === 'GET') {
-      return reports.cashSummary(env, user);
+      return reports.cashSummary(env, user, url);
     }
     if (pathname === '/api/admin/reports/cash/close' && method === 'POST') {
-      return reports.closeCash(env, user);
+      return reports.closeCash(env, user, url);
     }
     if (pathname === '/api/admin/reports/efectivo-pendiente' && method === 'GET') {
       return reports.efectivoPendiente(env, user);

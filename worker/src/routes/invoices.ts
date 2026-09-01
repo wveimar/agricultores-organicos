@@ -214,7 +214,7 @@ interface InvoiceBody {
   items?: unknown;
 }
 
-interface LineaValidada {
+export interface LineaValidada {
   productId: string | null;
   descripcion: string;
   cantidad: number;
@@ -476,6 +476,39 @@ export async function crearNota(
   const tipo = body.tipo === 'nota_debito' ? 'nota_debito' : 'nota_credito';
   const motivo = requireString(body.motivo, 'motivo', 200);
   const lineas = leerLineas(body.items);
+
+  const { id, statements } = await notaStatements(env, origenId, tipo, motivo, lineas);
+  await env.DB.batch(statements);
+
+  const nota = await env.DB.prepare(`SELECT ${COLUMNS} FROM invoices WHERE id = ?1`)
+    .bind(id)
+    .first();
+  const actualizada = await env.DB.prepare(`SELECT ${COLUMNS} FROM invoices WHERE id = ?1`)
+    .bind(origenId)
+    .first();
+
+  return json({ nota, invoice: actualizada }, 201);
+}
+
+/**
+ * Valida una nota y devuelve las sentencias que la emiten, sin ejecutarlas.
+ *
+ * Se separó del handler HTTP para que el punto de venta pueda meter una nota
+ * crédito en el MISMO `batch()` que devuelve el stock. Una devolución de
+ * mostrador es las dos cosas a la vez —el dinero vuelve y la mercancía
+ * también— y ejecutarlas en dos transacciones dejaría la puerta abierta a
+ * acreditarle la plata a alguien sin haber recuperado la fruta, o al revés.
+ *
+ * Devuelve también el `id` generado porque quien llama necesita releer la nota
+ * después, y calcularlo fuera obligaría a duplicar el formato del prefijo.
+ */
+export async function notaStatements(
+  env: Env,
+  origenId: string,
+  tipo: 'nota_credito' | 'nota_debito',
+  motivo: string,
+  lineas: LineaValidada[],
+): Promise<{ id: string; statements: D1PreparedStatement[] }> {
   const monto = lineas.reduce((suma, linea) => suma + linea.importe, 0);
 
   const origen = await env.DB.prepare(
@@ -544,7 +577,7 @@ export async function crearNota(
   const prefijo = tipo === 'nota_credito' ? 'NC' : 'ND';
   const id = `${tipo === 'nota_credito' ? 'nc' : 'nd'}-${crypto.randomUUID()}`;
 
-  await env.DB.batch([
+  const statements = [
     env.DB.prepare(
       `INSERT INTO invoices (
          id, consecutivo, numero, order_id, contact_id,
@@ -578,16 +611,9 @@ export async function crearNota(
     ...sentenciasDeLineas(env, id, lineas),
     // Y el saldo de la factura corregida, en el mismo batch.
     recalcularStatement(env, origenId),
-  ]);
+  ];
 
-  const nota = await env.DB.prepare(`SELECT ${COLUMNS} FROM invoices WHERE id = ?1`)
-    .bind(id)
-    .first();
-  const actualizada = await env.DB.prepare(`SELECT ${COLUMNS} FROM invoices WHERE id = ?1`)
-    .bind(origenId)
-    .first();
-
-  return json({ nota, invoice: actualizada }, 201);
+  return { id, statements };
 }
 
 /**

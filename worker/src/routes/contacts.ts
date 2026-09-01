@@ -1,6 +1,7 @@
 import { ApiError, json, readJson, requireInt, requireString } from '../http';
-import { Env, JwtPayload } from '../types';
+import { Env, JwtPayload, UserRole } from '../types';
 import { requireRole } from '../auth/middleware';
+import { loadUserRoles } from '../pricing';
 
 /**
  * La agenda: proveedores y clientes en una sola lista.
@@ -419,6 +420,32 @@ export async function contactoDeUsuario(
   }
 
   return fila.contactId;
+}
+
+/**
+ * Los roles de la cuenta enlazada a una ficha, o ninguno si no hay cuenta.
+ *
+ * Es el camino inverso de `contactoDeUsuario()`: el checkout va de la sesión a
+ * la ficha, y el punto de venta necesita ir de la ficha a los roles.
+ *
+ * Sin esto, un mayorista que entra a la tienda física pagaría precio de lista:
+ * en el mostrador no hay sesión iniciada —el cajero identifica al cliente por
+ * su ficha, no por un login— así que el descuento no tendría de dónde salir.
+ *
+ * Se leen de la base y no de ningún token, por lo mismo que documenta
+ * `pricing.loadUserRoles`: un JWT puede ir hasta ocho horas desactualizado, y
+ * quien acaba de dejar de ser mayorista no puede seguir comprando a su precio.
+ */
+export async function rolesDeContacto(env: Env, contactId: string): Promise<readonly UserRole[]> {
+  const fila = await env.DB.prepare(`SELECT id FROM users WHERE contact_id = ?1 AND activo = 1`)
+    .bind(contactId)
+    .first<{ id: string }>();
+
+  if (!fila) {
+    return [];
+  }
+
+  return loadUserRoles(env, fila.id);
 }
 
 /**
