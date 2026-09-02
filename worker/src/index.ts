@@ -10,6 +10,7 @@ import * as paymentsRoute from './routes/payments';
 import * as orders from './routes/orders';
 import * as reports from './routes/reports';
 import * as expenses from './routes/expenses';
+import * as mermas from './routes/mermas';
 import * as purchases from './routes/purchases';
 import * as contacts from './routes/contacts';
 import * as users from './routes/users';
@@ -443,7 +444,28 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return expenses.remove(env, user, expenseMatch[1]);
     }
 
+    // Bajas de inventario por merma. `/reporte` va ANTES que `/:id`, según la
+    // convención del router: una ruta literal no puede quedar detrás de un
+    // comodín que también la casaría.
+    if (pathname === '/api/admin/mermas/reporte' && method === 'GET') {
+      return mermas.reporte(env, user, url);
+    }
+    if (pathname === '/api/admin/mermas' && method === 'GET') {
+      return mermas.list(env, user, url);
+    }
+    if (pathname === '/api/admin/mermas' && method === 'POST') {
+      return mermas.create(request, env, user);
+    }
+
+    const mermaMatch = pathname.match(/^\/api\/admin\/mermas\/([\w-]+)$/);
+    if (mermaMatch && method === 'DELETE') {
+      return mermas.remove(env, user, mermaMatch[1]);
+    }
+
     // Agenda: proveedores y clientes en una sola lista, con banderas.
+    if (pathname === '/api/admin/contacts/search' && method === 'GET') {
+      return contacts.search(env, user, url);
+    }
     if (pathname === '/api/admin/contacts' && method === 'GET') {
       return contacts.list(env, user, url);
     }

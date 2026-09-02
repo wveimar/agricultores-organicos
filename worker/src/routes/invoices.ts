@@ -26,6 +26,7 @@ const COLUMNS = `id,
                  contact_id       AS contactId,
                  cliente_nombre   AS clienteNombre,
                  cliente_telefono AS clienteTelefono,
+                 cliente_cedula   AS clienteCedula,
                  subtotal,
                  envio,
                  total,
@@ -67,13 +68,13 @@ export function emitirStatement(
   return env.DB.prepare(
     `INSERT INTO invoices (
        id, consecutivo, numero, order_id, contact_id,
-       cliente_nombre, cliente_telefono,
+       cliente_nombre, cliente_telefono, cliente_cedula,
        subtotal, envio, total, saldo, estado, emitida_en, vence_en
      )
      SELECT ?1,
             (SELECT IFNULL(MAX(consecutivo), 0) + 1 FROM invoices),
             'FAC-' || printf('%06d', (SELECT IFNULL(MAX(consecutivo), 0) + 1 FROM invoices)),
-            o.id, o.contact_id, o.cliente_nombre, o.cliente_telefono,
+            o.id, o.contact_id, o.cliente_nombre, o.cliente_telefono, o.cliente_cedula,
             o.subtotal, o.envio, o.total, o.total, 'emitida',
             datetime('now'), o.vence_en
        FROM orders o
@@ -98,7 +99,9 @@ export function emitirLineasStatement(
   return env.DB.prepare(
     `INSERT INTO invoice_items (invoice_id, product_id, descripcion, cantidad, precio_unitario, importe)
      SELECT ?1, oi.product_id, oi.producto_nombre, oi.cantidad, oi.precio_unitario,
-            oi.cantidad * oi.precio_unitario
+            -- ROUND: en una línea por peso, cantidad es decimal y el producto
+            -- puede no caer justo en un entero de pesos.
+            ROUND(oi.cantidad * oi.precio_unitario)
        FROM order_items oi
       WHERE oi.order_id = ?2
         AND (SELECT aprobacion_token FROM orders WHERE id = ?2) = ?3`,

@@ -5,26 +5,28 @@
 -- Su versión original recreaba `orders` para meter 'entrega_en_tienda' en el
 -- CHECK de `metodo_pago`. Ese procedimiento —DROP TABLE + RENAME— NO FUNCIONA
 -- sobre una base D1 que ya tiene pedidos: el DELETE implícito del DROP choca
--- con el RESTRICT de `invoices.order_id` y dispararía los CASCADE de
+-- con el RESTRICT de `invoices.order_id` y dispara los CASCADE de
 -- `order_items`, `order_status_log` y `order_item_components`.
 --
--- Pasó en local únicamente porque la base estaba recién reseteada y vacía. En
--- producción habría fallado en el primer intento de despliegue. Se probaron
--- las cuatro salidas posibles (foreign_keys = OFF, defer_foreign_keys,
+-- Pasó en local únicamente porque la base estaba recién reseteada y vacía. Se
+-- probaron las cuatro salidas posibles (foreign_keys = OFF, defer_foreign_keys,
 -- legacy_alter_table con doble renombrado, y el DROP directo) y ninguna la
--- salva; el detalle medido está en la cabecera de 0032_pos.sql.
+-- salva: wrangler envuelve cada fichero en una transacción, donde el primer
+-- pragma es inerte y el segundo solo aplaza la comprobación hasta un COMMIT
+-- que igualmente revierte.
 --
--- La funcionalidad no se perdió: se rehizo sin tocar ningún CHECK. Un pedido
--- que se retira en la tienda es ahora
+-- La conclusión de fondo está escrita junto a `orders.metodo_pago` en
+-- schema.sql: en esta base, un CHECK que solo enumera valores es un candado
+-- permanente a cambio de ninguna seguridad real. Se quitaron los de las
+-- columnas de método, canal y medio de pago, y la validación vive en el
+-- Worker, que además da un 400 legible.
 --
---     metodo_pago = 'contraentrega'  +  medio_pago = 'entrega_en_tienda'
+-- Un pedido que se retira en la tienda es hoy, simplemente:
 --
--- donde `medio_pago` es una columna nueva y sin CHECK que añade 0032_pos.sql,
--- junto con el UPDATE que reescribe al modelo nuevo las filas que esta
--- migración alcanzó a dejar en las bases locales.
+--     metodo_pago = 'entrega_en_tienda'
 --
 -- No se borra el fichero: wrangler lleva la cuenta de las migraciones
 -- aplicadas por nombre, y quitarlo descuadraría esa cuenta en cualquier base
 -- donde esta ya conste como aplicada.
 
-SELECT 'migracion 0031 anulada: ver 0032_pos.sql' AS nota;
+SELECT 'migracion 0031 anulada: el modelo vive en schema.sql' AS nota;

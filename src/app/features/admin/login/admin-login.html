@@ -19,22 +19,22 @@
         <label for="email" class="block text-sm font-medium text-ink">Correo</label>
         <input
           id="email"
+          #errEmail="fieldError"
           type="email"
           formControlName="email"
+          [appFieldError]="form.controls.email"
           autocomplete="username"
-          class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-          [class]="showError('email') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-          [attr.aria-invalid]="showError('email')"
-          [attr.aria-describedby]="showError('email') ? 'error-email' : null"
+          class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
           placeholder="tu@agricultores.co"
         />
-        @if (showError('email')) {
-          <p id="error-email" class="mt-2 text-sm text-berry">
-            {{ form.controls.email.hasError('required')
+        <app-field-error
+          [for]="errEmail"
+          [message]="
+            form.controls.email.hasError('required')
               ? 'El correo es obligatorio.'
-              : 'Escribe un correo con formato válido.' }}
-          </p>
-        }
+              : 'Escribe un correo con formato válido.'
+          "
+        />
       </div>
 
       <!-- Contraseña -->
@@ -42,22 +42,22 @@
         <label for="password" class="block text-sm font-medium text-ink">Contraseña</label>
         <input
           id="password"
+          #errPassword="fieldError"
           type="password"
           formControlName="password"
+          [appFieldError]="form.controls.password"
           autocomplete="current-password"
-          class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-          [class]="showError('password') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-          [attr.aria-invalid]="showError('password')"
-          [attr.aria-describedby]="showError('password') ? 'error-password' : null"
+          class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
           placeholder="••••••••"
         />
-        @if (showError('password')) {
-          <p id="error-password" class="mt-2 text-sm text-berry">
-            {{ form.controls.password.hasError('required')
+        <app-field-error
+          [for]="errPassword"
+          [message]="
+            form.controls.password.hasError('required')
               ? 'La contraseña es obligatoria.'
-              : 'Debe tener al menos 8 caracteres.' }}
-          </p>
-        }
+              : 'Debe tener al menos 8 caracteres.'
+          "
+        />
       </div>
 
       <!-- Turnstile -->

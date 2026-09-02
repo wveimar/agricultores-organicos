@@ -1,9 +1,9 @@
-import { ApiError, json, readJson, requireInt, requireString } from '../http';
+import { ApiError, json, readJson, requireInt, requireNumber, requireString } from '../http';
 import { translateConstraint } from '../db-errors';
 import { Env, JwtPayload } from '../types';
 import { optionalAuth, requireRole } from '../auth/middleware';
 import { discountedPrice, loadDiscounts, loadUserRoles } from '../pricing';
-import { contactoDeUsuario, encontrarOCrearCliente } from './contacts';
+import { contactoDeUsuario, encontrarOCrearCliente, normalizarDocumento } from './contacts';
 import { decodeDataUrl, validateDataUrl } from '../receipts';
 import {
   contenidoDePedidos,
@@ -37,6 +37,7 @@ interface CreateOrderBody {
   clienteNombre?: unknown;
   clienteTelefono?: unknown;
   clienteDireccion?: unknown;
+  clienteCedula?: unknown;
   items?: unknown;
   envio?: unknown;
   comprobanteNombre?: unknown;
@@ -44,41 +45,26 @@ interface CreateOrderBody {
   metodoPago?: unknown;
 }
 
+/**
+ * Los métodos que puede elegir quien compra en la tienda web.
+ *
+ * Esta lista es la validación real de la columna: `orders.metodo_pago` no
+ * lleva CHECK a propósito —ver la nota larga en schema.sql— así que el corte
+ * está aquí, donde además se puede responder un 400 que se entiende en vez del
+ * texto crudo de SQLite.
+ *
+ * 'credito', 'efectivo' y 'tarjeta' NO están: los tres nacen dentro del panel
+ * —fiar es una decisión de quien vende, y los otros dos solo existen en el
+ * mostrador— así que aceptarlos aquí dejaría que cualquiera se autoconcediera
+ * crédito desde el navegador.
+ */
+const METODOS_WEB = ['transferencia', 'contraentrega', 'entrega_en_tienda'] as const;
+type MetodoWeb = (typeof METODOS_WEB)[number];
+
 /** `'transferencia'` si no viene o viene basura: es el único método que existió hasta ahora. */
-function readMetodoPago(value: unknown): 'transferencia' | 'contraentrega' | 'entrega_en_tienda' {
-  if (value === 'contraentrega') return 'contraentrega';
-  if (value === 'entrega_en_tienda') return 'entrega_en_tienda';
-  return 'transferencia';
+function readMetodoPago(value: unknown): MetodoWeb {
+  return METODOS_WEB.includes(value as MetodoWeb) ? (value as MetodoWeb) : 'transferencia';
 }
-
-/**
- * Cómo se guarda en la base lo que el cliente eligió.
- *
- * 'entrega_en_tienda' NO es un valor de `metodo_pago`: esa columna tiene un
- * CHECK que no se puede ampliar sin recrear la tabla, y recrear `orders` es
- * imposible en una base D1 que ya tiene pedidos (ver la cabecera de la
- * migración 0032 para las cuatro vías que se probaron y por qué fallan todas).
- *
- * Retirar en la tienda es, en el fondo, pagar al recibir: se guarda como
- * 'contraentrega' y el matiz vive en `medio_pago`. Como efecto secundario,
- * RECAUDADO_WHERE ya lo cuenta bien sin tocar esa constante.
- */
-function columnasDePago(metodo: 'transferencia' | 'contraentrega' | 'entrega_en_tienda') {
-  return metodo === 'entrega_en_tienda'
-    ? { metodoPago: 'contraentrega', medioPago: 'entrega_en_tienda' }
-    : { metodoPago: metodo, medioPago: null };
-}
-
-/**
- * Lo que la API devuelve como `metodoPago`, reconstruido desde las dos
- * columnas. Sin esto, un pedido que se retira en la tienda se leería como
- * 'contraentrega' y el panel diría que sale a la calle un pedido que el
- * cliente viene a recoger. Sin alias de tabla: las tres consultas que lo usan
- * seleccionan de `orders` sin aliarla.
- */
-const METODO_PAGO_SQL = `CASE WHEN medio_pago = 'entrega_en_tienda'
-                              THEN 'entrega_en_tienda'
-                              ELSE metodo_pago END AS metodoPago`;
 
 export interface StockRow {
   id: string;
@@ -88,6 +74,8 @@ export interface StockRow {
   stock_actual: number;
   /** 1 si el producto agrupa variantes: entonces él no se vende, sus hijas sí. */
   tiene_variantes: number;
+  /** 1 = se vende a granel; su `cantidad` puede llegar fraccionaria. */
+  vendido_por_peso: number;
 }
 
 /** Faltante concreto, para que el cliente sepa qué ajustar. */
@@ -111,7 +99,11 @@ export function aggregate(items: readonly IncomingItem[]): Map<string, number> {
 
   for (const item of items) {
     const productId = requireString(item.productId, 'items[].productId', 64);
-    const cantidad = requireInt(item.cantidad, 'items[].cantidad', 1);
+    // Acepta decimales aquí mismo: todavía no se sabe si el producto se vende
+    // por peso, porque el catálogo ni siquiera se ha leído. Quien SÍ decide si
+    // una fracción vale para este producto es `rejectFractional()`, una vez
+    // `loadProducts()` responde — mismo orden que ya usa `rejectParents()`.
+    const cantidad = requireNumber(item.cantidad, 'items[].cantidad', 0.001);
     required.set(productId, (required.get(productId) ?? 0) + cantidad);
   }
 
@@ -133,7 +125,7 @@ export function aggregate(items: readonly IncomingItem[]): Map<string, number> {
 export async function loadProducts(env: Env, ids: readonly string[]): Promise<Map<string, StockRow>> {
   const placeholders = ids.map((_, index) => `?${index + 1}`).join(', ');
   const { results } = await env.DB.prepare(
-    `SELECT p.id, p.nombre, p.precio, p.precio_costo, p.stock_actual,
+    `SELECT p.id, p.nombre, p.precio, p.precio_costo, p.stock_actual, p.vendido_por_peso,
             EXISTS (SELECT 1 FROM products h WHERE h.parent_id = p.id) AS tiene_variantes
        FROM products p
       WHERE p.activo = 1 AND p.id IN (${placeholders})`,
@@ -174,6 +166,28 @@ export function rejectParents(ids: Iterable<string>, products: Map<string, Stock
 }
 
 /**
+ * Una cantidad fraccionaria solo vale para lo que se vende a granel.
+ *
+ * `aggregate()` ya deja pasar decimales porque todavía no sabe qué es cada
+ * producto; aquí, con el catálogo ya cargado, se cierra la puerta a que
+ * alguien intente comprar "0.5 unidades" de algo que se vende entero. La
+ * base no defiende esta regla —un CHECK que cruzara `vendido_por_peso` con
+ * `cantidad` exigiría recrear la tabla—, así que es el único sitio donde se
+ * exige.
+ */
+export function rejectFractional(required: Map<string, number>, products: Map<string, StockRow>): void {
+  for (const [productId, cantidad] of required) {
+    const product = products.get(productId);
+    if (product && !product.vendido_por_peso && !Number.isInteger(cantidad)) {
+      throw ApiError.badRequest(
+        'cantidad-no-entera',
+        `"${product.nombre}" no se vende por peso: la cantidad tiene que ser un número entero.`,
+      );
+    }
+  }
+}
+
+/**
  * POST /api/orders — cierra una compra desde la tienda.
  *
  * Reserva el inventario en el mismo paso: el cliente ya consignó, así que esas
@@ -205,6 +219,9 @@ export async function create(request: Request, env: Env): Promise<Response> {
   const clienteNombre = requireString(body.clienteNombre, 'clienteNombre', 120);
   const clienteTelefono = requireString(body.clienteTelefono, 'clienteTelefono', 40);
   const clienteDireccion = requireString(body.clienteDireccion, 'clienteDireccion', 240);
+  // Obligatoria también en la tienda: es la llave con la que se reencuentra
+  // al cliente entre una compra y otra, y el dato que se reporta al facturar.
+  const clienteCedula = normalizarDocumento(requireString(body.clienteCedula, 'clienteCedula', 40));
   // Se valida aunque no se use, para que un cuerpo con basura en este campo
   // siga dando 400 y no pase inadvertido.
   if (body.envio !== undefined) {
@@ -222,6 +239,7 @@ export async function create(request: Request, env: Env): Promise<Response> {
   const products = await loadProducts(env, [...required.keys()]);
 
   rejectParents(required.keys(), products);
+  rejectFractional(required, products);
 
   // Validación amable: se responde con los faltantes exactos antes de intentar
   // escribir. El CHECK de la base sigue siendo la garantía real ante carreras.
@@ -265,8 +283,12 @@ export async function create(request: Request, env: Env): Promise<Response> {
   const unitPrice = (productId: string): number =>
     discountedPrice(products.get(productId)!.precio, discounts.get(productId) ?? 0);
 
+  // Redondeado por línea: `precio` es siempre un entero de pesos, pero
+  // `cantidad` puede llegar fraccionaria en un producto por peso, y COP no
+  // tiene subunidad — el subtotal de una línea es lo que de verdad se cobra
+  // por ella, no un decimal que nadie va a poder pagar.
   const subtotal = [...required.entries()].reduce(
-    (total, [productId, cantidad]) => total + unitPrice(productId) * cantidad,
+    (total, [productId, cantidad]) => total + Math.round(unitPrice(productId) * cantidad),
     0,
   );
 
@@ -281,14 +303,13 @@ export async function create(request: Request, env: Env): Promise<Response> {
   // reserva evita sobreventa sin importar cómo se vaya a cobrar, y
   // 'verificacion' ya significa "pedido web, pendiente de revisión humana",
   // no "pendiente de comprobante" — el comprobante siempre fue opcional.
-  const metodoElegido = readMetodoPago(body.metodoPago);
-  const { metodoPago, medioPago } = columnasDePago(metodoElegido);
+  const metodoPago = readMetodoPago(body.metodoPago);
 
   // Sobre el subtotal ya descontado: es el importe que el cliente paga de
   // verdad, y es el que decide si alcanza el envío gratis. Excepto entrega en
   // tienda, que siempre es envío 0 — no hay domicilio que cobrar.
   const envio =
-    metodoElegido === 'entrega_en_tienda'
+    metodoPago === 'entrega_en_tienda'
       ? 0
       : subtotal >= FREE_SHIPPING_THRESHOLD
         ? 0
@@ -311,6 +332,7 @@ export async function create(request: Request, env: Env): Promise<Response> {
       nombre: clienteNombre,
       telefono: clienteTelefono,
       direccion: clienteDireccion,
+      documento: clienteCedula,
     }));
 
   const statements: D1PreparedStatement[] = [
@@ -320,13 +342,13 @@ export async function create(request: Request, env: Env): Promise<Response> {
     env.DB.prepare(
       `INSERT INTO orders (
          id, referencia, user_id, contact_id,
-         cliente_nombre, cliente_telefono, cliente_direccion,
+         cliente_nombre, cliente_cedula, cliente_telefono, cliente_direccion,
          estado, stock_reservado, subtotal, envio, total,
-         comprobante_nombre, comprobante_url, metodo_pago, medio_pago
+         comprobante_nombre, comprobante_url, metodo_pago
        ) VALUES (
          ?1,
          'ORD-' || (SELECT COALESCE(MAX(CAST(substr(referencia, 5) AS INTEGER)), 1000) + 1 FROM orders),
-         ?2, ?3, ?4, ?5, ?6, 'verificacion', 1, ?7, ?8, ?9, ?10, ?11, ?12, ?13
+         ?2, ?3, ?4, ?13, ?5, ?6, 'verificacion', 1, ?7, ?8, ?9, ?10, ?11, ?12
        )`,
     ).bind(
       orderId,
@@ -348,7 +370,7 @@ export async function create(request: Request, env: Env): Promise<Response> {
       // solo desde GET /api/admin/orders/:id/comprobante.
       comprobanteUrl,
       metodoPago,
-      medioPago,
+      clienteCedula,
     ),
     // Traza de la primera transición, en el mismo batch: si el pedido no llega
     // a crearse, tampoco debe quedar un registro de que "nació".
@@ -1339,6 +1361,9 @@ export async function updateItems(
   const existing = new Map(currentItems.map((item) => [item.product_id, item]));
   const touchedIds = new Set<string>([...required.keys(), ...existing.keys()]);
   const products = await loadProducts(env, [...touchedIds]);
+  // Solo sobre lo NUEVO: lo que ya estaba se validó al crearse, y su
+  // cantidad congelada no vuelve a pasar por aquí.
+  rejectFractional(required, products);
 
   interface Delta {
     productId: string;
@@ -1420,7 +1445,8 @@ export async function updateItems(
           products.get(productId)!.precio,
           compradorDiscounts.get(productId) ?? 0,
         );
-    subtotal += precio * cantidad;
+    // Redondeado: ver el comentario equivalente en create().
+    subtotal += Math.round(precio * cantidad);
   }
 
   const envio = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST;
@@ -1679,7 +1705,7 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
             -- cuando el admin abre el pedido concreto que quiere revisar.
             (comprobante_url IS NOT NULL) AS tieneComprobante,
             aprobado_en AS aprobadoEn,
-            ${METODO_PAGO_SQL}, canal, medio_pago AS medioPago,
+            metodo_pago AS metodoPago, canal,
             efectivo_liquidado AS efectivoLiquidado, vence_en AS venceEn,
             closing_id AS closingId, creado_en AS creadoEn,
             domiciliario_id AS domiciliarioId, domiciliario_nombre AS domiciliarioNombre
@@ -1879,7 +1905,7 @@ export async function deliveries(env: Env, user: JwtPayload): Promise<Response> 
   const { results: orders } = await env.DB.prepare(
     `SELECT id, referencia, cliente_nombre AS clienteNombre,
             cliente_telefono AS clienteTelefono, cliente_direccion AS clienteDireccion,
-            total, creado_en AS creadoEn, ${METODO_PAGO_SQL},
+            total, creado_en AS creadoEn, metodo_pago AS metodoPago,
             domiciliario_id AS domiciliarioId,
             domiciliario_nombre AS domiciliarioNombre,
             contact_id AS contactId,
@@ -1897,11 +1923,11 @@ export async function deliveries(env: Env, user: JwtPayload): Promise<Response> 
       WHERE estado = 'enviado'
         AND (metodo_pago = 'contraentrega' OR entregado_en IS NULL)
         -- Ni las ventas de mostrador ni las compras que el cliente viene a
-        -- recoger salen a la calle. Las dos se guardan como 'contraentrega'
-        -- —se paga al recibir— así que sin esta línea aparecerían en la ruta
-        -- del domiciliario, que tendría que adivinar que no debe llevarlas.
+        -- recoger salen a la calle: nadie las lleva a ninguna parte. Sin estas
+        -- dos líneas aparecerían en la ruta del domiciliario, que tendría que
+        -- adivinar cuáles no le tocan.
         AND canal = 'ecommerce'
-        AND COALESCE(medio_pago, '') <> 'entrega_en_tienda'
+        AND metodo_pago <> 'entrega_en_tienda'
         ${filtroMio}
       ORDER BY creado_en ASC`,
   )
@@ -2033,7 +2059,7 @@ async function loadOrder(env: Env, orderId: string): Promise<unknown> {
               subtotal, envio, total, comprobante_nombre AS comprobanteNombre,
               (comprobante_url IS NOT NULL) AS tieneComprobante,
               aprobado_en AS aprobadoEn,
-              ${METODO_PAGO_SQL}, canal, medio_pago AS medioPago,
+              metodo_pago AS metodoPago, canal,
               efectivo_liquidado AS efectivoLiquidado, vence_en AS venceEn,
               closing_id AS closingId, creado_en AS creadoEn,
               domiciliario_id AS domiciliarioId, domiciliario_nombre AS domiciliarioNombre

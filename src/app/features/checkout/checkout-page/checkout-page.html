@@ -39,21 +39,55 @@
                 </label>
                 <input
                   #nombreInput
+                  #errNombre="fieldError"
                   id="nombre"
                   type="text"
                   formControlName="name"
+                  [appFieldError]="form.controls.name"
                   autocomplete="name"
                   required
                   aria-required="true"
-                  class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-                  [class]="showError('name') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-                  [attr.aria-invalid]="showError('name')"
-                  [attr.aria-describedby]="showError('name') ? 'error-nombre' : null"
+                  class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
                   placeholder="Marcela Ospina"
                 />
-                @if (showError('name')) {
-                  <p id="error-nombre" class="mt-2 text-sm text-berry">
-                    Escribe tu nombre (mínimo 3 letras).
+                <app-field-error [for]="errNombre" message="Escribe tu nombre (mínimo 3 letras)." />
+              </div>
+
+              <!--
+                La cédula va segunda, con el nombre: las dos dicen QUIÉN eres.
+                El teléfono y la dirección dicen dónde encontrarte, y son otra
+                pregunta.
+
+                Se pide porque es lo que identifica al cliente entre una compra
+                y otra —el teléfono cambia, la cédula no— y porque es el dato
+                que lleva la factura. `inputmode="numeric"` levanta el teclado
+                de números en el móvil sin bloquear el pegado de un NIT con
+                guion.
+              -->
+              <div>
+                <label for="cedula" class="block text-sm font-medium text-ink">
+                  Cédula o NIT
+                  <span class="text-berry" aria-hidden="true">*</span>
+                </label>
+                <input
+                  #cedulaInput
+                  #errCedula="fieldError"
+                  id="cedula"
+                  type="text"
+                  inputmode="numeric"
+                  formControlName="cedula"
+                  [appFieldError]="form.controls.cedula"
+                  autocomplete="off"
+                  required
+                  aria-required="true"
+                  class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+                  ayudaId="ayuda-cedula"
+                  placeholder="1020145588"
+                />
+                <app-field-error [for]="errCedula" message="Escribe tu número de documento." />
+                @if (!errCedula.visible()) {
+                  <p id="ayuda-cedula" class="mt-2 text-sm text-ink-muted">
+                    Va en la factura y nos sirve para reconocerte en tu próxima compra.
                   </p>
                 }
               </div>
@@ -66,25 +100,25 @@
                   </label>
                   <input
                     #telefonoInput
+                    #errTelefono="fieldError"
                     id="telefono"
                     type="tel"
                     formControlName="phone"
+                    [appFieldError]="form.controls.phone"
                     autocomplete="tel"
                     required
                     aria-required="true"
-                    class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-                    [class]="showError('phone') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-                    [attr.aria-invalid]="showError('phone')"
-                    [attr.aria-describedby]="showError('phone') ? 'error-telefono' : null"
+                    class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
                     placeholder="300 214 5588"
                   />
-                  @if (showError('phone')) {
-                    <p id="error-telefono" class="mt-2 text-sm text-berry">
-                      {{ form.controls.phone.hasError('required')
+                  <app-field-error
+                    [for]="errTelefono"
+                    [message]="
+                      form.controls.phone.hasError('required')
                         ? 'El teléfono es obligatorio.'
-                        : 'Escribe un número de teléfono válido.' }}
-                    </p>
-                  }
+                        : 'Escribe un número de teléfono válido.'
+                    "
+                  />
                 </div>
 
                 <div>
@@ -94,23 +128,18 @@
                   </label>
                   <input
                     #direccionInput
+                    #errDireccion="fieldError"
                     id="direccion"
                     type="text"
                     formControlName="address"
+                    [appFieldError]="form.controls.address"
                     autocomplete="street-address"
                     required
                     aria-required="true"
-                    class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-                    [class]="showError('address') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-                    [attr.aria-invalid]="showError('address')"
-                    [attr.aria-describedby]="showError('address') ? 'error-direccion' : null"
+                    class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
                     placeholder="Calle 127 # 15-40, Bogotá"
                   />
-                  @if (showError('address')) {
-                    <p id="error-direccion" class="mt-2 text-sm text-berry">
-                      Indica tu dirección de entrega.
-                    </p>
-                  }
+                  <app-field-error [for]="errDireccion" message="Indica tu dirección de entrega." />
                 </div>
               </div>
             </div>

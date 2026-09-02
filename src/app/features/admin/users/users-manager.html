@@ -136,37 +136,33 @@
         <label for="nuevo-nombre" class="block text-sm font-medium text-ink">Nombre</label>
         <input
           id="nuevo-nombre"
+          #errNuevoNombre="fieldError"
           type="text"
           formControlName="nombre"
+          [appFieldError]="createForm.controls.nombre"
           required
           aria-required="true"
-          class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200"
-          [class]="showCreateError('nombre') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-          [attr.aria-invalid]="showCreateError('nombre')"
+          class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
           placeholder="Sara Villamil"
         />
-        @if (showCreateError('nombre')) {
-          <p class="mt-2 text-sm text-berry">Escribe el nombre (mínimo 3 letras).</p>
-        }
+        <app-field-error [for]="errNuevoNombre" message="Escribe el nombre (mínimo 3 letras)." />
       </div>
 
       <div>
         <label for="nuevo-email" class="block text-sm font-medium text-ink">Correo</label>
         <input
           id="nuevo-email"
+          #errNuevoEmail="fieldError"
           type="email"
           formControlName="email"
+          [appFieldError]="createForm.controls.email"
           autocomplete="off"
           required
           aria-required="true"
-          class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200"
-          [class]="showCreateError('email') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-          [attr.aria-invalid]="showCreateError('email')"
+          class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
           placeholder="nombre@agricultores.co"
         />
-        @if (showCreateError('email')) {
-          <p class="mt-2 text-sm text-berry">Escribe un correo con formato válido.</p>
-        }
+        <app-field-error [for]="errNuevoEmail" message="Escribe un correo con formato válido." />
       </div>
     </div>
 
@@ -183,21 +179,25 @@
       </div>
       <input
         id="nueva-clave"
+        #errNuevaClave="fieldError"
         type="text"
         formControlName="password"
+        [appFieldError]="createForm.controls.password"
         autocomplete="off"
         required
         aria-required="true"
-        class="tabular mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200"
-        [class]="showCreateError('password') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-        [attr.aria-invalid]="showCreateError('password')"
+        class="tabular mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+        ayudaId="ayuda-nueva-clave"
       />
-      <p class="mt-2 text-xs text-ink-muted">
-        Se muestra en claro a propósito: hay que copiarla para pasársela a la persona.
-        Mínimo {{ minPassword }} caracteres.
-      </p>
-      @if (showCreateError('password')) {
-        <p class="mt-2 text-sm text-berry">La contraseña debe tener al menos {{ minPassword }} caracteres.</p>
+      <app-field-error
+        [for]="errNuevaClave"
+        [message]="'La contraseña debe tener al menos ' + minPassword + ' caracteres.'"
+      />
+      @if (!errNuevaClave.visible()) {
+        <p id="ayuda-nueva-clave" class="mt-2 text-xs text-ink-muted">
+          Se muestra en claro a propósito: hay que copiarla para pasársela a la persona.
+          Mínimo {{ minPassword }} caracteres.
+        </p>
       }
     </div>
 

@@ -74,6 +74,7 @@ const { status: sCrear, body: bCrear } = await post('/api/admin/contacts', {
   nombre: `QA Vereda ${marca}`,
   esProveedor: true,
   esCliente: true,
+  documento: cedulaQA(),
   telefono: TELEFONO,
   direccion: 'Vereda QA, km 3',
   notas: 'Cosecha los martes',
@@ -81,7 +82,7 @@ const { status: sCrear, body: bCrear } = await post('/api/admin/contacts', {
   tipoCuenta: 'ahorros',
   numeroCuenta: '12345678901',
   titular: 'QA Titular',
-  documento: '900123456',
+  documento: cedulaQA(),
 });
 
 t(sCrear === 201, `crea el contacto (${sCrear})`);
@@ -98,6 +99,7 @@ const { status: sSinTipo, body: bSinTipo } = await post('/api/admin/contacts', {
   nombre: 'QA sin tipo',
   esProveedor: false,
   esCliente: false,
+  documento: cedulaQA(),
 });
 t(
   sSinTipo === 400 && bSinTipo?.error?.code === 'sin-tipo',
@@ -107,6 +109,7 @@ t(
 const { status: sRepe, body: bRepe } = await post('/api/admin/contacts', {
   nombre: 'QA teléfono robado',
   esCliente: true,
+  documento: cedulaQA(),
   telefono: TELEFONO,
 });
 t(
@@ -126,6 +129,7 @@ t(sCuenta === 400, `un tipo de cuenta fuera del CHECK se rechaza (${sCuenta})`);
 const { status: sEspacios, body: bEspacios } = await post('/api/admin/contacts', {
   nombre: 'QA con espacios',
   esCliente: true,
+  documento: cedulaQA(),
   telefono: TELEFONO.replace(/(\d{3})(\d{3})/, '$1 $2 '),
 });
 t(
@@ -150,6 +154,9 @@ const pedir = async (nombre) => {
       clienteNombre: nombre,
       clienteTelefono: TEL_CLIENTE,
       clienteDireccion: 'Casa QA 123',
+      // La cédula es obligatoria desde que identifica al cliente. Al azar
+      // para no chocar con el índice único entre corridas del script.
+      clienteCedula: cedulaQA(),
       items: [{ productId: vendible.id, cantidad: 1 }],
     }),
   });
@@ -203,6 +210,7 @@ t(
 const { body: bSoloCliente } = await post('/api/admin/contacts', {
   nombre: `QA Solo Cliente ${marca}`,
   esCliente: true,
+  documento: cedulaQA(),
 });
 const { status: sNoProv, body: bNoProv } = await post('/api/admin/providers/purchases', {
   contactId: bSoloCliente.contacto.id,
@@ -222,6 +230,7 @@ const { status: sEditar, body: bEditar } = await patch(`/api/admin/contacts/${co
   nombre: `QA Vereda ${marca} (corregida)`,
   esProveedor: true,
   esCliente: true,
+  documento: cedulaQA(),
   telefono: TELEFONO,
   direccion: 'Vereda QA, km 4',
   banco: 'Nequi',
@@ -252,6 +261,7 @@ const { body: bDesactivado } = await patch(`/api/admin/contacts/${contacto.id}`,
   nombre: bEditar.contacto.nombre,
   esProveedor: true,
   esCliente: true,
+  documento: cedulaQA(),
   telefono: TELEFONO,
   activo: false,
 });
@@ -271,3 +281,15 @@ t(sBorrarLimpio === 200, `uno sin historial sí se borra (${sBorrarLimpio})`);
 
 console.log(`\n${fallos === 0 ? '✔ Todo en orden' : `✘ ${fallos} fallo(s)`}\n`);
 process.exit(fallos === 0 ? 0 : 1);
+
+
+/**
+ * Una cédula de prueba distinta en cada llamada.
+ *
+ * `contacts.documento` es único, así que un número fijo haría fallar la
+ * segunda corrida del script contra la misma base. El prefijo 9 la marca
+ * como inventada: ninguna cédula colombiana real empieza así.
+ */
+function cedulaQA() {
+  return `9${Math.floor(Math.random() * 1_000_000_000)}`;
+}

@@ -143,7 +143,9 @@
             -->
             <select
               id="pago-cliente"
+              #errCliente="fieldError"
               class="mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none disabled:opacity-60"
+              [appFieldError]="form.controls.contactId"
               [disabled]="editandoId() !== null"
               (change)="onCliente($event)"
             >
@@ -158,6 +160,8 @@
               <p class="mt-1 text-xs text-ink-muted">
                 El cliente no se cambia: sería otro cobro distinto.
               </p>
+            } @else {
+              <app-field-error [for]="errCliente" message="Falta elegir el cliente." />
             }
           </div>
 
@@ -165,10 +169,16 @@
             <label for="pago-monto" class="block text-sm font-semibold text-ink">Cuánto entró</label>
             <input
               id="pago-monto"
+              #errMonto="fieldError"
               type="number"
               min="1"
               formControlName="monto"
+              [appFieldError]="form.controls.monto"
               class="tabular mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
+            />
+            <app-field-error
+              [for]="errMonto"
+              message="Escribe cuánto entró: el monto tiene que ser mayor que cero."
             />
           </div>
 

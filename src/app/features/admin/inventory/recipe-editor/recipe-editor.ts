@@ -126,6 +126,16 @@ export class RecipeEditor {
     this.nuevoChildId.set((event.target as HTMLSelectElement).value);
   }
 
+  /**
+   * El paso del campo «Cuántos», según lo que se acabe de elegir en la lista.
+   * Mismo criterio que `pasoDe()`, pero para el componente que todavía no
+   * existe en la receta.
+   */
+  protected readonly pasoNuevo = computed(() => {
+    const elegido = this.candidatos().find((p) => p.id === this.nuevoChildId());
+    return elegido?.vendidoPorPeso ? 0.001 : 1;
+  });
+
   protected onCantidadChange(event: Event): void {
     this.nuevaCantidad.set(Number((event.target as HTMLInputElement).value) || 1);
   }
@@ -156,9 +166,29 @@ export class RecipeEditor {
     });
   }
 
+  /**
+   * Un componente a granel admite fracción; el resto, no.
+   *
+   * Es lo que hace vendible por la web un inventario que se pesa: un «Paquete
+   * de 500 g» es un producto con un solo componente —la papa a granel— y
+   * `cantidadRequerida = 0.5`. Media unidad de un huevo, en cambio, no
+   * significa nada. El Worker aplica la misma regla; esto solo evita mandar
+   * una petición que ya se sabe que va a fallar.
+   */
+  protected pasoDe(componente: ApiComponent): number {
+    return componente.vendidoPorPeso ? 0.001 : 1;
+  }
+
   protected updateCantidad(componente: ApiComponent, raw: string): void {
     const cantidad = Number(raw);
-    if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad === componente.cantidadRequerida) {
+    const enteroSiHaceFalta = componente.vendidoPorPeso || Number.isInteger(cantidad);
+
+    if (
+      !Number.isFinite(cantidad) ||
+      !enteroSiHaceFalta ||
+      cantidad <= 0 ||
+      cantidad === componente.cantidadRequerida
+    ) {
       return;
     }
 

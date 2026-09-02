@@ -453,17 +453,15 @@
                         </label>
                         <input
                           [id]="'precio-' + product.id"
+                          #errPrecio="fieldError"
                           type="number"
                           min="1"
                           step="100"
                           formControlName="price"
-                          class="tabular mt-1.5 w-36 rounded-md border bg-bone px-3 py-2 text-sm text-ink"
-                          [class]="showError('price') ? 'border-berry' : 'border-sand focus:border-moss'"
-                          [attr.aria-invalid]="showError('price')"
+                          [appFieldError]="form.controls.price"
+                          class="tabular mt-1.5 w-36 rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss"
                         />
-                        @if (showError('price')) {
-                          <p class="mt-1 text-xs text-berry">Debe ser mayor que cero.</p>
-                        }
+                        <app-field-error [for]="errPrecio" message="Debe ser mayor que cero." />
                       </div>
 
                       <div>
@@ -472,17 +470,15 @@
                         </label>
                         <input
                           [id]="'costo-' + product.id"
+                          #errCosto="fieldError"
                           type="number"
                           min="0"
                           step="100"
                           formControlName="costPrice"
-                          class="tabular mt-1.5 w-36 rounded-md border bg-bone px-3 py-2 text-sm text-ink"
-                          [class]="showError('costPrice') ? 'border-berry' : 'border-sand focus:border-moss'"
-                          [attr.aria-invalid]="showError('costPrice')"
+                          [appFieldError]="form.controls.costPrice"
+                          class="tabular mt-1.5 w-36 rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss"
                         />
-                        @if (showError('costPrice')) {
-                          <p class="mt-1 text-xs text-berry">No puede ser negativo.</p>
-                        }
+                        <app-field-error [for]="errCosto" message="No puede ser negativo." />
                       </div>
 
                       <div>
@@ -491,16 +487,14 @@
                         </label>
                         <input
                           [id]="'stock-' + product.id"
+                          #errStock="fieldError"
                           type="number"
                           min="0"
                           formControlName="stock"
-                          class="tabular mt-1.5 w-28 rounded-md border bg-bone px-3 py-2 text-sm text-ink"
-                          [class]="showError('stock') ? 'border-berry' : 'border-sand focus:border-moss'"
-                          [attr.aria-invalid]="showError('stock')"
+                          [appFieldError]="form.controls.stock"
+                          class="tabular mt-1.5 w-28 rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss"
                         />
-                        @if (showError('stock')) {
-                          <p class="mt-1 text-xs text-berry">No puede ser negativo.</p>
-                        }
+                        <app-field-error [for]="errStock" message="No puede ser negativo." />
                       </div>
 
                       <div>
@@ -509,16 +503,14 @@
                         </label>
                         <input
                           [id]="'minimo-' + product.id"
+                          #errMinimo="fieldError"
                           type="number"
                           min="0"
                           formControlName="safetyStock"
-                          class="tabular mt-1.5 w-28 rounded-md border bg-bone px-3 py-2 text-sm text-ink"
-                          [class]="showError('safetyStock') ? 'border-berry' : 'border-sand focus:border-moss'"
-                          [attr.aria-invalid]="showError('safetyStock')"
+                          [appFieldError]="form.controls.safetyStock"
+                          class="tabular mt-1.5 w-28 rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss"
                         />
-                        @if (showError('safetyStock')) {
-                          <p class="mt-1 text-xs text-berry">No puede ser negativo.</p>
-                        }
+                        <app-field-error [for]="errMinimo" message="No puede ser negativo." />
                       </div>
 
                       <div class="flex items-center gap-2 self-end pb-0.5">

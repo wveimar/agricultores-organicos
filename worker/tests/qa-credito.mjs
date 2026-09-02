@@ -84,6 +84,7 @@ const abrirCupo = async (cupo, dias = 30) => {
     body: JSON.stringify({
       nombre: ficha.nombre,
       esCliente: true,
+      documento: cedulaQA(),
       esProveedor: ficha.esProveedor === 1,
       telefono: ficha.telefono,
       direccion: ficha.direccion,
@@ -112,6 +113,9 @@ const pedidoAprobado = async (cantidad) => {
       clienteNombre: `QA Mayorista ${marca}`,
       clienteTelefono: TELEFONO_MAYORISTA,
       clienteDireccion: 'Bodega QA',
+      // La cédula es obligatoria desde que identifica al cliente. Al azar
+      // para no chocar con el índice único entre corridas del script.
+      clienteCedula: cedulaQA(),
       items: [{ productId: vendible.id, cantidad }],
     }),
   });
@@ -130,7 +134,12 @@ t(stCupo === 200, `cupo de ${CUPO} abierto en la ficha "${ficha?.nombre}"`);
 
 const { status: stNeg } = await api(`/api/admin/contacts/${ficha.id}`, {
   method: 'PATCH',
-  body: JSON.stringify({ nombre: ficha.nombre, esCliente: true, cupoCredito: -5 }),
+  body: JSON.stringify({
+    nombre: ficha.nombre,
+    esCliente: true,
+    documento: ficha.documento,
+    cupoCredito: -5,
+  }),
 });
 t(stNeg === 400, 'un cupo negativo se rechaza con 400');
 
@@ -182,6 +191,9 @@ const resSin = await fetch(`${BASE}/api/orders`, {
     clienteNombre: 'QA Sin Cupo',
     clienteTelefono: '3000000001',
     clienteDireccion: 'Bodega QA',
+    // La cédula es obligatoria desde que identifica al cliente. Al azar
+    // para no chocar con el índice único entre corridas del script.
+    clienteCedula: cedulaQA(),
     items: [{ productId: vendible.id, cantidad: 1 }],
   }),
 });
@@ -200,6 +212,9 @@ const resCol = await fetch(`${BASE}/api/orders`, {
     clienteNombre: 'QA Colado',
     clienteTelefono: '3000000002',
     clienteDireccion: 'Bodega QA',
+    // La cédula es obligatoria desde que identifica al cliente. Al azar
+    // para no chocar con el índice único entre corridas del script.
+    clienteCedula: cedulaQA(),
     items: [{ productId: vendible.id, cantidad: 1 }],
     metodoPago: 'credito',
   }),
@@ -276,3 +291,15 @@ if (stCierre === 200 || stCierre === 201) {
 
 console.log(`\n${fallos === 0 ? '✔ Todo bien.' : `✘ ${fallos} fallo(s).`}`);
 process.exitCode = fallos ? 1 : 0;
+
+
+/**
+ * Una cédula de prueba distinta en cada llamada.
+ *
+ * `contacts.documento` es único, así que un número fijo haría fallar la
+ * segunda corrida del script contra la misma base. El prefijo 9 la marca
+ * como inventada: ninguna cédula colombiana real empieza así.
+ */
+function cedulaQA() {
+  return `9${Math.floor(Math.random() * 1_000_000_000)}`;
+}

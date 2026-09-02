@@ -1,15 +1,45 @@
-<section class="mx-auto w-full max-w-6xl px-4 py-6">
-  <header class="mb-6 flex flex-wrap items-end justify-between gap-3">
-    <div>
-      <h1 class="font-serif text-2xl text-ink">Caja</h1>
-      <p class="mt-1 text-sm text-ink/60">
-        Escanea el código de barras o busca por nombre. El cursor vuelve solo al buscador
-        después de cada producto.
+<!--
+  Sin max-w: es la única pantalla del admin que lo tenía. Con un tope de
+  1152px, media pantalla en un monitor de escritorio se quedaba en blanco a
+  los lados de la sección entera — rejilla Y ticket exprimidos igual, así
+  que ensanchar solo la proporción entre ellos no alcanzaba. El resto del
+  panel (Inventario, Pedidos, Reportes...) ya usa el ancho completo de
+  `<main>`; la caja se pone a tono.
+
+  `lg:h-[calc(100vh-8rem)]` en vez de dejar que la página crezca y haga
+  scroll entera: es el mismo cálculo que ya usaba el `<aside>` del ticket
+  —altura de pantalla menos la cabecera fija del panel (`h-16`) y el
+  padding de arriba y abajo de `<main>` (`lg:p-8`)— pero ahora aplicado a
+  TODA la sección, no solo a una columna. Con eso, catálogo y ticket
+  arrancan a la misma altura y cada uno hace SU propio scroll interno, en
+  vez de que el ticket dependa de cuánto midan el título, el aviso de venta
+  y la ficha del cliente puestos encima de él.
+
+  Sin el prefijo `lg:` en el alto: en pantallas angostas (`< lg`) la
+  cuadrícula de dos columnas se apila en una sola (ver el `grid` de abajo,
+  que solo gana columnas explícitas desde `lg:`), y ahí SÍ conviene que la
+  página crezca con su contenido y haga scroll normal — encerrar un móvil
+  en una altura fija de escritorio cortaría el catálogo a media fila.
+-->
+<section class="flex w-full flex-col gap-3 px-4 py-4 lg:h-[calc(100vh-8rem)]">
+  <!--
+    Cabecera en UNA línea: el título, la ayuda y el enlace al historial
+    compartían tres alturas distintas y empujaban hacia abajo todo lo demás
+    —incluido el ticket, que arranca justo debajo—. La ayuda es texto de
+    primer día: quien atiende la caja a diario no la vuelve a leer, así que
+    va al lado del título y solo en pantallas anchas (`xl:`), donde sobra
+    sitio horizontal. Nada se pierde; deja de costar una fila entera.
+  -->
+  <header class="flex shrink-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+    <div class="flex min-w-0 items-baseline gap-3">
+      <h1 class="font-serif text-xl text-ink">Caja</h1>
+      <p class="hidden truncate text-xs text-ink/50 xl:block">
+        Escanea el código o busca por nombre; el cursor vuelve solo al buscador.
       </p>
     </div>
     <a
       routerLink="/admin/caja/historial"
-      class="rounded-lg border border-sand px-4 py-2 text-sm text-ink transition hover:border-moss hover:text-moss"
+      class="shrink-0 rounded-lg border border-sand px-3 py-1.5 text-sm text-ink transition hover:border-moss hover:text-moss"
     >
       Historial y cierre
     </a>
@@ -21,12 +51,25 @@
       dice el total al cliente, y tener el ticket a medio ver detrás invita a
       equivocarse de venta.
     -->
-    <div class="mb-6 rounded-2xl border border-moss/30 bg-moss/5 p-5">
+    <div class="shrink-0 rounded-2xl border border-moss/30 bg-moss/5 p-5">
       <div class="no-imprimir mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p class="font-medium text-moss">Venta registrada · {{ venta.referencia }}</p>
+          <!--
+            «Total cobrado» miente en cuanto hay un abono de por medio: el
+            total de la venta y lo que de verdad entró a la caja dejan de ser
+            el mismo número. `factura.saldo` es la diferencia real, la misma
+            que ya usa Cartera.
+          -->
           <p class="text-sm text-ink/70">
-            Total cobrado: <strong>{{ venta.total | cop }}</strong>
+            @if (venta.metodoPago === 'credito') {
+              Fiado completo: <strong>{{ venta.total | cop }}</strong>. Queda en la cuenta del cliente.
+            } @else if (venta.factura && venta.factura.saldo > 0) {
+              Abonó <strong>{{ (venta.total - venta.factura.saldo) | cop }}</strong> · queda debiendo
+              <strong>{{ venta.factura.saldo | cop }}</strong>
+            } @else {
+              Total cobrado: <strong>{{ venta.total | cop }}</strong>
+            }
           </p>
         </div>
         <div class="flex gap-2">
@@ -63,119 +106,442 @@
     </div>
   }
 
-  <div class="grid gap-6 lg:grid-cols-[1.15fr_1fr]">
-    <!-- ── Buscador y catálogo ─────────────────────────────────────────── -->
-    <div class="space-y-4">
-      <div>
-        <label for="pos-buscador" class="mb-1 block text-sm font-medium text-ink">
-          Producto
-        </label>
-        <input
-          id="pos-buscador"
-          #buscador
-          type="text"
-          autofocus
-          autocomplete="off"
-          [value]="busqueda()"
-          (input)="busqueda.set($any($event.target).value)"
-          (keydown.enter)="onBuscadorEnter()"
-          placeholder="Escanea o escribe el nombre…"
-          class="block w-full rounded-lg border border-sand px-4 py-3 text-base text-ink focus:border-moss focus:outline-none focus:ring-2 focus:ring-moss/20"
-        />
-        @if (sinCoincidencia(); as termino) {
-          <p class="mt-2 text-sm text-clay">
-            No hay ningún producto con «{{ termino }}». Revisa el código o búscalo por nombre.
-          </p>
-        }
+  <!--
+    3fr/2fr y no el 1.15fr/1fr de antes: el ticket ganaba ancho a costa de la
+    rejilla. Con canastas y precios ajustados a mano, «Cant.», «Precio» y el
+    nombre del producto se apretaban en una columna angosta — 2/5 del ancho
+    total es lo que les da aire sin dejar la rejilla en menos columnas de las
+    que caben.
+
+    `min-h-0` aquí es lo que de verdad soluciona el hueco en blanco arriba a
+    la derecha: sin él, esta fila de grid crece tanto como le pida su
+    contenido más alto y el `<aside>` del ticket se estira detrás de eso —
+    con él, la fila queda acotada a lo que sobra dentro de `<section>`
+    (que ya tiene su propio alto fijo arriba) y cada columna hace scroll
+    por su cuenta en vez de inflar la fila entera.
+  -->
+  <div class="grid min-h-0 flex-1 gap-6 lg:grid-cols-[3fr_2fr]">
+    <!--
+      ── Columna izquierda: cliente, buscador, grupos, categorías y rejilla ──
+
+      `min-w-0` aquí, además de `min-h-0`: sin él, el ancho MÍNIMO de esta
+      columna (la pista `3fr` del grid) se calcula a partir del contenido más
+      ancho de adentro — y las solapas de grupo y los chips de categoría son
+      justamente eso, una fila pensada para desbordar y desplazarse SOLA
+      (`overflow-x-auto` con botones `whitespace-nowrap`). Sin este corte,
+      ese ancho «sin envolver» se propaga hacia arriba, la pista `3fr` crece
+      para darle sitio, y la página entera termina más ancha que la ventana
+      —con el `<aside>` del ticket aplastado a una fracción minúscula del
+      resto—. Es el mismo problema que soluciona `min-h-0` en el otro eje,
+      solo que aquí en el ancho.
+    -->
+    <div class="flex min-h-0 min-w-0 flex-col gap-3">
+      <!--
+        Cliente y buscador COMPARTEN fila, y el cliente cambia de tamaño según
+        el momento de la venta:
+
+        · Sin cliente elegido ocupa el ancho completo (`w-full`) y el buscador
+          de producto cae debajo, atenuado. Es el único paso que importa en ese
+          instante y merece la pantalla entera.
+        · Con cliente elegido se encoge a una pastilla —nombre, cédula, nivel de
+          precio y, si vienen al caso, cupo y deuda— y el buscador sube a su
+          lado. Lo que antes eran dos filas de ~170 px pasa a ser una de ~50 px,
+          y esa altura se la queda la rejilla de productos, que es donde de
+          verdad sirve.
+
+        El `flex-wrap` es lo que hace el cambio sin duplicar el buscador: con el
+        cliente en `w-full` no cabe nada más en la línea y el buscador salta
+        sola a la siguiente; en cuanto el cliente se encoge, vuelve a caber al
+        lado. Un solo `<input>` en el DOM, una sola referencia `#buscador` para
+        `enfocarBuscador()`.
+
+        El teléfono ya no se pinta aquí: en el mostrador la persona está
+        enfrente, y su número no cambia ninguna decisión de cobro. La cédula sí
+        se queda, porque es lo que se factura.
+
+        El bloque del cliente queda FUERA de lo atenuado/inerte: si quedara
+        adentro, el propio buscador de cliente se apagaría mientras no haya
+        cliente — un candado cuya llave está detrás del candado.
+      -->
+      <div class="flex shrink-0 flex-wrap items-end gap-3">
+        <div [class]="contactoElegido() ? 'min-w-0 shrink' : 'w-full'">
+          @if (contactoElegido(); as cliente) {
+            <div class="flex items-center gap-2 rounded-xl border border-moss/30 bg-moss/5 px-3 py-2">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-semibold leading-tight text-ink">
+                  {{ cliente.nombre }}
+                </p>
+                <p class="truncate text-xs leading-tight text-ink/50">
+                  CC {{ cliente.documento }}
+                </p>
+              </div>
+
+              <!--
+                El nivel de precios se pinta siempre, también «Minorista». Un
+                distintivo que solo aparece a veces obliga a recordar si su
+                ausencia significa "es minorista" o "todavía no cargó".
+              -->
+              <span
+                class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                [class]="cliente.nivelPrecio ? 'bg-moss text-white' : 'bg-sand text-ink/70'"
+              >
+                {{ nivelPrecio() }}
+              </span>
+
+              @if (cliente.cupoCredito > 0) {
+                <span class="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] text-ink/70">
+                  Cupo {{ cupoRestante() | cop }}
+                </span>
+              }
+              @if (cliente.deuda > 0) {
+                <span class="shrink-0 rounded-full bg-clay/10 px-2 py-0.5 text-[11px] text-clay">
+                  Debe {{ cliente.deuda | cop }}
+                </span>
+              }
+
+              <button
+                type="button"
+                (click)="quitarCliente()"
+                aria-label="Cambiar de cliente"
+                class="shrink-0 rounded-lg border border-sand bg-white px-2.5 py-1 text-xs text-ink transition hover:border-moss hover:text-moss"
+              >
+                Cambiar
+              </button>
+            </div>
+          } @else {
+            <div class="rounded-2xl border border-sand bg-white p-4">
+              <app-contact-search
+                inputId="pos-cliente"
+                etiqueta="¿Para quién es la venta?"
+                placeholder="Cédula, nombre o teléfono…"
+                (seleccionado)="elegirCliente($event)"
+              />
+
+              <div class="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  (click)="ventaAnonima()"
+                  class="rounded-lg bg-moss px-4 py-2 text-sm font-medium text-white transition hover:bg-moss/90"
+                >
+                  Venta sin identificar
+                </button>
+                <p class="text-xs text-ink/60">
+                  Se registra como «Consumidor final». Identifica al cliente si tiene descuento de
+                  mayorista o va a pagar a crédito.
+                </p>
+              </div>
+            </div>
+          }
+        </div>
+
+        <!--
+          `basis-64`: por debajo de 16 rem el buscador ya no es usable al lado
+          del cliente, así que en vez de encogerse hasta ser inútil salta a la
+          línea de abajo. La etiqueta es `sr-only` — el `placeholder` ya dice lo
+          mismo, y en una fila compartida un rótulo encima costaba otra fila.
+        -->
+        <div
+          class="min-w-0 grow basis-64 transition-opacity duration-300"
+          [class.pointer-events-none]="!contactoElegido()"
+          [class.opacity-40]="!contactoElegido()"
+          [attr.inert]="contactoElegido() ? null : ''"
+        >
+          <label for="pos-buscador" class="sr-only">Producto</label>
+          <input
+            id="pos-buscador"
+            #buscador
+            type="text"
+            autofocus
+            autocomplete="off"
+            [value]="busqueda()"
+            (input)="busqueda.set($any($event.target).value)"
+            (keydown.enter)="onBuscadorEnter()"
+            placeholder="Escanea el código o escribe el nombre…"
+            class="block w-full rounded-lg border border-sand px-4 py-2.5 text-base text-ink focus:border-moss focus:outline-none focus:ring-2 focus:ring-moss/20"
+          />
+          @if (sinCoincidencia(); as termino) {
+            <p class="mt-1 text-xs text-clay">
+              No hay ningún producto con «{{ termino }}». Revisa el código o búscalo por nombre.
+            </p>
+          }
+        </div>
       </div>
 
-      @if (resultados().length > 0) {
-        <ul class="divide-y divide-sand overflow-hidden rounded-xl border border-sand bg-white">
-          @for (producto of resultados(); track producto.id) {
-            <li>
+      <!--
+        Atenuado y sin interacción mientras no hay cliente: se ve lo que se va a
+        poder hacer, pero no se puede empezar a marcar productos para una venta
+        que todavía no sabe de quién es. `inert` lo impone también para el
+        teclado y los lectores de pantalla, no solo para el ratón.
+
+        `flex flex-col` con `min-h-0`: adentro solo la rejilla de productos hace
+        scroll (`flex-1 overflow-y-auto` más abajo); las solapas de grupo y de
+        categoría son `shrink-0` y quedan siempre a la vista encima de ella, en
+        vez de desplazarse junto con los productos.
+      -->
+      <div
+        class="flex min-h-0 min-w-0 flex-1 flex-col gap-3 transition-opacity duration-300"
+        [class.pointer-events-none]="!contactoElegido()"
+        [class.opacity-40]="!contactoElegido()"
+        [attr.inert]="contactoElegido() ? null : ''"
+      >
+
+        <!--
+          Solapas de grupo — el primer nivel del recorrido, igual que en la
+          tienda: grupo → categoría → producto.
+
+          Solo aparecen si hay más de un grupo con producto. Con uno solo la
+          banda sería una barra decorativa que no filtra nada, y en una caja cada
+          fila de pantalla que no ayuda es una fila que estorba.
+        -->
+        @if (grupos().length > 1) {
+          <div
+            class="no-scrollbar flex shrink-0 gap-1 overflow-x-auto border-b-2 border-moss"
+            role="tablist"
+            aria-label="Grupos del catálogo"
+          >
+            <button
+              type="button"
+              role="tab"
+              [attr.aria-selected]="grupoActivo() === 'todos'"
+              (click)="elegirGrupo('todos')"
+              class="shrink-0 whitespace-nowrap rounded-t-lg border border-b-0 px-4 py-2 text-sm transition"
+              [class]="
+                grupoActivo() === 'todos'
+                  ? 'border-moss bg-moss font-semibold text-white'
+                  : 'border-sand bg-cream font-medium text-ink/70 hover:bg-white hover:text-ink'
+              "
+            >
+              Todo
+            </button>
+
+            @for (grupo of grupos(); track grupo.id) {
+              <button
+                type="button"
+                role="tab"
+                [attr.aria-selected]="grupoActivo() === grupo.id"
+                (click)="elegirGrupo(grupo.id)"
+                class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-t-lg border border-b-0 px-4 py-2 text-sm transition"
+                [class]="
+                  grupoActivo() === grupo.id
+                    ? 'border-moss bg-moss font-semibold text-white'
+                    : 'border-sand bg-cream font-medium text-ink/70 hover:bg-white hover:text-ink'
+                "
+              >
+                <app-category-icon [name]="grupo.icono" svgClass="size-4 shrink-0" />
+                <span>{{ grupo.nombre }}</span>
+              </button>
+            }
+          </div>
+        }
+
+        <!--
+          Chips de categoría — el segundo nivel, con su recuento.
+
+          Llevan el número por lo mismo que en la tienda: dice de un vistazo si
+          vale la pena entrar. Aquí además evita el callejón sin salida de tocar
+          una categoría y encontrarla vacía con el cliente esperando enfrente.
+        -->
+        @if (categorias().length > 1) {
+          <div
+            class="no-scrollbar flex shrink-0 gap-2 overflow-x-auto py-1"
+            role="tablist"
+            aria-label="Filtrar por categoría"
+          >
+            <button
+              type="button"
+              role="tab"
+              [attr.aria-selected]="categoriaActiva() === 'todas'"
+              (click)="elegirCategoria('todas')"
+              class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2 text-sm transition"
+              [class]="
+                categoriaActiva() === 'todas'
+                  ? 'border-moss bg-moss font-semibold text-white'
+                  : 'border-sand bg-white text-ink hover:border-moss/50'
+              "
+            >
+              <span>Todo</span>
+              <span
+                class="rounded-full px-1.5 py-0.5 text-xs leading-none"
+                [class]="
+                  categoriaActiva() === 'todas' ? 'bg-white/20 text-white' : 'bg-cream text-ink/60'
+                "
+              >
+                {{ totalDelGrupo() }}
+              </span>
+            </button>
+
+            @for (categoria of categorias(); track categoria.id) {
+              <button
+                type="button"
+                role="tab"
+                [attr.aria-selected]="categoriaActiva() === categoria.id"
+                (click)="elegirCategoria(categoria.id)"
+                class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2 text-sm transition"
+                [class]="
+                  categoriaActiva() === categoria.id
+                    ? 'border-moss bg-moss font-semibold text-white'
+                    : 'border-sand bg-white text-ink hover:border-moss/50'
+                "
+              >
+                <app-category-icon [name]="categoria.icono" svgClass="size-4 shrink-0" />
+                <span>{{ categoria.nombre }}</span>
+                <span
+                  class="rounded-full px-1.5 py-0.5 text-xs leading-none"
+                  [class]="
+                    categoriaActiva() === categoria.id
+                      ? 'bg-white/20 text-white'
+                      : 'bg-cream text-ink/60'
+                  "
+                >
+                  {{ categoria.cuenta }}
+                </span>
+              </button>
+            }
+          </div>
+        }
+
+        <!--
+          La rejilla. Compacta a propósito: más tarjetas visibles sin
+          desplazar es menos veces que el cajero tiene que ir a buscar el
+          producto siguiente. Toque único, pensado para el dedo — en un
+          mostrador se toca sin mirar del todo, así que el objetivo tiene que
+          ser fácil de acertar aunque sea pequeño. Sin foto — el cajero ya
+          conoce el producto, y lo que necesita leer es el nombre, la
+          presentación, el precio y si queda; una imagen solo le quitaría
+          sitio a esos datos.
+
+          Alto automático y NO `aspect-square`: forzar un cuadrado dejaba un
+          hueco en blanco enorme entre el nombre y el precio, porque el
+          contenido real de la tarjeta es más bajo que ancho. Sin ese forzado,
+          cada tarjeta mide justo lo que necesita su contenido — nombre,
+          presentación, precio y stock, sin aire de sobra — y caben más
+          columnas en el mismo ancho.
+
+          Columnas responsivas (3 a 6) y no un `grid-cols-4` fijo: a partir de
+          `lg` ya caben 5 o 6 sin apretarlas —es el mismo ajuste que quitó el
+          espacio en blanco de las tarjetas—, y fijarlas en 4 volvería a dejar
+          hueco muerto en pantallas anchas.
+
+          `line-clamp-2` en el nombre en vez de truncar a una línea: en tarjetas
+          así de chicas, un nombre de dos palabras largas ("Kombucha
+          Maracuyá-Jengibre") se comía la tarjeta entera con una sola línea, y
+          dos líneas dejan sitio de sobra para el resto debajo.
+
+          La insignia de cantidad es la del POS de Odoo, y responde lo mismo:
+          «¿ya le eché este?», sin apartar la vista de la rejilla ni ir al
+          ticket.
+
+          `min-h-0 flex-1 overflow-y-auto` es lo que le da scroll PROPIO,
+          independiente del resto de la columna: el buscador y las solapas de
+          arriba quedan siempre a la vista mientras se recorren los productos,
+          en vez de desaparecer pantalla arriba como pasaría si todo compartiera
+          un único scroll de página.
+        -->
+        <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4">
+          <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            @for (producto of rejilla(); track producto.id) {
+              @let agotado = producto.stock <= 0;
+              @let puestas = enTicket(producto.id);
+
               <button
                 type="button"
                 (click)="agregar(producto)"
-                class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-cream"
+                [disabled]="agotado"
+                class="relative flex flex-col gap-1 rounded-lg border p-2 text-left transition disabled:cursor-not-allowed"
+                [class]="
+                  agotado
+                    ? 'border-sand bg-cream/50 opacity-60'
+                    : puestas > 0
+                      ? 'border-moss bg-moss/5 hover:bg-moss/10'
+                      : 'border-sand bg-white hover:border-moss hover:bg-cream'
+                "
               >
-                <span>
-                  <span class="block text-sm font-medium text-ink">{{ producto.nombre }}</span>
-                  <span class="block text-xs text-ink/60">
-                    {{ producto.precio | cop }} · quedan {{ producto.stock }}
-                    @if (producto.codigoBarras) {
-                      · {{ producto.codigoBarras }}
-                    }
+                @if (puestas > 0) {
+                  <span
+                    class="absolute right-1.5 top-1.5 flex size-5 items-center justify-center rounded-full bg-moss text-[11px] font-semibold text-white"
+                    [attr.aria-label]="'En el ticket: ' + puestas"
+                  >
+                    {{ puestas }}
                   </span>
+                }
+
+                <span class="line-clamp-2 pr-6 text-xs font-medium leading-tight text-ink">
+                  {{ producto.nombre }}
                 </span>
-                <span class="text-sm text-moss">Agregar</span>
+
+                <span class="text-[10px] leading-none text-ink/45">
+                  {{ presentacion(producto) }}
+                </span>
+
+                <!--
+                  Precio y stock apilados, no en una misma línea con
+                  `justify-between`: con las tarjetas a ~100 px, un precio
+                  largo («$ 146.000») más «Quedan 42» no caben juntos, y el
+                  stock se salía POR FUERA del borde de la tarjeta —el
+                  `<button>` no recorta—. Apilados, cada uno tiene el ancho
+                  entero y no hay ancho de tarjeta en el que se rompa; el
+                  renglón extra sale gratis del alto que ganó la rejilla al
+                  compactar la cabecera.
+                -->
+                <span class="mt-0.5 block text-sm font-semibold leading-none text-ink">
+                  {{ producto.precio | cop }}
+                </span>
+
+                <!--
+                  El stock bajo se pinta en rojo, no solo el agotado: es el aviso
+                  de "quedan tres" que evita prometerle cinco a alguien.
+                -->
+                <span
+                  class="block truncate text-[10px] leading-none"
+                  [class]="agotado || producto.stock <= 5 ? 'text-clay' : 'text-ink/50'"
+                >
+                  @if (agotado) {
+                    Agotado
+                  } @else {
+                    Quedan {{ producto.stock }}
+                  }
+                </span>
               </button>
-            </li>
-          }
-        </ul>
-      }
-
-      <!-- ── Cliente ────────────────────────────────────────────────────── -->
-      <div class="rounded-xl border border-sand bg-white p-4">
-        <p class="text-sm font-medium text-ink">Cliente</p>
-
-        @if (contactoElegido(); as cliente) {
-          <div class="mt-2 flex items-center justify-between gap-3">
-            <div>
-              <p class="text-sm font-medium text-ink">{{ cliente.nombre }}</p>
-              <p class="text-xs text-ink/60">
-                @if (cliente.cupoCredito > 0) {
-                  Cupo de crédito: {{ cliente.cupoCredito | cop }}
+            } @empty {
+              <p
+                class="col-span-full rounded-xl border border-dashed border-sand px-4 py-8 text-center text-sm text-ink/60"
+              >
+                @if (busqueda().trim() !== '') {
+                  Nada coincide con «{{ busqueda() }}».
                 } @else {
-                  Sin cupo de crédito
+                  No hay productos que vender en esta categoría.
                 }
               </p>
-            </div>
-            <button
-              type="button"
-              (click)="quitarCliente()"
-              class="text-sm text-clay underline-offset-2 hover:underline"
-            >
-              Quitar
-            </button>
+            }
           </div>
-        } @else {
-          <p class="mt-1 text-xs text-ink/60">
-            Sin identificar se vende igual, como «Cliente de mostrador». Identifícalo si tiene
-            descuento de mayorista o va a pagar a crédito.
-          </p>
-          <input
-            type="text"
-            autocomplete="off"
-            [value]="clienteBusqueda()"
-            (input)="clienteBusqueda.set($any($event.target).value)"
-            placeholder="Nombre, teléfono o documento…"
-            class="mt-2 block w-full rounded-lg border border-sand px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none focus:ring-2 focus:ring-moss/20"
-          />
-          @if (clientesFiltrados().length > 0) {
-            <ul class="mt-2 divide-y divide-sand overflow-hidden rounded-lg border border-sand">
-              @for (contacto of clientesFiltrados(); track contacto.id) {
-                <li>
-                  <button
-                    type="button"
-                    (click)="elegirCliente(contacto)"
-                    class="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-cream"
-                  >
-                    <span class="text-ink">{{ contacto.nombre }}</span>
-                    <span class="text-xs text-ink/50">{{ contacto.telefono }}</span>
-                  </button>
-                </li>
-              }
-            </ul>
-          }
-        }
+        </div>
       </div>
     </div>
 
-    <!-- ── Ticket ──────────────────────────────────────────────────────── -->
-    <aside class="lg:sticky lg:top-24 lg:self-start">
-      <div class="rounded-2xl border border-sand bg-white p-5">
-        <div class="flex items-center justify-between">
-          <h2 class="font-serif text-lg text-ink">Ticket</h2>
+    <!--
+      ── Ticket ──────────────────────────────────────────────────────────
+
+      Ya no necesita `sticky`/`top-24`/`h-[calc(...)]` propios: antes los
+      llevaba porque él solo tenía que resolver su alto contra la ventana,
+      cargando con la altura del título, el aviso de venta y la ficha del
+      cliente puestos ENCIMA de las dos columnas. Ahora esas tres cosas viven
+      fuera de la fila de grid (el título y el aviso) o dentro de la columna
+      IZQUIERDA (la ficha), así que el `<aside>` es sencillamente un item más
+      de una fila de grid ya acotada por `<section>` — con `align-items:
+      stretch` (el comportamiento por defecto de CSS Grid) le basta para
+      llenar el alto completo de esa fila sin escribir nada explícito aquí.
+
+      Por dentro sigue siendo un `flex flex-col` de tres partes: la cabecera
+      («Ticket» + «Vaciar») fija arriba; el cuerpo con las líneas, la forma de
+      pago y los avisos, que es lo único que hace scroll (`min-h-0` sigue
+      siendo obligatorio aquí — sin él, un hijo `flex-1` con `overflow-y-auto`
+      no se recorta nunca); y el total + botón «Cobrar», `sticky bottom-0`
+      DENTRO de esa misma zona de scroll.
+    -->
+    <aside class="min-h-0">
+      <div class="flex h-full flex-col overflow-hidden rounded-2xl border border-sand bg-white">
+        <div class="flex shrink-0 items-center justify-between px-5 pb-2 pt-3">
+          <h2 class="font-serif text-base text-ink">Ticket</h2>
           @if (!ticket.vacio()) {
             <button
               type="button"
@@ -187,150 +553,238 @@
           }
         </div>
 
-        @if (ticket.vacio()) {
-          <p class="mt-4 text-sm text-ink/60">
-            Todavía no hay nada. Escanea un producto para empezar.
-          </p>
-        } @else {
-          <ul class="mt-4 divide-y divide-sand">
-            @for (linea of ticket.items(); track linea.product.id) {
-              <li class="py-3">
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <p class="truncate text-sm font-medium text-ink">
+        <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5">
+          @if (ticket.vacio()) {
+            <p class="text-sm text-ink/60">Todavía no hay nada. Escanea un producto para empezar.</p>
+          } @else {
+            <ul class="divide-y divide-sand">
+              @for (linea of ticket.items(); track linea.product.id) {
+                <li class="py-2">
+                  <!--
+                    Una sola fila: nombre, cantidad, precio unitario y el
+                    subtotal de la línea, en ese orden de lectura. Antes el
+                    precio salía dos veces —«$X c/u» como texto fijo, y otra
+                    vez como placeholder gris del campo «Precio», que a
+                    simple vista parece un valor ya puesto— y encima ocupaba
+                    dos filas por producto. El placeholder sigue mostrando el
+                    precio de lista (para saber sobre qué se está
+                    escribiendo un ajuste), pero ya no se repite como texto
+                    aparte: lo que faltaba mostrar de verdad era el
+                    resultado, precio × cantidad, así que ese es el número
+                    que ahora se ve fijo a la derecha.
+                  -->
+                  <div class="flex items-center gap-2">
+                    <p class="min-w-0 flex-1 truncate text-sm font-medium text-ink">
                       {{ linea.product.nombre }}
                     </p>
-                    <p class="text-xs text-ink/60">
-                      {{ (linea.precioManual ?? linea.product.precio) | cop }} c/u
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    (click)="ticket.quitar(linea.product.id)"
-                    class="shrink-0 text-xs text-clay underline-offset-2 hover:underline"
-                  >
-                    Quitar
-                  </button>
-                </div>
 
-                <div class="mt-2 flex flex-wrap items-center gap-2">
-                  <label class="flex items-center gap-1 text-xs text-ink/60">
-                    Cant.
+                    <!--
+                      «Cant.» vs «Peso (kg)»: mismo input, dos lecturas según
+                      si el producto se pesa. En un producto por peso el
+                      cajero necesita escribir "0", "0." y "0.5" en ese orden
+                      para llegar a medio kilo — y el primer paso, "0", ya es
+                      cantidad <= 0.
+
+                      Por eso NO se comete en cada tecla (`(input)`): eso
+                      llamaba a `ticket.setCantidad()` con cada estado a
+                      medio escribir, y su regla «cantidad <= 0 → quitar del
+                      ticket» borraba la línea (y el propio input) en el
+                      instante en que aparecía ese "0" intermedio, antes de
+                      que el cajero pudiera terminar de escribir ".5".
+
+                      Al mover el commit a `(blur)`/Enter, mientras se
+                      escribe no se llama a nada: la señal `linea.cantidad`
+                      no cambia, así que el `[value]` de abajo no vuelve a
+                      pisar lo que el cajero está tecleando — el propio
+                      input, no controlado por Angular durante la edición,
+                      es su propio buffer. La regla de "quitar en 0" de
+                      `ticket.setCantidad()` no cambia: solo deja de
+                      dispararse a mitad de escritura, que es lo único que
+                      estaba mal.
+                    -->
+                    <label class="sr-only" [attr.for]="'cant-' + linea.product.id">
+                      {{ linea.product.vendidoPorPeso ? 'Peso en kg' : 'Cantidad' }}
+                    </label>
                     <input
+                      [id]="'cant-' + linea.product.id"
                       type="number"
-                      min="1"
+                      [attr.min]="linea.product.vendidoPorPeso ? 0.001 : 1"
+                      [attr.step]="linea.product.vendidoPorPeso ? 0.001 : 1"
                       [max]="linea.product.stock"
                       [value]="linea.cantidad"
-                      (input)="setCantidad(linea.product.id, $any($event.target).value)"
-                      class="w-16 rounded border border-sand px-2 py-1 text-sm text-ink focus:border-moss focus:outline-none"
+                      (blur)="setCantidad(linea.product.id, $any($event.target).value)"
+                      (keydown.enter)="$any($event.target).blur()"
+                      class="tabular w-14 shrink-0 rounded border border-sand px-1.5 py-1 text-right text-xs text-ink focus:border-moss focus:outline-none"
                     />
-                  </label>
 
-                  <label class="flex items-center gap-1 text-xs text-ink/60">
-                    Precio
+                    <span class="shrink-0 text-xs text-ink/30" aria-hidden="true">×</span>
+
+                    <label class="sr-only" [attr.for]="'precio-' + linea.product.id">
+                      Precio unitario
+                    </label>
                     <input
+                      [id]="'precio-' + linea.product.id"
                       type="number"
                       min="0"
                       [value]="linea.precioManual"
                       (input)="setPrecio(linea.product.id, $any($event.target).value)"
                       [placeholder]="linea.product.precio"
-                      class="w-24 rounded border border-sand px-2 py-1 text-sm text-ink focus:border-moss focus:outline-none"
+                      class="tabular w-20 shrink-0 rounded border border-sand px-1.5 py-1 text-right text-xs text-ink focus:border-moss focus:outline-none"
                     />
-                  </label>
-                </div>
 
-                <!--
-                  El motivo solo aparece cuando de verdad hay un cambio de
-                  precio: pedirlo siempre lo convertiría en un campo que se
-                  rellena en automático sin leerlo, y entonces no auditaría nada.
-                -->
-                @if (linea.precioManual !== null && linea.precioManual !== linea.product.precio) {
-                  <input
-                    type="text"
-                    [value]="linea.motivoAjuste"
-                    (input)="setMotivo(linea.product.id, $any($event.target).value)"
-                    placeholder="¿Por qué este precio? (obligatorio)"
-                    class="mt-2 block w-full rounded border px-2 py-1 text-xs text-ink focus:outline-none"
-                    [class.border-clay]="linea.motivoAjuste.trim() === ''"
-                    [class.border-sand]="linea.motivoAjuste.trim() !== ''"
-                  />
-                }
-              </li>
-            }
-          </ul>
+                    <span class="tabular w-20 shrink-0 text-right text-sm font-semibold text-ink">
+                      {{ (linea.precioManual ?? linea.product.precio) * linea.cantidad | cop }}
+                    </span>
 
-          <div class="mt-4 border-t border-sand pt-4">
-            <div class="flex justify-between text-base font-semibold text-ink">
-              <span>Total</span>
-              <span>{{ ticket.subtotal() | cop }}</span>
-            </div>
+                    <button
+                      type="button"
+                      (click)="ticket.quitar(linea.product.id)"
+                      [attr.aria-label]="'Quitar ' + linea.product.nombre"
+                      class="shrink-0 rounded px-1.5 py-1 text-sm text-clay hover:bg-clay/10"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <!--
+                    El motivo solo aparece cuando de verdad hay un cambio de
+                    precio: pedirlo siempre lo convertiría en un campo que se
+                    rellena en automático sin leerlo, y entonces no auditaría nada.
+                  -->
+                  @if (linea.precioManual !== null && linea.precioManual !== linea.product.precio) {
+                    <input
+                      type="text"
+                      [value]="linea.motivoAjuste"
+                      (input)="setMotivo(linea.product.id, $any($event.target).value)"
+                      placeholder="¿Por qué este precio? (obligatorio)"
+                      class="mt-2 block w-full rounded border px-2 py-1.5 text-xs text-ink focus:outline-none"
+                      [class.border-clay]="linea.motivoAjuste.trim() === ''"
+                      [class.border-sand]="linea.motivoAjuste.trim() !== ''"
+                    />
+                  }
+                </li>
+              }
+            </ul>
+
             @if (contactoElegido()) {
-              <p class="mt-1 text-xs text-ink/60">
+              <p class="border-t border-sand py-3 text-xs text-ink/60">
                 Si este cliente tiene descuento de mayorista, el total definitivo se calcula al
                 cobrar y saldrá más bajo.
               </p>
             }
-          </div>
-        }
-
-        <!-- ── Forma de pago ──────────────────────────────────────────── -->
-        <div class="mt-5 space-y-3 border-t border-sand pt-4">
-          <div>
-            <label for="pos-metodo" class="mb-1 block text-sm font-medium text-ink">
-              Forma de pago
-            </label>
-            <select
-              id="pos-metodo"
-              (change)="onMetodoChange($any($event.target).value)"
-              class="block w-full rounded-lg border border-sand px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none focus:ring-2 focus:ring-moss/20"
-            >
-              <option value="efectivo" [selected]="metodoPago() === 'efectivo'">Efectivo</option>
-              <option value="tarjeta" [selected]="metodoPago() === 'tarjeta'">Tarjeta</option>
-              <option
-                value="credito"
-                [selected]="metodoPago() === 'credito'"
-                [disabled]="!puedeFiar()"
-              >
-                Crédito @if (!puedeFiar()) { — identifica al cliente primero }
-              </option>
-            </select>
-          </div>
-
-          <label class="flex items-center gap-2 text-sm text-ink">
-            <input
-              type="checkbox"
-              [checked]="reciboSolicitado()"
-              (change)="reciboSolicitado.set($any($event.target).checked)"
-              class="h-4 w-4 rounded border-sand text-moss focus:ring-moss/30"
-            />
-            El cliente quiere recibo impreso
-          </label>
-        </div>
-
-        @if (ajustesSinMotivo().length > 0) {
-          <p class="mt-4 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay">
-            Falta explicar el precio de: {{ ajustesSinMotivo().join(', ') }}.
-          </p>
-        }
-
-        @if (error(); as mensaje) {
-          <p class="mt-4 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">
-            {{ mensaje }}
-          </p>
-        }
-
-        <button
-          type="button"
-          (click)="vender()"
-          [disabled]="!puedeVender()"
-          class="mt-5 w-full rounded-lg bg-moss px-4 py-3 text-base font-medium text-white transition hover:bg-moss/90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          @if (guardando()) {
-            Registrando…
-          } @else {
-            Cobrar {{ ticket.subtotal() | cop }}
           }
-        </button>
+
+          <!-- ── Forma de pago ────────────────────────────────────────── -->
+          <div class="space-y-3 border-t border-sand py-4">
+            <div>
+              <label for="pos-metodo" class="mb-1 block text-sm font-medium text-ink">
+                Forma de pago
+              </label>
+              <select
+                id="pos-metodo"
+                (change)="onMetodoChange($any($event.target).value)"
+                class="block w-full rounded-lg border border-sand px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none focus:ring-2 focus:ring-moss/20"
+              >
+                <option value="efectivo" [selected]="metodoPago() === 'efectivo'">Efectivo</option>
+                <option value="tarjeta" [selected]="metodoPago() === 'tarjeta'">Tarjeta</option>
+                <option
+                  value="credito"
+                  [selected]="metodoPago() === 'credito'"
+                  [disabled]="!puedeFiar()"
+                >
+                  Crédito @if (!puedeFiar()) { — identifica al cliente primero }
+                </option>
+              </select>
+            </div>
+
+            @if (metodoPago() !== 'credito') {
+              <!--
+                Misma lógica que el abono del domiciliario en
+                `delivery-orders.html`: vacío o un número que alcanza el total
+                es un cobro completo — el botón «Cobrar» de abajo no cambia de
+                comportamiento. Con menos, el resto queda vivo en el saldo de
+                la factura, tal como lo ve Cartera después.
+              -->
+              <div class="rounded-lg border border-sand px-3 py-3">
+                <label for="pos-monto-abono" class="block text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  ¿Pagó todo o solo una parte?
+                </label>
+                <input
+                  id="pos-monto-abono"
+                  type="number"
+                  min="1"
+                  inputmode="numeric"
+                  placeholder="Vacío = pagó todo"
+                  [value]="montoAbono() || ''"
+                  (input)="onMontoAbono($any($event.target).value)"
+                  class="tabular mt-2 block w-full rounded-md border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+                />
+                @if (huboAbonoParcial()) {
+                  <p class="mt-2 text-xs text-ink-muted">
+                    Queda debiendo {{ (ticket.subtotal() - montoAbono()) | cop }}: se anota en su
+                    cuenta, no se pierde.
+                    @if (!contactoElegido()) {
+                      <strong class="text-clay">Identifica al cliente arriba primero.</strong>
+                    }
+                  </p>
+                }
+              </div>
+            }
+
+            <label class="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                [checked]="reciboSolicitado()"
+                (change)="reciboSolicitado.set($any($event.target).checked)"
+                class="h-4 w-4 rounded border-sand text-moss focus:ring-moss/30"
+              />
+              El cliente quiere recibo impreso
+            </label>
+          </div>
+
+          @if (ajustesSinMotivo().length > 0) {
+            <p class="mb-4 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay">
+              Falta explicar el precio de: {{ ajustesSinMotivo().join(', ') }}.
+            </p>
+          }
+
+          @if (error(); as mensaje) {
+            <p class="mb-4 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">
+              {{ mensaje }}
+            </p>
+          }
+
+          <!--
+            Anclado al fondo de la zona con scroll, no de la tarjeta: así se
+            queda a la vista mientras se recorre el ticket, en vez de robarle
+            alto fijo al área donde caben las líneas. El difuminado detrás
+            evita que una línea larga se corte a media letra justo debajo del
+            total cuando se hace scroll.
+          -->
+          <div
+            class="sticky bottom-0 z-10 -mx-5 border-t border-sand bg-white/95 px-5 pb-5 pt-3 backdrop-blur-md"
+          >
+            <div class="flex justify-between text-base font-semibold text-ink">
+              <span>Total</span>
+              <span>{{ ticket.subtotal() | cop }}</span>
+            </div>
+
+            <button
+              type="button"
+              (click)="vender()"
+              [disabled]="!puedeVender()"
+              class="mt-3 w-full rounded-lg bg-moss px-4 py-3 text-base font-medium text-white transition hover:bg-moss/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              @if (guardando()) {
+                Registrando…
+              } @else if (huboAbonoParcial()) {
+                Vender y abonar {{ montoAbono() | cop }}
+              } @else {
+                Cobrar {{ ticket.subtotal() | cop }}
+              }
+            </button>
+          </div>
+        </div>
       </div>
     </aside>
   </div>

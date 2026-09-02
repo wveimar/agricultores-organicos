@@ -14,7 +14,7 @@ import {
   CheckoutService,
 } from '../../../core/services/checkout.service';
 import { ApiErrorBody, Shortfall } from '../../../core/api/api-client';
-import { PaymentProof } from '../../../core/models/order.model';
+import { PaymentProof, WebPaymentMethod } from '../../../core/models/order.model';
 import { componentPortion } from '../../../core/models/product.model';
 import {
   formatDay,
@@ -23,13 +23,14 @@ import {
   nextDispatch,
 } from '../../../core/models/ordering-window';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
+import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 import { ProofUploader } from '../proof-uploader/proof-uploader';
 import { OrderSuccess } from '../order-success/order-success';
 
 /** Acepta dígitos, espacios, guiones y un `+` inicial: "300 214 5588", "+57 300 214 5588". */
 const PHONE_PATTERN = /^\+?[0-9][0-9\s-]{6,17}$/;
 
-type CampoDatos = 'name' | 'phone' | 'address';
+type CampoDatos = 'name' | 'cedula' | 'phone' | 'address';
 
 /**
  * Los tres campos en el mismo orden en que aparecen en pantalla.
@@ -40,13 +41,14 @@ type CampoDatos = 'name' | 'phone' | 'address';
  */
 const CAMPOS: readonly { control: CampoDatos; etiqueta: string; id: string }[] = [
   { control: 'name', etiqueta: 'Nombre completo', id: 'nombre' },
+  { control: 'cedula', etiqueta: 'Cédula', id: 'cedula' },
   { control: 'phone', etiqueta: 'Teléfono', id: 'telefono' },
   { control: 'address', etiqueta: 'Dirección de entrega', id: 'direccion' },
 ];
 
 @Component({
   selector: 'app-checkout-page',
-  imports: [ReactiveFormsModule, CopPipe, ProofUploader, OrderSuccess],
+  imports: [ReactiveFormsModule, CopPipe, FieldErrorState, FieldError, ProofUploader, OrderSuccess],
   templateUrl: './checkout-page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -74,6 +76,9 @@ export class CheckoutPage {
 
   protected readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.minLength(3)]],
+    // Cinco caracteres es lo más corto que puede ser un documento real.
+    // No se valida el formato: aquí entran cédulas, NIT y pasaportes.
+    cedula: ['', [Validators.required, Validators.minLength(5)]],
     phone: ['', [Validators.required, Validators.pattern(PHONE_PATTERN)]],
     address: ['', [Validators.required, Validators.minLength(5)]],
   });
@@ -91,6 +96,7 @@ export class CheckoutPage {
   protected readonly camposConError = signal<readonly { etiqueta: string; id: string }[]>([]);
 
   private readonly nombreInput = viewChild<ElementRef<HTMLInputElement>>('nombreInput');
+  private readonly cedulaInput = viewChild<ElementRef<HTMLInputElement>>('cedulaInput');
   private readonly telefonoInput = viewChild<ElementRef<HTMLInputElement>>('telefonoInput');
   private readonly direccionInput = viewChild<ElementRef<HTMLInputElement>>('direccionInput');
 
@@ -122,11 +128,6 @@ export class CheckoutPage {
     this.checkout.setProof(proof);
   }
 
-  protected showError(field: CampoDatos): boolean {
-    const control = this.form.controls[field];
-    return control.invalid && (control.touched || control.dirty);
-  }
-
   /** «2 × 500 gr»: cuánto de un componente lleva UNA canasta de esta línea. */
   protected readonly porcion = componentPortion;
 
@@ -134,6 +135,8 @@ export class CheckoutPage {
     switch (control) {
       case 'name':
         return this.nombreInput();
+      case 'cedula':
+        return this.cedulaInput();
       case 'phone':
         return this.telefonoInput();
       case 'address':
@@ -175,7 +178,7 @@ export class CheckoutPage {
   }
 
   protected onMetodoPagoChange(valor: string): void {
-    this.metodoPago.set(valor as 'contraentrega' | 'transferencia' | 'entrega_en_tienda');
+    this.metodoPago.set(valor as WebPaymentMethod);
   }
 
   protected submit(): void {
@@ -203,9 +206,10 @@ export class CheckoutPage {
 
     this.camposConError.set([]);
     this.placing.set(true);
-    const { name, phone, address } = this.form.getRawValue();
+    const { name, cedula, phone, address } = this.form.getRawValue();
 
-    this.checkout.placeOrder({ name, phone, address, metodoPago: this.metodoPago() }).subscribe({
+    this.checkout
+      .placeOrder({ name, cedula, phone, address, metodoPago: this.metodoPago() }).subscribe({
       next: () => {
         this.placing.set(false);
         // El botón está al final del formulario: sin esto, la pantalla de

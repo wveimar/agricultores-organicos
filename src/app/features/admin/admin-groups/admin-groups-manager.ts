@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiAdminGroup, ApiErrorBody } from '../../../core/api/api-client';
 import { CATEGORY_ICONS, CategoryIcon } from '../../../shared/category-icon/category-icon';
+import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 
 /**
  * Grupos del panel de compras — "Frutas", "Verduras", "Agroindustriales"...
@@ -26,7 +27,7 @@ import { CATEGORY_ICONS, CategoryIcon } from '../../../shared/category-icon/cate
  */
 @Component({
   selector: 'app-admin-groups-manager',
-  imports: [ReactiveFormsModule, RouterLink, CategoryIcon],
+  imports: [ReactiveFormsModule, RouterLink, CategoryIcon, FieldErrorState, FieldError],
   templateUrl: './admin-groups-manager.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -187,8 +188,4 @@ export class AdminGroupsManager {
     });
   }
 
-  protected showError(field: 'nombre' | 'orden'): boolean {
-    const control = this.form.controls[field];
-    return control.invalid && (control.touched || control.dirty);
-  }
 }

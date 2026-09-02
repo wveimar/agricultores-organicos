@@ -19,6 +19,17 @@ const PASSWORD = process.argv[4] ?? 'demo1234';
 let token = '';
 let fallos = 0;
 
+/**
+ * Una cédula de prueba distinta en cada llamada.
+ *
+ * `contacts.documento` es único, así que un número fijo haría fallar la
+ * segunda corrida del script contra la misma base. El prefijo 9 la marca
+ * como inventada: ninguna cédula colombiana real empieza así.
+ */
+function cedulaQA() {
+  return `9${Math.floor(Math.random() * 1_000_000_000)}`;
+}
+
 function ok(condicion, titulo, detalle = '') {
   if (condicion) {
     console.log(`  OK   ${titulo}`);
@@ -74,6 +85,9 @@ async function crearPedido(nombre = 'QA Facturación', metodoPago = 'transferenc
       clienteNombre: nombre,
       clienteTelefono: `30012${Math.floor(Math.random() * 100000)}`,
       clienteDireccion: 'Calle QA 123',
+      // La cédula es obligatoria desde que identifica al cliente. Al azar
+      // para no chocar con el índice único entre corridas del script.
+      clienteCedula: cedulaQA(),
       metodoPago,
       items: [{ productId: producto.id, cantidad: 1 }],
     }),

@@ -59,6 +59,11 @@ const RECAUDADO_WHERE = `(
          (o.metodo_pago = 'transferencia' AND o.estado IN ('aprobado', 'enviado'))
          OR (o.metodo_pago = 'contraentrega' AND o.estado = 'pago' AND o.efectivo_liquidado = 1)
          OR (o.metodo_pago = 'credito' AND o.estado = 'pago')
+         -- Mostrador y retiro en tienda: el dinero se recibe en la propia
+         -- tienda, así que basta con que el pedido esté pagado. No llevan la
+         -- condición de \`efectivo_liquidado\` porque no hay nadie que tenga
+         -- que traer ese efectivo después — ya está en el cajón.
+         OR (o.metodo_pago IN ('efectivo', 'tarjeta', 'entrega_en_tienda') AND o.estado = 'pago')
        ) AND o.closing_id IS NULL`;
 
 /**
@@ -252,9 +257,22 @@ export async function cashSummary(env: Env, user: JwtPayload, url: URL): Promise
       GROUP BY o.metodo_pago`,
   ).all<{ metodo: string; pedidos: number; total: number }>();
 
+  // Lo que la merma de esta jornada va a restar al cerrar. Se devuelve aparte
+  // y no descontado de `ganancia` porque este resumen es una previa de la
+  // VENTA: la ganancia definitiva —ya con gastos y merma dentro— la congela
+  // `closeCash()`. Verlo aquí antes de cerrar evita la sorpresa de que el
+  // cierre salga con una cifra más baja que la que se venía mirando.
+  const mermaPendiente =
+    canal === 'ecommerce'
+      ? await env.DB.prepare(
+          `SELECT COALESCE(SUM(total_costo), 0) AS total FROM mermas WHERE closing_id IS NULL`,
+        ).first<{ total: number }>()
+      : { total: 0 };
+
   return json({
     ...data,
     ganancia: data.ventaProducto - data.costoProducto,
+    mermaPendiente: mermaPendiente?.total ?? 0,
     // Solo producto: el cobro del domicilio NO entra en ninguna cifra de
     // venta. Ese dinero pasa por la finca pero no se queda —va para quien
     // reparte—, así que sumarlo inflaba las ventas brutas con plata que
@@ -438,6 +456,25 @@ export async function closeCash(env: Env, user: JwtPayload, url: URL): Promise<R
 
   const totalGastos = gastos?.totalGastos ?? 0;
 
+  // Merma de la jornada (migración 0034), valorada al costo. Mismo criterio de
+  // canal que los gastos: lo que se dañó en la bodega no nace en el mostrador
+  // ni en la tienda web, es de la operación, así que se queda entero en el
+  // cierre de ecommerce y el de la caja física no lo toca.
+  //
+  // Restarla es obligatorio, no opcional: el costo de una compra se recupera al
+  // vender (congelado en `order_items.costo_unitario`, que es de donde sale
+  // `costoProducto` de arriba), pero lo que se bota nunca se vende. Si no se
+  // restara aquí, ese dinero no lo descontaría nadie y la jornada mostraría un
+  // margen que no existe.
+  const merma =
+    canal === 'ecommerce'
+      ? await env.DB.prepare(
+          `SELECT COALESCE(SUM(total_costo), 0) AS totalMerma FROM mermas WHERE closing_id IS NULL`,
+        ).first<{ totalMerma: number }>()
+      : { totalMerma: 0 };
+
+  const totalMerma = merma?.totalMerma ?? 0;
+
   /**
    * Lo que de verdad entró en la jornada (migración 0028).
    *
@@ -472,7 +509,7 @@ export async function closeCash(env: Env, user: JwtPayload, url: URL): Promise<R
    * migración 0019. `envios_cobrados` se congela aparte, como dato para
    * cuadrar con quien reparte.
    */
-  const ganancia = ventaProducto - costoProducto - totalGastos;
+  const ganancia = ventaProducto - costoProducto - totalGastos - totalMerma;
 
   const results = await env.DB.batch([
     env.DB.prepare(
@@ -480,12 +517,12 @@ export async function closeCash(env: Env, user: JwtPayload, url: URL): Promise<R
          id, referencia, cerrado_por, cerrado_por_nombre, cerrado_en,
          pedidos_count, unidades_count, venta_producto, costo_producto,
          ganancia, envios_cobrados, total_recaudado, total_gastos, total_cobrado,
-         canal
+         canal, total_merma
        ) VALUES (
          ?1,
          'CIERRE-' || printf('%04d',
            (SELECT COALESCE(MAX(CAST(substr(referencia, 8) AS INTEGER)), 0) + 1 FROM cash_closings)),
-         ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13
+         ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14
        )`,
     ).bind(
       closingId,
@@ -504,6 +541,7 @@ export async function closeCash(env: Env, user: JwtPayload, url: URL): Promise<R
       totalGastos,
       totalCobrado,
       canal,
+      totalMerma,
     ),
     // Marca exactamente el mismo conjunto que se acaba de sumar. Al ir en el
     // mismo batch, ningún pedido puede colarse entre el cálculo y el archivado.
@@ -539,6 +577,15 @@ export async function closeCash(env: Env, user: JwtPayload, url: URL): Promise<R
         WHERE closing_id IS NULL AND ?2 = 'ecommerce'`,
     ).bind(closingId, canal),
 
+    // Y las mermas huérfanas, por lo mismo y con el mismo predicado que su
+    // suma de arriba: la cifra congelada en `total_merma` y las filas que se
+    // marcan tienen que describir el mismo conjunto. A partir de aquí el acta
+    // ya no se puede deshacer — lo defiende `mermas.remove()`.
+    env.DB.prepare(
+      `UPDATE mermas SET closing_id = ?1
+        WHERE closing_id IS NULL AND ?2 = 'ecommerce'`,
+    ).bind(closingId, canal),
+
     // Los cobros de la jornada pasan a ser de este cierre. Mismo predicado que
     // la suma de `totalCobrado`: en el batch nadie puede registrar un abono
     // entre las dos, así que la cifra congelada y las filas marcadas describen
@@ -555,7 +602,8 @@ export async function closeCash(env: Env, user: JwtPayload, url: URL): Promise<R
             pedidos_count AS pedidos, unidades_count AS unidades,
             venta_producto AS ventaProducto, costo_producto AS costoProducto,
             ganancia, envios_cobrados AS enviosCobrados, total_recaudado AS totalRecaudado,
-            total_gastos AS totalGastos, total_cobrado AS totalCobrado, canal
+            total_gastos AS totalGastos, total_merma AS totalMerma,
+            total_cobrado AS totalCobrado, canal
        FROM cash_closings WHERE id = ?1`,
   )
     .bind(closingId)
@@ -566,6 +614,9 @@ export async function closeCash(env: Env, user: JwtPayload, url: URL): Promise<R
       closing,
       pedidosArchivados: results[1].meta.changes,
       gastosArchivados: results[2].meta.changes,
+      // results[3] es el UPDATE de mermas: va justo detrás del de gastos, y
+      // este índice es lo único que ata este número a esa sentencia.
+      mermasArchivadas: results[3].meta.changes,
     },
     201,
   );
@@ -888,7 +939,8 @@ export async function closings(env: Env, user: JwtPayload): Promise<Response> {
             pedidos_count AS pedidos, unidades_count AS unidades,
             venta_producto AS ventaProducto, costo_producto AS costoProducto,
             ganancia, envios_cobrados AS enviosCobrados, total_recaudado AS totalRecaudado,
-            total_gastos AS totalGastos, total_cobrado AS totalCobrado, canal
+            total_gastos AS totalGastos, total_merma AS totalMerma,
+            total_cobrado AS totalCobrado, canal
        FROM cash_closings
       ORDER BY cerrado_en DESC
       LIMIT 50`,
@@ -941,6 +993,7 @@ export async function cashConsolidado(env: Env, user: JwtPayload, url: URL): Pro
             COALESCE(SUM(envios_cobrados), 0)   AS enviosCobrados,
             COALESCE(SUM(total_recaudado), 0)   AS totalRecaudado,
             COALESCE(SUM(total_gastos), 0)      AS totalGastos,
+            COALESCE(SUM(total_merma), 0)       AS totalMerma,
             COALESCE(SUM(total_cobrado), 0)     AS totalCobrado
        FROM cash_closings ${where}
       GROUP BY canal
@@ -966,6 +1019,7 @@ export async function cashConsolidado(env: Env, user: JwtPayload, url: URL): Pro
     'enviosCobrados',
     'totalRecaudado',
     'totalGastos',
+    'totalMerma',
     'totalCobrado',
   ] as const;
 

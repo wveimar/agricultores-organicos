@@ -54,11 +54,16 @@
               <label [for]="'cant-' + componente.childId" class="text-xs text-ink-soft">
                 Lleva
               </label>
+              <!--
+                El paso depende del componente: 0,001 si se vende a granel
+                —para poder poner el «0,5 kg» de un paquete de media libra— y 1
+                en todo lo demás, donde media unidad no significa nada.
+              -->
               <input
                 [id]="'cant-' + componente.childId"
                 type="number"
-                min="1"
-                step="1"
+                [attr.min]="pasoDe(componente)"
+                [attr.step]="pasoDe(componente)"
                 [value]="componente.cantidadRequerida"
                 [disabled]="busyChild() === componente.childId"
                 (change)="updateCantidad(componente, $any($event.target).value)"
@@ -108,8 +113,8 @@
         <input
           id="nueva-cantidad"
           type="number"
-          min="1"
-          step="1"
+          [attr.min]="pasoNuevo()"
+          [attr.step]="pasoNuevo()"
           [value]="nuevaCantidad()"
           (input)="onCantidadChange($event)"
           class="tabular mt-1.5 w-full rounded-md border border-sand bg-transparent px-3 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"

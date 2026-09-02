@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, catchError, map, tap, throwError } from 'rxjs';
 import { ApiSession, TokenStore } from './token-store';
 import { UserRole, WholesaleRole } from '../models/user.model';
+import { PaymentMethod, WebPaymentMethod } from '../models/order.model';
 import {
   CategoryId,
   Product,
@@ -62,7 +63,12 @@ export interface ApiComponent {
   /** Stock del componente suelto, para ver cuál es el que frena la canasta. */
   readonly stock: number;
   readonly activo: number;
-  /** Cuántos entran en UNA canasta. */
+  /**
+   * 1 = el componente se vende a granel. Es lo que decide si su cantidad en la
+   * receta puede ser una fracción: «medio kilo de papa» sí, «medio huevo» no.
+   */
+  readonly vendidoPorPeso: number;
+  /** Cuántos entran en UNA canasta. Decimal solo si el componente es a granel. */
   readonly cantidadRequerida: number;
 }
 
@@ -215,6 +221,11 @@ export interface ApiProduct {
    * el servidor, así que allí todo lo que llega está activo por definición.
    */
   readonly activo?: number;
+  /**
+   * 1 = se vende a granel, pesado en la caja: el ticket del POS pide un peso
+   * decimal en vez de un conteo de unidades. Solo en `/api/admin/*`.
+   */
+  readonly vendidoPorPeso?: number;
 }
 
 /**
@@ -326,7 +337,7 @@ export interface ApiOrder {
    */
   readonly tieneComprobante?: number | null;
   readonly aprobadoEn?: string | null;
-  readonly metodoPago: 'transferencia' | 'contraentrega' | 'credito' | 'entrega_en_tienda';
+  readonly metodoPago: PaymentMethod;
   /** Solo importa para contra entrega — ver la migración 0015. */
   readonly efectivoLiquidado: number;
   /**
@@ -358,7 +369,7 @@ export interface ApiDelivery {
   readonly clienteDireccion: string;
   readonly total: number;
   readonly creadoEn: string;
-  readonly metodoPago: 'transferencia' | 'contraentrega' | 'credito' | 'entrega_en_tienda';
+  readonly metodoPago: PaymentMethod;
   /** Quién lo lleva (migración 0029). `null` = todavía sin asignar. */
   readonly domiciliarioId: string | null;
   /** Copia congelada del nombre: sobrevive a que se borre la cuenta. */
@@ -395,11 +406,47 @@ export interface ApiSalesRow {
   readonly participacion: number;
 }
 
+/**
+ * Un cliente encontrado por el buscador del mostrador.
+ *
+ * Es deliberadamente más pequeño que `ApiContact`: solo lo que hace falta para
+ * decidir a quién se le está vendiendo. La agenda completa —con su resumen de
+ * compras y pedidos— es otra pantalla y otra consulta.
+ */
+export interface ApiContactMatch {
+  readonly id: string;
+  readonly nombre: string;
+  /** La cédula o NIT. Es la llave de negocio del cliente. */
+  readonly documento: string;
+  readonly telefono: string | null;
+  readonly direccion: string | null;
+  readonly cupoCredito: number;
+  readonly diasCredito: number;
+  /** Lo que debe hoy en facturas vivas. 0 = está al día. */
+  readonly deuda: number;
+  /** 'MAYORISTA_N2' si la ficha tiene cuenta con ese rol; null = precio de lista. */
+  readonly nivelPrecio: string | null;
+}
+
 /** De qué caja hablamos: la tienda web o el mostrador físico. */
 export type PosCanal = 'ecommerce' | 'pos';
 
 /** Cómo se pagó de verdad, cuando el método de pago se queda corto. */
-export type PosMedioPago = 'efectivo' | 'tarjeta' | 'entrega_en_tienda';
+/**
+ * Cómo se pagó un pedido. Un solo campo, el de verdad.
+ *
+ * Los tres primeros existen desde siempre; 'entrega_en_tienda' es la compra web
+ * que el cliente pasa a recoger, y 'efectivo'/'tarjeta' solo nacen en el
+ * mostrador. La columna que lo respalda no lleva CHECK: esta lista y la del
+ * Worker son la validación real (ver la nota en schema.sql).
+ */
+export type MetodoPago =
+  | 'transferencia'
+  | 'contraentrega'
+  | 'credito'
+  | 'entrega_en_tienda'
+  | 'efectivo'
+  | 'tarjeta';
 
 export interface ApiPosItemInput {
   readonly productId: string;
@@ -416,6 +463,13 @@ export interface ApiPosSellInput {
   readonly items: readonly ApiPosItemInput[];
   readonly metodoPago: 'efectivo' | 'tarjeta' | 'credito';
   readonly reciboSolicitado: boolean;
+  /**
+   * Cuánto dio el cliente, si es menos que el total. Ausente o mayor o igual
+   * al total es un cobro completo; con un valor menor, el resto queda vivo en
+   * el saldo de la factura — mismo campo que ya usa `markOrderPaid()` para el
+   * abono del domiciliario.
+   */
+  readonly montoAbono?: number;
 }
 
 export interface ApiPosVentaItem {
@@ -436,8 +490,7 @@ export interface ApiPosVenta {
   readonly subtotal: number;
   readonly envio: number;
   readonly total: number;
-  readonly metodoPago: string;
-  readonly medioPago: PosMedioPago | null;
+  readonly metodoPago: MetodoPago;
   readonly canal: PosCanal;
   readonly reciboSolicitado: number;
   readonly venceEn: string | null;
@@ -462,8 +515,7 @@ export interface ApiPosVentaResumen {
   readonly estado: string;
   readonly subtotal: number;
   readonly total: number;
-  readonly metodoPago: string;
-  readonly medioPago: PosMedioPago | null;
+  readonly metodoPago: MetodoPago;
   readonly reciboSolicitado: number;
   readonly closingId: string | null;
   readonly creadoEn: string;
@@ -654,6 +706,70 @@ export interface ApiExpense {
   readonly creadoEn: string;
   readonly creadoPor: string | null;
   readonly closingId: string | null;
+}
+
+/**
+ * Baja de inventario por merma (migración 0034).
+ *
+ * La causa raíz es lista cerrada porque es por donde agrupa el informe: con
+ * texto libre («podrido», «pudrición», «se dañó») no se podría sumar nada.
+ */
+export type MotivoMerma = 'deshidratacion' | 'pudricion' | 'vencimiento' | 'rotura' | 'otro';
+
+/** Etiquetas legibles de cada motivo, para pintarlas sin un `switch` por vista. */
+export const MOTIVO_MERMA_LABELS: Readonly<Record<MotivoMerma, string>> = {
+  deshidratacion: 'Deshidratación',
+  pudricion: 'Pudrición / deterioro',
+  vencimiento: 'Vencimiento',
+  rotura: 'Rotura / empaque dañado',
+  otro: 'Otro',
+};
+
+export interface ApiMermaItem {
+  readonly productId: string;
+  /** Nombre y unidad congelados el día del descarte. */
+  readonly productoNombre: string;
+  readonly unidad: string;
+  readonly cantidad: number;
+  readonly costoUnitario: number;
+  readonly subtotalCosto: number;
+  readonly precioUnitario: number;
+  readonly subtotalVenta: number;
+  readonly motivo: MotivoMerma;
+  readonly observacion: string | null;
+}
+
+export interface ApiMerma {
+  readonly id: string;
+  /** Lo que costó de verdad: es lo que resta de la ganancia del cierre. */
+  readonly totalCosto: number;
+  /** Lo que se habría facturado. Dato del informe, no entra en cuentas. */
+  readonly totalVenta: number;
+  readonly observaciones: string | null;
+  readonly creadoEn: string;
+  readonly creadoPor: string | null;
+  /** Con cierre puesto ya no se puede deshacer: es cuenta congelada. */
+  readonly closingId: string | null;
+  readonly items: readonly ApiMermaItem[];
+}
+
+export interface ApiMermaReporte {
+  readonly porMotivo: readonly {
+    readonly motivo: MotivoMerma;
+    readonly actas: number;
+    readonly cantidad: number;
+    readonly costo: number;
+    readonly venta: number;
+  }[];
+  readonly porProducto: readonly {
+    readonly productId: string;
+    readonly productoNombre: string;
+    readonly unidad: string;
+    readonly cantidad: number;
+    readonly costo: number;
+    readonly venta: number;
+  }[];
+  readonly total: { readonly actas: number; readonly costo: number; readonly venta: number };
 }
 
 /** Cómo se le gira a un proveedor. `null` = se le paga en efectivo. */
@@ -1292,6 +1408,8 @@ export class ApiClient {
     parentId?: string | null;
     /** Solo tiene efecto en las madres: 'presentación', 'sabor'… */
     varianteEtiqueta?: string | null;
+    /** 1 = se vende a granel, pesado en la caja. */
+    vendidoPorPeso?: 0 | 1;
   }): Observable<ApiProduct> {
     return this.http
       .post<{ product: ApiProduct }>('/api/admin/products', input)
@@ -1316,6 +1434,8 @@ export class ApiClient {
       activo: 0 | 1;
       /** Código de barras para la caja. Cadena vacía lo borra. */
       codigoBarras: string;
+      /** 1 = se vende a granel, pesado en la caja. */
+      vendidoPorPeso: 0 | 1;
     }>,
   ): Observable<ApiProduct> {
     return this.http
@@ -1345,6 +1465,8 @@ export class ApiClient {
      */
     parentId?: string | null;
     varianteEtiqueta?: string | null;
+    /** 1 = se vende a granel, pesado en la caja. */
+    vendidoPorPeso?: 0 | 1;
   }): Observable<ApiProduct> {
     return this.http
       .put<{ product: ApiProduct }>(`/api/admin/products/${id}`, input)
@@ -1357,6 +1479,8 @@ export class ApiClient {
     clienteNombre: string;
     clienteTelefono: string;
     clienteDireccion: string;
+    /** La cedula del cliente. Obligatoria desde que es la llave de negocio. */
+    clienteCedula: string;
     envio: number;
     items: readonly { productId: string; cantidad: number }[];
     comprobanteNombre?: string;
@@ -1369,7 +1493,7 @@ export class ApiClient {
      * una cuenta con cupo, no algo que se elija en el checkout. El Worker lo
      * vuelve a comprobar con lista blanca por si alguien llama a la API a mano.
      */
-    metodoPago?: 'transferencia' | 'contraentrega' | 'entrega_en_tienda';
+    metodoPago?: WebPaymentMethod;
   }): Observable<ApiOrder> {
     return this.http
       .post<{ order: ApiOrder }>('/api/orders', input)
@@ -1682,6 +1806,20 @@ export class ApiClient {
       .pipe(catchError(handleError));
   }
 
+  /**
+   * Busca un cliente por cédula, nombre o teléfono, todo en la misma consulta.
+   *
+   * Es lo que usa el buscador del mostrador: el cajero teclea lo que el cliente
+   * le dicte, sin elegir antes en qué campo está buscando.
+   */
+  searchContacts(query: string): Observable<readonly ApiContactMatch[]> {
+    return this.http
+      .get<{ contactos: ApiContactMatch[] }>(
+        `/api/admin/contacts/search?query=${encodeURIComponent(query)}`,
+      )
+      .pipe(map((res) => res.contactos), catchError(handleError));
+  }
+
   /** Banderas de operación que un SUPER_ADMIN cambia sin desplegar. */
   settings(): Observable<readonly ApiAjuste[]> {
     return this.http
@@ -1932,6 +2070,54 @@ export class ApiClient {
     return this.http
       .delete<{ ok: true }>(`/api/admin/expenses/${id}`)
       .pipe(map(() => undefined), catchError(handleError));
+  }
+
+  // ───────────── Bajas de inventario por merma ─────────────
+
+  /** `abiertas` deja solo las actas que todavía puede deshacer la jornada. */
+  mermas(abiertas = false): Observable<readonly ApiMerma[]> {
+    return this.http
+      .get<{ mermas: ApiMerma[] }>(`/api/admin/mermas${abiertas ? '?abiertas=1' : ''}`)
+      .pipe(map((res) => res.mermas), catchError(handleError));
+  }
+
+  /**
+   * Registra el acta y baja el inventario en el mismo paso.
+   *
+   * No se manda el costo: lo pone el servidor leyendo el catálogo. Es la
+   * justificación contable de una pérdida, y dejar que el navegador diga
+   * cuánto valía sería dejarle decidir cuánta ganancia se resta del cierre.
+   */
+  createMerma(input: {
+    observaciones?: string;
+    items: readonly {
+      productId: string;
+      cantidad: number;
+      motivo: MotivoMerma;
+      observacion?: string;
+    }[];
+  }): Observable<ApiMerma> {
+    return this.http
+      .post<{ merma: ApiMerma }>('/api/admin/mermas', input)
+      .pipe(map((res) => res.merma), catchError(handleError));
+  }
+
+  /** Solo mientras la jornada siga abierta; después el Worker responde 409. */
+  deleteMerma(id: string): Observable<void> {
+    return this.http
+      .delete<{ ok: true }>(`/api/admin/mermas/${id}`)
+      .pipe(map(() => undefined), catchError(handleError));
+  }
+
+  mermaReporte(rango: { desde?: string; hasta?: string } = {}): Observable<ApiMermaReporte> {
+    const params = new URLSearchParams();
+    if (rango.desde) params.set('desde', rango.desde);
+    if (rango.hasta) params.set('hasta', rango.hasta);
+    const query = params.toString();
+
+    return this.http
+      .get<ApiMermaReporte>(`/api/admin/mermas/reporte${query ? `?${query}` : ''}`)
+      .pipe(catchError(handleError));
   }
 
   // ───────────── Agenda: proveedores y clientes ─────────────

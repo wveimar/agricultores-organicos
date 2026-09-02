@@ -84,10 +84,13 @@
             <label for="fac-cliente" class="block text-sm font-semibold text-ink">Cliente</label>
             <input
               id="fac-cliente"
+              #errCliente="fieldError"
               type="text"
               formControlName="clienteNombre"
+              [appFieldError]="form.controls.clienteNombre"
               class="mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
             />
+            <app-field-error [for]="errCliente" message="Escribe el nombre del cliente." />
           </div>
           <div>
             <label for="fac-telefono" class="block text-sm font-semibold text-ink">Teléfono</label>
@@ -102,11 +105,14 @@
             <label for="fac-envio" class="block text-sm font-semibold text-ink">Domicilio</label>
             <input
               id="fac-envio"
+              #errEnvio="fieldError"
               type="number"
               min="0"
               formControlName="envio"
+              [appFieldError]="form.controls.envio"
               class="tabular mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
             />
+            <app-field-error [for]="errEnvio" message="No puede ser negativo." />
           </div>
           <div>
             <label for="fac-vence" class="block text-sm font-semibold text-ink">
@@ -130,33 +136,42 @@
                 <label [for]="'linea-desc-' + $index" class="sr-only">Descripción</label>
                 <input
                   [id]="'linea-desc-' + $index"
+                  #errDescripcion="fieldError"
                   type="text"
                   placeholder="Descripción"
                   formControlName="descripcion"
+                  [appFieldError]="linea.get('descripcion')"
                   class="w-full rounded-md border border-sand bg-linen/60 px-3 py-2 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
                 />
+                <app-field-error [for]="errDescripcion" message="Escribe qué se está cobrando." />
               </div>
               <div class="w-20">
                 <label [for]="'linea-cant-' + $index" class="sr-only">Cantidad</label>
                 <input
                   [id]="'linea-cant-' + $index"
+                  #errCantidad="fieldError"
                   type="number"
                   min="1"
                   placeholder="Cant."
                   formControlName="cantidad"
+                  [appFieldError]="linea.get('cantidad')"
                   class="tabular w-full rounded-md border border-sand bg-linen/60 px-3 py-2 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
                 />
+                <app-field-error [for]="errCantidad" message="Mínimo 1." />
               </div>
               <div class="w-32">
                 <label [for]="'linea-precio-' + $index" class="sr-only">Precio unitario</label>
                 <input
                   [id]="'linea-precio-' + $index"
+                  #errPrecio="fieldError"
                   type="number"
                   min="0"
                   placeholder="Precio"
                   formControlName="precioUnitario"
+                  [appFieldError]="linea.get('precioUnitario')"
                   class="tabular w-full rounded-md border border-sand bg-linen/60 px-3 py-2 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
                 />
+                <app-field-error [for]="errPrecio" message="No puede ser negativo." />
               </div>
               <button
                 type="button"
@@ -316,11 +331,14 @@
                     <label for="nota-monto" class="block text-sm font-semibold text-ink">Cuánto</label>
                     <input
                       id="nota-monto"
+                      #errNotaMonto="fieldError"
                       type="number"
                       min="1"
                       formControlName="monto"
+                      [appFieldError]="formNota.controls.monto"
                       class="tabular mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
                     />
+                    <app-field-error [for]="errNotaMonto" message="Tiene que ser mayor que cero." />
                   </div>
                 </div>
 
@@ -328,22 +346,28 @@
                   <label for="nota-desc" class="block text-sm font-semibold text-ink">Concepto</label>
                   <input
                     id="nota-desc"
+                    #errNotaDesc="fieldError"
                     type="text"
                     placeholder="Devolución de tres kilos de tomate"
                     formControlName="descripcion"
+                    [appFieldError]="formNota.controls.descripcion"
                     class="mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
                   />
+                  <app-field-error [for]="errNotaDesc" message="Escribe qué es este concepto." />
                 </div>
 
                 <div>
                   <label for="nota-motivo" class="block text-sm font-semibold text-ink">Por qué</label>
                   <input
                     id="nota-motivo"
+                    #errNotaMotivo="fieldError"
                     type="text"
                     placeholder="Queda en el histórico"
                     formControlName="motivo"
+                    [appFieldError]="formNota.controls.motivo"
                     class="mt-1.5 w-full rounded-md border border-sand bg-linen/60 px-4 py-2.5 text-sm text-ink focus:border-moss focus:bg-bone focus:outline-none"
                   />
+                  <app-field-error [for]="errNotaMotivo" message="Escribe por qué se emite esta nota." />
                 </div>
 
                 <div class="flex items-center gap-3">

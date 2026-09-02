@@ -104,6 +104,51 @@
     border-radius: var(--radius-sm);
   }
 
+}
+
+/*
+ * El borde de un campo con error, puesto por CSS y no por una clase
+ * condicional en la plantilla.
+ *
+ * `[appFieldError]` (ver src/app/shared/field-error) es quien pone
+ * `aria-invalid="true"` en el input — ese atributo YA es la fuente de verdad
+ * semántica, así que el color lo lee de ahí directamente en vez de que cada
+ * formulario repita un `[class]="control.invalid && ... ? 'border-berry' :
+ * '...'"`. Es también lo único robusto: Angular no garantiza que un binding
+ * nativo del mismo elemento (como `[class]`) pueda leer, en esa misma
+ * pasada, el estado de una directiva de ese mismo elemento — se probó y da
+ * NG0950. El atributo, en cambio, siempre está disponible para el CSS por la
+ * simple razón de que ya está en el DOM.
+ *
+ * En `@layer utilities` y no en `base`: las capas de Tailwind pesan más que
+ * la especificidad del selector, así que una regla en `base` perdería contra
+ * cualquier `.border-sand` de un input, sin importar que el selector de
+ * abajo sea más específico. Aquí, dentro de la misma capa que esas
+ * utilidades, sí gana por especificidad normal.
+ */
+@layer utilities {
+  input[aria-invalid='true'],
+  select[aria-invalid='true'],
+  textarea[aria-invalid='true'] {
+    border-color: var(--color-berry);
+  }
+
+  /*
+   * Repetida con `:focus` porque, medido en el navegador, el campo con error
+   * llega ENFOCADO en el momento exacto en que hace falta verse rojo: el
+   * checkout mueve el foco al primer campo inválido justo tras un envío
+   * fallido (`focusFirstInvalid()`). Sin esta regla, `focus:border-moss` de
+   * Tailwind —selector de clase + pseudoclase, más específico que el simple
+   * `input[aria-invalid]` de arriba— gana y el borde se ve verde justo cuando
+   * el usuario lo está mirando para corregirlo. Con el `:focus` añadido aquí,
+   * la especificidad iguala o supera a la de la utilidad y el rojo se impone.
+   */
+  input:focus[aria-invalid='true'],
+  select:focus[aria-invalid='true'],
+  textarea:focus[aria-invalid='true'] {
+    border-color: var(--color-berry);
+  }
+
   /* Los precios se alinean en columna gracias a las cifras tabulares */
   .tabular {
     font-variant-numeric: tabular-nums;

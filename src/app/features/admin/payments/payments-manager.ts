@@ -9,6 +9,7 @@ import {
   ApiPayment,
 } from '../../../core/api/api-client';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
+import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 
 const METODOS = [
   { value: 'efectivo', label: 'Efectivo' },
@@ -52,7 +53,7 @@ interface GrupoPagos {
  */
 @Component({
   selector: 'app-payments-manager',
-  imports: [CopPipe, ReactiveFormsModule],
+  imports: [CopPipe, ReactiveFormsModule, FieldErrorState, FieldError],
   templateUrl: './payments-manager.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -332,8 +333,14 @@ export class PaymentsManager {
 
   protected guardar(): void {
     if (this.form.invalid) {
+      // `markAllAsTouched()` es lo único que hace falta: el mensaje ya no va
+      // en un banner genérico arriba del formulario, va DEBAJO de cada campo
+      // que falla (`<app-field-error>`) — ahí es donde se lee mientras se
+      // corrige, no en un texto aparte que hay que ir a buscar. El formulario
+      // puede arrancar con el cliente ya elegido (botón "Cobrar" desde la
+      // lista de deudores), así que quien mira el campo de cliente ve que ya
+      // tiene un valor y el mensaje de abajo, si aparece, es del monto.
       this.form.markAllAsTouched();
-      this.error.set('Falta el cliente o el monto.');
       return;
     }
 

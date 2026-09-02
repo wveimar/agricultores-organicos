@@ -147,7 +147,7 @@ export function cobrarPedidoStatements(
   orderId: string,
   user: JwtPayload,
   opciones: {
-    metodo: 'efectivo' | 'transferencia';
+    metodo: 'efectivo' | 'transferencia' | 'tarjeta';
     liquidado: 0 | 1;
     monto?: number;
     /**
@@ -156,13 +156,6 @@ export function cobrarPedidoStatements(
      * comportándose igual sin tocarlas.
      */
     canal?: 'ecommerce' | 'pos';
-    /**
-     * El instrumento real, cuando `metodo` se queda corto: 'tarjeta'. Su CHECK
-     * no se puede ampliar (recrear `payments` dispararía el CASCADE de
-     * `payment_allocations` y se llevaría la cartera entera), así que un cobro
-     * con datáfono se registra como 'efectivo' y el detalle vive aquí.
-     */
-    medioPago?: string | null;
   },
 ) {
   // NULL de verdad y no `?? i.saldo` en JS: la comparación tiene que ocurrir en
@@ -170,7 +163,6 @@ export function cobrarPedidoStatements(
   // un valor leído en una consulta aparte que podría quedar desactualizado.
   const monto = opciones.monto ?? null;
   const canal = opciones.canal ?? 'ecommerce';
-  const medioPago = opciones.medioPago ?? null;
 
   return [
     // El cliente sale de la propia factura del pedido, no de lo que mande
@@ -178,14 +170,13 @@ export function cobrarPedidoStatements(
     env.DB.prepare(
       `INSERT INTO payments (
          id, referencia, contact_id, cliente_nombre, monto, metodo,
-         recibido_en, recibido_por, recibido_por_nombre, liquidado,
-         canal, medio_pago
+         recibido_en, recibido_por, recibido_por_nombre, liquidado, canal
        )
        SELECT ?1,
               'ABONO-' || printf('%06d', (SELECT IFNULL(MAX(CAST(substr(referencia, 7) AS INTEGER)), 0) + 1 FROM payments)),
               i.contact_id, i.cliente_nombre,
               CASE WHEN ?7 IS NULL THEN i.saldo ELSE MIN(i.saldo, ?7) END,
-              ?4, datetime('now'), ?3, ?5, ?6, ?8, ?9
+              ?4, datetime('now'), ?3, ?5, ?6, ?8
          FROM invoices i
         WHERE i.order_id = ?2 AND i.estado <> 'anulada' AND i.saldo > 0`,
     ).bind(
@@ -197,7 +188,6 @@ export function cobrarPedidoStatements(
       opciones.liquidado,
       monto,
       canal,
-      medioPago,
     ),
 
     // Y el reparto: lo mismo que se acaba de cobrar, contra esa misma factura.
@@ -443,7 +433,16 @@ function estaEnCaja(metodo: string, esDomiciliario: boolean, enCajaDelFormulario
   return enCajaDelFormulario !== false;
 }
 
-const METODOS = ['efectivo', 'transferencia', 'nequi', 'daviplata'] as const;
+/**
+ * Los medios por los que puede entrar plata.
+ *
+ * Esta lista **es** la validación de `payments.metodo`: esa columna no lleva
+ * CHECK, porque ampliarlo obligaría a recrear la tabla y recrear `payments`
+ * dispara el CASCADE de `payment_allocations` — es decir, se llevaría la
+ * asignación de cobros a facturas, que es la cartera entera. Añadir un medio
+ * nuevo es añadirlo aquí y nada más.
+ */
+const METODOS = ['efectivo', 'transferencia', 'nequi', 'daviplata', 'tarjeta'] as const;
 
 function leerMetodo(valor: unknown): (typeof METODOS)[number] {
   if (typeof valor === 'string' && (METODOS as readonly string[]).includes(valor)) {

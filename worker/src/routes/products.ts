@@ -58,9 +58,16 @@ const PUBLIC_COLUMNS = `
   --
   -- MIN sobre cero filas devuelve NULL, así que el COALESCE deja pasar el
   -- stock normal de todo lo que no es canasta sin necesitar un CASE aparte.
+  --
+  -- El CAST a INTEGER es el FLOOR, y tiene que estar escrito igual que en
+  -- stockDeCanastas() (combos.ts): son dos copias de la misma cuenta —esta
+  -- sirve el catálogo, aquella valida el pedido— y si divergen, la tienda
+  -- ofrecería una cantidad que el checkout después rechaza. Sin el CAST, un
+  -- componente decimal («Paquete de 500 g» = 0,5 kg de granel) hacía que
+  -- SQLite dividiera en coma flotante y saliera «84,6 disponibles».
   COALESCE(
     (SELECT MIN(CASE WHEN h.activo = 1
-                     THEN h.stock_actual / pc.cantidad_requerida
+                     THEN CAST(h.stock_actual / pc.cantidad_requerida AS INTEGER)
                      ELSE 0 END)
        FROM product_components pc
        JOIN products h ON h.id = pc.child_product_id
@@ -81,6 +88,9 @@ const ADMIN_COLUMNS = `
   -- Lo que teclea el lector del mostrador. Solo en el panel: en la tienda
   -- pública no le sirve a nadie y es un dato de operación interna.
   codigo_barras AS codigoBarras,
+  -- 1 = se vende a granel, pesado en la caja (migración 0033). Solo en el
+  -- panel: decide si el ticket del POS pide un peso decimal o un conteo.
+  vendido_por_peso AS vendidoPorPeso,
   (precio - precio_costo) AS margenUnitario,
   -- Las dos formas de no tener inventario propio. Ambas tienen stock_actual = 0
   -- por definición: la canasta lo deriva de sus componentes y la madre de sus
@@ -310,6 +320,8 @@ interface UpdateBody {
   destacado?: unknown;
   /** Lo que teclea el lector del mostrador. '' lo borra. */
   codigoBarras?: unknown;
+  /** 1 = se vende a granel, pesado en la caja. */
+  vendidoPorPeso?: unknown;
 }
 
 /**
@@ -355,6 +367,15 @@ export async function update(
       throw ApiError.badRequest('destacado-invalido', 'El campo \"destacado\" debe ser 0 o 1.');
     }
     push('destacado', body.destacado);
+  }
+  if (body.vendidoPorPeso !== undefined) {
+    if (body.vendidoPorPeso !== 0 && body.vendidoPorPeso !== 1) {
+      throw ApiError.badRequest(
+        'vendido-por-peso-invalido',
+        'El campo "vendidoPorPeso" debe ser 0 o 1.',
+      );
+    }
+    push('vendido_por_peso', body.vendidoPorPeso);
   }
 
   if (body.codigoBarras !== undefined) {
@@ -513,6 +534,13 @@ interface UpdateFullBody {
   parentId?: unknown;
   /** Solo en las madres: 'presentación', 'sabor'… */
   varianteEtiqueta?: unknown;
+  /** 1 = se vende a granel, pesado en la caja. */
+  vendidoPorPeso?: unknown;
+}
+
+/** `0` si no viene o viene basura: casi ningún producto se vende a granel. */
+function readVendidoPorPeso(value: unknown): 0 | 1 {
+  return value === 1 || value === true ? 1 : 0;
 }
 
 /**
@@ -544,6 +572,7 @@ export async function updateFull(
   const imagen = body.imagen as string | undefined;
   const imagenHover = body.imagenHover as string | undefined;
   const imagenAlt = body.imagenAlt as string | undefined;
+  const vendidoPorPeso = readVendidoPorPeso(body.vendidoPorPeso);
 
   if (!nombre || nombre.trim().length === 0) {
     throw ApiError.badRequest('nombre-requerido', 'El nombre es requerido.');
@@ -600,11 +629,11 @@ export async function updateFull(
   const extraValores: unknown[] = [];
   if (tocaParent) {
     extraValores.push(parentId);
-    extras.push(`parent_id = ?${13 + extraValores.length}`);
+    extras.push(`parent_id = ?${14 + extraValores.length}`);
   }
   if (tocaEtiqueta) {
     extraValores.push(varianteEtiqueta);
-    extras.push(`variante_etiqueta = ?${13 + extraValores.length}`);
+    extras.push(`variante_etiqueta = ?${14 + extraValores.length}`);
   }
 
   const updateSlug = slug ? slug : nombre
@@ -619,11 +648,11 @@ export async function updateFull(
       `UPDATE products SET
         slug = ?1, nombre = ?2, tagline = ?3, categoria_id = ?4, grupo_admin_id = ?5,
         precio = ?6, precio_costo = ?7, unidad = ?8, cantidad_unidad = ?9, origen = ?10,
-        imagen = ?11, imagen_hover = ?12, imagen_alt = ?13,
+        imagen = ?11, imagen_hover = ?12, imagen_alt = ?13, vendido_por_peso = ?14,
         ${extras.map((set) => `${set}, `).join('')}actualizado_en = datetime('now')
-       WHERE id = ?${14 + extraValores.length}`,
+       WHERE id = ?${15 + extraValores.length}`,
     )
-      .bind(updateSlug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt, ...extraValores, productId)
+      .bind(updateSlug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt, vendidoPorPeso, ...extraValores, productId)
       .run();
   } catch (error) {
     if ((error as Error).message.includes('UNIQUE constraint failed: products.slug')) {
@@ -661,6 +690,8 @@ interface CreateBody {
   parentId?: unknown;
   /** Solo en las madres: 'presentación', 'sabor'… */
   varianteEtiqueta?: unknown;
+  /** 1 = se vende a granel, pesado en la caja. */
+  vendidoPorPeso?: unknown;
 }
 
 /**
@@ -692,6 +723,7 @@ export async function create(
   const imagen = body.imagen as string | undefined;
   const imagenHover = body.imagenHover as string | undefined;
   const imagenAlt = body.imagenAlt as string | undefined;
+  const vendidoPorPeso = readVendidoPorPeso(body.vendidoPorPeso);
 
   if (!nombre || nombre.trim().length === 0) {
     throw ApiError.badRequest('nombre-requerido', 'El nombre es requerido.');
@@ -751,10 +783,10 @@ export async function create(
       `INSERT INTO products (
         id, slug, nombre, tagline, categoria_id, grupo_admin, grupo_admin_id,
         precio, precio_costo, unidad, cantidad_unidad, origen,
-        imagen, imagen_hover, imagen_alt, parent_id, variante_etiqueta
-      ) VALUES (?1, ?2, ?3, ?4, ?5, 'agroindustriales', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)`,
+        imagen, imagen_hover, imagen_alt, parent_id, variante_etiqueta, vendido_por_peso
+      ) VALUES (?1, ?2, ?3, ?4, ?5, 'agroindustriales', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)`,
     )
-      .bind(id, slug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt, parentId, varianteEtiqueta)
+      .bind(id, slug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt, parentId, varianteEtiqueta, vendidoPorPeso)
       .run();
   } catch (error) {
     if ((error as Error).message.includes('UNIQUE constraint failed: products.slug')) {

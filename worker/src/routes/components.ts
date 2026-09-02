@@ -1,4 +1,4 @@
-import { ApiError, json, readJson, requireInt, requireString } from '../http';
+import { ApiError, json, readJson, requireNumber, requireString } from '../http';
 import { Env, JwtPayload } from '../types';
 import { requireRole } from '../auth/middleware';
 import { stockDeCanastas } from '../combos';
@@ -26,6 +26,8 @@ interface ComponentRow {
   cantidadUnidad: number;
   stock: number;
   activo: number;
+  /** 1 = se vende a granel; solo entonces la receta admite una fracción. */
+  vendidoPorPeso: number;
   cantidadRequerida: number;
 }
 
@@ -38,6 +40,7 @@ async function loadRecipe(env: Env, parentId: string): Promise<ComponentRow[]> {
             p.cantidad_unidad     AS cantidadUnidad,
             p.stock_actual        AS stock,
             p.activo,
+            p.vendido_por_peso    AS vendidoPorPeso,
             pc.cantidad_requerida AS cantidadRequerida
        FROM product_components pc
        JOIN products p ON p.id = pc.child_product_id
@@ -98,7 +101,11 @@ interface ComponentBody {
  * El trigger aborta con un código seco (`componente-es-canasta`); esto traduce
  * cada caso a una frase que dice qué hacer al respecto.
  */
-async function validarComponente(env: Env, parentId: string, childId: string): Promise<void> {
+async function validarComponente(
+  env: Env,
+  parentId: string,
+  childId: string,
+): Promise<{ nombre: string; vendido_por_peso: number }> {
   if (parentId === childId) {
     throw ApiError.badRequest(
       'componente-invalido',
@@ -107,13 +114,18 @@ async function validarComponente(env: Env, parentId: string, childId: string): P
   }
 
   const hijo = await env.DB.prepare(
-    `SELECT p.nombre,
+    `SELECT p.nombre, p.vendido_por_peso,
             EXISTS (SELECT 1 FROM products h WHERE h.parent_id = p.id)          AS agrupa_variantes,
             EXISTS (SELECT 1 FROM product_components c WHERE c.parent_product_id = p.id) AS es_canasta
        FROM products p WHERE p.id = ?1`,
   )
     .bind(childId)
-    .first<{ nombre: string; agrupa_variantes: number; es_canasta: number }>();
+    .first<{
+      nombre: string;
+      vendido_por_peso: number;
+      agrupa_variantes: number;
+      es_canasta: number;
+    }>();
 
   if (!hijo) {
     throw ApiError.badRequest('componente-invalido', 'Ese producto no existe.');
@@ -143,6 +155,8 @@ async function validarComponente(env: Env, parentId: string, childId: string): P
       'Este producto ya forma parte de otra canasta, así que no puede tener componentes propios.',
     );
   }
+
+  return hijo;
 }
 
 /**
@@ -151,6 +165,19 @@ async function validarComponente(env: Env, parentId: string, childId: string): P
  * Es un PUT y no un POST porque repetirlo con la misma cantidad deja lo mismo:
  * el `ON CONFLICT` actualiza en vez de fallar, así que corregir un 2 por un 3
  * es la misma llamada que ponerlo la primera vez.
+ *
+ * ── Por qué la cantidad admite decimales ──
+ *
+ * Una receta con fracción es lo que convierte el inventario a granel en algo
+ * vendible por la web: la papa se compra y se pesa en kilos, pero en la tienda
+ * se ofrece un «Paquete de 500 g», que es un producto con UN componente —el
+ * granel— y `cantidad_requerida = 0.5`. Vender el paquete descuenta medio kilo
+ * del mismo montón que pesa el mostrador, sin inventarios paralelos.
+ *
+ * Pero solo si ese componente se vende por peso: media unidad de un huevo o de
+ * un frasco no significa nada, y una receta así dejaría un stock derivado que
+ * nadie puede cumplir. Es la misma regla que `rejectFractional()` aplica a las
+ * ventas, aquí aplicada a lo que las compone.
  */
 export async function put(
   request: Request,
@@ -162,9 +189,17 @@ export async function put(
 
   const body = await readJson<ComponentBody>(request);
   const childId = requireString(body.childId, 'childId', 64);
-  const cantidad = requireInt(body.cantidad, 'cantidad', 1);
+  const cantidad = requireNumber(body.cantidad, 'cantidad', 0.001);
 
-  await validarComponente(env, parentId, childId);
+  const hijo = await validarComponente(env, parentId, childId);
+
+  if (!hijo.vendido_por_peso && !Number.isInteger(cantidad)) {
+    throw ApiError.badRequest(
+      'cantidad-no-entera',
+      `"${hijo.nombre}" no se vende por peso: la cantidad que lleva la canasta tiene que ser un número entero. ` +
+        `Para vender fracciones, marca ese producto como "se vende a granel" en Inventario.`,
+    );
+  }
 
   await env.DB.prepare(
     `INSERT INTO product_components (parent_product_id, child_product_id, cantidad_requerida)

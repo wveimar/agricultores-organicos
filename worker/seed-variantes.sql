@@ -143,6 +143,25 @@ INSERT OR IGNORE INTO products (
    'Botella de kambucha de mango, de color amarillo anaranjado',
    'p-kambucha-base');
 
+-- ─────────────────────── El grupo del panel (0025) ───────────────────────
+--
+-- Los INSERT de arriba solo llenan `grupo_admin`, la columna VIEJA: este
+-- fichero es anterior a la migración 0025, que movió el grupo de verdad a
+-- `grupo_admin_id`. El efecto era que estas fichas quedaban sin grupo, y
+-- guardarlas desde el panel fallaba con `grupo-invalido` antes siquiera de
+-- llegar a las comprobaciones de variantes — lo que hacía fallar a
+-- `qa-variantes.mjs` por un problema del sembrado, no del producto.
+--
+-- El grupo se deduce de la categoría, que es de donde lo saca el panel.
+UPDATE products
+   SET grupo_admin_id = (
+     SELECT c.grupo_admin_id FROM categories c WHERE c.id = products.categoria_id
+   )
+ WHERE grupo_admin_id IS NULL
+   AND id IN ('p-miel-base', 'p-miel-300', 'p-miel-500', 'p-miel-1000',
+              'p-kambucha-base', 'p-kambucha-jamaica', 'p-kambucha-lulada',
+              'p-kambucha-mango');
+
 -- ============================================================================
 --  Si los productos YA existen en producción, esto es lo que hay que hacer en
 --  vez de lo de arriba: enlazar las filas que ya están, sin crear ninguna.

@@ -122,7 +122,6 @@ export class PosHistory {
       envio: 0,
       total: venta.total,
       metodoPago: venta.metodoPago,
-      medioPago: venta.medioPago,
       canal: 'pos',
       reciboSolicitado: venta.reciboSolicitado,
       venceEn: null,

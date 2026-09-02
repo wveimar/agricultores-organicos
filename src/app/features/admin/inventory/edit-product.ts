@@ -13,6 +13,7 @@ import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
 import { ImageField } from './image-field/image-field';
 import { RecipeEditor } from './recipe-editor/recipe-editor';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
+import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 import {
   ALL_UNITS,
   ProductUnit,
@@ -22,7 +23,7 @@ import {
 
 @Component({
   selector: 'app-edit-product',
-  imports: [ReactiveFormsModule, RouterLink, ImageField, CopPipe, RecipeEditor],
+  imports: [ReactiveFormsModule, RouterLink, ImageField, CopPipe, RecipeEditor, FieldErrorState, FieldError],
   templateUrl: './edit-product.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -56,6 +57,8 @@ export class EditProduct {
     precioCosto: [0, [Validators.required, Validators.min(1)]],
     unidad: ['unidad', Validators.required],
     cantidadUnidad: [1, [Validators.required, Validators.min(1)]],
+    /** 1 = se vende a granel: la caja pide un peso decimal, no un conteo. */
+    vendidoPorPeso: [false],
     origen: ['', Validators.required],
     imagenAlt: ['', Validators.required],
     imagen: ['', Validators.required],
@@ -168,6 +171,7 @@ export class EditProduct {
           precioCosto: prod.precioCosto ?? 0,
           unidad: prod.unidad,
           cantidadUnidad: prod.cantidadUnidad ?? 1,
+          vendidoPorPeso: prod.vendidoPorPeso === 1,
           origen: prod.origen,
           imagen: prod.imagen,
           imagenHover: prod.imagenHover ?? '',
@@ -217,7 +221,7 @@ export class EditProduct {
     this.updateError = null;
     this.updatingProduct = true;
 
-    const { nombre, slug, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover, imagenAlt, parentId, varianteEtiqueta } = this.form.getRawValue();
+    const { nombre, slug, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, vendidoPorPeso, origen, imagen, imagenHover, imagenAlt, parentId, varianteEtiqueta } = this.form.getRawValue();
 
     this.adminApi
       .updateProductFull(this.productId, {
@@ -230,6 +234,7 @@ export class EditProduct {
         precioCosto,
         unidad,
         cantidadUnidad,
+        vendidoPorPeso: vendidoPorPeso ? 1 : 0,
         origen,
         imagen,
         imagenHover: imagenHover || undefined,
@@ -255,8 +260,4 @@ export class EditProduct {
       });
   }
 
-  protected showError(field: 'nombre' | 'categoriaId' | 'grupoAdmin' | 'precio' | 'precioCosto' | 'unidad' | 'cantidadUnidad' | 'origen' | 'imagenAlt' | 'imagen' | 'imagenHover'): boolean {
-    const control = this.form.get(field);
-    return control ? control.invalid && (control.touched || control.dirty) : false;
-  }
 }

@@ -74,6 +74,29 @@ interface ContactoEntrada {
   activo: number;
 }
 
+/**
+ * La cédula, sin puntos ni espacios.
+ *
+ * Se guarda normalizada por lo mismo que el teléfono: "1.020.145.588" y
+ * "1020145588" son la misma persona, y el índice único no lo sabría. Sin
+ * esto, el mismo cliente entraría dos veces según cómo lo teclee cada quien —
+ * que es exactamente lo que el UNIQUE viene a impedir.
+ *
+ * No se valida el dígito de verificación ni la longitud: aquí entran cédulas
+ * de ciudadanía, de extranjería, NIT y pasaportes, y cada uno tiene su forma.
+ * Rechazar por formato dejaría fuera a clientes reales en el mostrador.
+ */
+export function normalizarDocumento(value: string): string {
+  const limpio = value.replace(/[.\s-]/g, '').toUpperCase();
+  if (limpio === '') {
+    throw ApiError.badRequest(
+      'documento-requerido',
+      'La cédula es obligatoria: es con lo que se identifica al cliente en la caja y lo que se reporta al facturar.',
+    );
+  }
+  return limpio;
+}
+
 export function normalizarTelefono(value: string | null): string | null {
   if (!value) {
     return null;
@@ -108,7 +131,7 @@ async function leerCuerpo(request: Request): Promise<ContactoEntrada> {
     tipoCuenta: leerTipoCuenta(body['tipoCuenta']),
     numeroCuenta: opcional(body['numeroCuenta'], 'numeroCuenta', 40),
     titular: opcional(body['titular'], 'titular', 160),
-    documento: opcional(body['documento'], 'documento', 40),
+    documento: normalizarDocumento(requireString(body['documento'], 'documento', 40)),
     // Solo tiene sentido para un cliente: a un proveedor se le paga, no se le
     // fía. Se guarda igual si viene —no estorba— y la pantalla solo lo ofrece
     // cuando la ficha está marcada como cliente.
@@ -137,6 +160,89 @@ const COLUMNAS = `
   dias_credito  AS diasCredito,
   activo,
   creado_en     AS creadoEn`;
+
+/**
+ * GET /api/admin/contacts/search?query=… — el buscador del mostrador.
+ *
+ * Una sola caja de texto que resuelve las tres formas en que un cliente se
+ * identifica en una fila: dicta su cédula, dice su nombre, o da el teléfono
+ * con el que compró la vez pasada. El cajero no debería tener que elegir en
+ * qué campo busca — teclea lo que le digan y el servidor decide.
+ *
+ * ── Por qué no reutiliza `list()` ──
+ *
+ * `list()` trae la agenda entera con el resumen de compras y pedidos de cada
+ * ficha: cuatro subconsultas por fila. Eso está bien para una pantalla que se
+ * abre una vez, y muy mal para algo que se dispara con cada tecla. Aquí solo
+ * viaja lo que hace falta para decidir a quién se le está vendiendo.
+ *
+ * ── Qué devuelve además de la ficha ──
+ *
+ * El cupo y la deuda viva, porque son lo que el cajero necesita ANTES de
+ * empezar a marcar productos: si el cliente ya se pasó del cupo, es mejor
+ * saberlo al identificarlo que al intentar cobrar con el ticket lleno.
+ *
+ * Y el nivel de precios, que sale de los roles de la cuenta enlazada a la
+ * ficha. Sin esto la caja no puede avisar "este cliente es mayorista N2" y el
+ * cajero cantaría un precio de lista que luego el servidor va a rebajar.
+ */
+export async function search(env: Env, user: JwtPayload, url: URL): Promise<Response> {
+  requireRole(user, 'GESTOR_PEDIDOS', 'ADMIN_INVENTARIO');
+
+  const query = (url.searchParams.get('query') ?? '').trim();
+
+  // Con menos de dos caracteres, cualquier LIKE devuelve media agenda. Se
+  // responde vacío en vez de hacer trabajar a la base para nada: el primer
+  // carácter de una búsqueda nunca es una respuesta útil.
+  if (query.length < 2) {
+    return json({ contactos: [] });
+  }
+
+  // Se busca contra el documento y el teléfono YA NORMALIZADOS: si alguien
+  // teclea "1.020.145" hay que encontrar la ficha que guarda "1020145". Sin
+  // esto, buscar por cédula con puntos no daría nunca un resultado.
+  const patron = `%${query}%`;
+  const patronLimpio = `%${query.replace(/[.\s-]/g, '')}%`;
+
+  const { results } = await env.DB.prepare(
+    `SELECT c.id, c.nombre, c.documento, c.telefono, c.direccion,
+            c.cupo_credito AS cupoCredito,
+            c.dias_credito AS diasCredito,
+            -- Lo que debe de verdad: facturas vivas, sin contar las anuladas
+            -- ni las notas. Misma definición que usa Cartera.
+            COALESCE((
+              SELECT SUM(i.saldo) FROM invoices i
+               WHERE i.contact_id = c.id
+                 AND i.estado <> 'anulada'
+                 AND i.tipo = 'factura'
+            ), 0) AS deuda,
+            -- El nivel de precios sale de la cuenta enlazada, si la hay. Se
+            -- devuelve el rol crudo; traducirlo a "Mayorista N2" es cosa de
+            -- la pantalla, no de la base.
+            (SELECT r.role FROM user_roles r
+               JOIN users u ON u.id = r.user_id
+              WHERE u.contact_id = c.id
+                AND u.activo = 1
+                AND r.role LIKE 'MAYORISTA_%'
+              ORDER BY r.role DESC LIMIT 1) AS nivelPrecio
+       FROM contacts c
+      WHERE c.activo = 1
+        AND c.es_cliente = 1
+        AND (
+          c.documento LIKE ?2
+          OR c.nombre LIKE ?1
+          OR REPLACE(REPLACE(REPLACE(IFNULL(c.telefono, ''), ' ', ''), '-', ''), '.', '') LIKE ?2
+        )
+      -- La coincidencia exacta de cédula primero: cuando el cliente dicta su
+      -- número completo, esa es LA ficha y no una más de la lista.
+      ORDER BY (c.documento = ?3) DESC, c.nombre COLLATE NOCASE
+      LIMIT 15`,
+  )
+    .bind(patron, patronLimpio, query.replace(/[.\s-]/g, '').toUpperCase())
+    .all();
+
+  return json({ contactos: results });
+}
 
 /**
  * GET /api/admin/contacts — la agenda.
@@ -342,19 +448,27 @@ export async function remove(env: Env, user: JwtPayload, id: string): Promise<Re
  */
 export async function encontrarOCrearCliente(
   env: Env,
-  datos: { nombre: string; telefono: string; direccion: string },
+  datos: { nombre: string; telefono: string; direccion: string; documento: string },
 ): Promise<string | null> {
   const telefono = normalizarTelefono(datos.telefono);
   if (!telefono) {
     return null;
   }
 
+  const documento = normalizarDocumento(datos.documento);
+
   try {
+    // Primero por cédula —es la llave de negocio— y si no, por teléfono.
+    // El segundo camino es el que reencuentra a quien ya compraba antes de
+    // que la cédula fuera obligatoria: se le completa al vuelo en vez de
+    // crearle una ficha nueva y partirle el historial en dos.
     const existente = await env.DB.prepare(
-      `SELECT id, es_cliente FROM contacts WHERE telefono = ?1`,
+      `SELECT id, documento FROM contacts
+        WHERE documento = ?2 OR telefono = ?1
+        ORDER BY (documento = ?2) DESC LIMIT 1`,
     )
-      .bind(telefono)
-      .first<{ id: string; es_cliente: number }>();
+      .bind(telefono, documento)
+      .first<{ id: string; documento: string }>();
 
     if (existente) {
       // La dirección se refresca a la del pedido más reciente; el nombre NO se
@@ -362,10 +476,10 @@ export async function encontrarOCrearCliente(
       // el panel, y el checkout no debe deshacer esa edición.
       await env.DB.prepare(
         `UPDATE contacts
-            SET es_cliente = 1, direccion = ?2, actualizado_en = datetime('now')
+            SET es_cliente = 1, direccion = ?2, documento = ?3, actualizado_en = datetime('now')
           WHERE id = ?1`,
       )
-        .bind(existente.id, datos.direccion)
+        .bind(existente.id, datos.direccion, documento)
         .run();
 
       return existente.id;
@@ -373,10 +487,10 @@ export async function encontrarOCrearCliente(
 
     const id = crypto.randomUUID();
     await env.DB.prepare(
-      `INSERT INTO contacts (id, nombre, es_cliente, telefono, direccion)
-       VALUES (?1, ?2, 1, ?3, ?4)`,
+      `INSERT INTO contacts (id, nombre, es_cliente, telefono, direccion, documento)
+       VALUES (?1, ?2, 1, ?3, ?4, ?5)`,
     )
-      .bind(id, datos.nombre, telefono, datos.direccion)
+      .bind(id, datos.nombre, telefono, datos.direccion, documento)
       .run();
 
     return id;

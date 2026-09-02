@@ -22,6 +22,17 @@ const PASSWORD = process.argv[4] ?? 'demo1234';
 let token = '';
 let fallos = 0;
 
+/**
+ * Una cédula de prueba distinta en cada llamada.
+ *
+ * `contacts.documento` es único, así que un número fijo haría fallar la
+ * segunda corrida del script contra la misma base. El prefijo 9 la marca
+ * como inventada: ninguna cédula colombiana real empieza así.
+ */
+function cedulaQA() {
+  return `9${Math.floor(Math.random() * 1_000_000_000)}`;
+}
+
 function ok(condicion, titulo, detalle = '') {
   if (condicion) {
     console.log(`  OK   ${titulo}`);
@@ -69,6 +80,7 @@ async function crearCliente(nombre, extra = {}) {
       nombre,
       telefono: `31${Math.floor(Math.random() * 100000000)}`,
       esCliente: 1,
+      documento: cedulaQA(),
       esProveedor: 0,
       ...extra,
     }),
@@ -95,6 +107,13 @@ async function productoConStock(minimo = 10) {
   return lista.find(
     (p) => (p.stockActual ?? p.stock ?? 0) >= minimo && p.activo !== 0 && !p.tieneVariantes,
   );
+}
+
+/** Un producto marcado "vendido por peso" (migración 0033), con stock de sobra. */
+async function productoPorPeso(minimo = 5) {
+  const res = await api(`/api/admin/products?limit=500`);
+  const lista = res.body?.products ?? res.body?.productos ?? [];
+  return lista.find((p) => p.vendidoPorPeso === 1 && (p.stockActual ?? p.stock ?? 0) >= minimo);
 }
 
 async function vender(cuerpo) {
@@ -126,7 +145,7 @@ async function main() {
   const v1 = venta1.body?.venta;
   ok(v1?.estado === 'pago', 'queda en estado pago', `estado ${v1?.estado}`);
   ok(v1?.canal === 'pos', 'queda marcada como venta de caja', `canal ${v1?.canal}`);
-  ok(v1?.medioPago === 'efectivo', 'guarda el medio de pago real', `medio ${v1?.medioPago}`);
+  ok(v1?.metodoPago === 'efectivo', 'guarda el método de pago real', `método ${v1?.metodoPago}`);
   ok(v1?.envio === 0, 'no cobra domicilio', `envio ${v1?.envio}`);
   ok(v1?.total === precioLista * 2, 'el total es el precio de lista por 2', `total ${v1?.total}`);
   ok(Boolean(v1?.factura?.numero), 'emite factura', JSON.stringify(v1?.factura));
@@ -305,6 +324,22 @@ async function main() {
   ok(resumenPos.status === 200, 'el resumen de la caja física responde', `status ${resumenPos.status}`);
   ok(resumenPos.body?.pedidos > 0, 'y ve las ventas del mostrador', `pedidos ${resumenPos.body?.pedidos}`);
 
+  // Lo que arregla tener 'efectivo'/'tarjeta' como métodos propios: antes, una
+  // venta de mostrador se guardaba como 'contraentrega' y el desglose del
+  // cierre la mezclaba con el efectivo que todavía lleva encima el
+  // domiciliario. Son dos plata distintas: una está en el cajón y la otra no.
+  const porMetodo = resumenPos.body?.porMetodo ?? [];
+  ok(
+    porMetodo.some((m) => m.metodo === 'efectivo'),
+    'el desglose separa el efectivo del mostrador',
+    JSON.stringify(porMetodo),
+  );
+  ok(
+    !porMetodo.some((m) => m.metodo === 'contraentrega'),
+    'y no lo confunde con el efectivo del domiciliario',
+    JSON.stringify(porMetodo),
+  );
+
   const resumenEcom = await api('/api/admin/reports/cash?canal=ecommerce');
   const pedidosEcomAntes = resumenEcom.body?.pedidos ?? 0;
 
@@ -336,8 +371,190 @@ async function main() {
     JSON.stringify(consolidado.body?.total),
   );
 
-  // ── 11. Ajustes ────────────────────────────────────────────────────────
-  console.log('\n10. Ajustes de operación');
+  // ── 11. Venta por peso (migración 0033) ────────────────────────────────
+  console.log('\n10. Venta por peso');
+  const porPeso = await productoPorPeso(5);
+  if (!porPeso) {
+    console.error(
+      'No hay ningún producto "vendido por peso" con stock suficiente. Corre npm run db:reset.',
+    );
+    fallos++;
+  } else {
+    const stockPesoAntes = await stockDe(porPeso.id);
+
+    const cantidadPeso = 0.333;
+    const ventaPeso = await vender({
+      items: [{ productId: porPeso.id, cantidad: cantidadPeso }],
+      metodoPago: 'efectivo',
+    });
+    ok(ventaPeso.status === 201, 'se puede vender una cantidad decimal', `status ${ventaPeso.status}`);
+    ok(
+      ventaPeso.body?.venta?.total === Math.round(porPeso.precio * cantidadPeso),
+      'el total sale redondeado a pesos enteros',
+      `total ${ventaPeso.body?.venta?.total}, esperado ${Math.round(porPeso.precio * cantidadPeso)}`,
+    );
+
+    const stockPesoDespues = await stockDe(porPeso.id);
+    ok(
+      Math.abs(stockPesoDespues - (stockPesoAntes - cantidadPeso)) < 1e-9,
+      'el stock baja exactamente el peso vendido, no redondeado a entero',
+      `antes ${stockPesoAntes}, después ${stockPesoDespues}`,
+    );
+
+    // La misma cantidad decimal, sobre un producto que NO se vende por peso:
+    // rejectFractional() tiene que cortarla antes de tocar la base.
+    const fraccionRechazada = await vender({
+      items: [{ productId: producto.id, cantidad: 0.5 }],
+      metodoPago: 'efectivo',
+    });
+    ok(
+      fraccionRechazada.status === 400,
+      'una cantidad fraccionaria de un producto normal se rechaza',
+      `status ${fraccionRechazada.status}`,
+    );
+    ok(
+      fraccionRechazada.body?.error?.code === 'cantidad-no-entera',
+      'con el código correcto',
+      JSON.stringify(fraccionRechazada.body),
+    );
+
+    // Devolución parcial, también fraccionaria.
+    const stockPreDevPeso = await stockDe(porPeso.id);
+    const devolucionPeso = await api(`/api/admin/pos/${ventaPeso.body.venta.id}/devolucion`, {
+      method: 'POST',
+      body: JSON.stringify({
+        items: [{ productId: porPeso.id, cantidad: 0.1 }],
+        motivo: 'QA: devolución parcial de un producto por peso',
+      }),
+    });
+    ok(devolucionPeso.status === 200, 'se puede devolver una fracción de lo pesado', `status ${devolucionPeso.status}`);
+    const stockPostDevPeso = await stockDe(porPeso.id);
+    ok(
+      Math.abs(stockPostDevPeso - (stockPreDevPeso + 0.1)) < 1e-9,
+      'y el stock recupera exactamente esa fracción',
+      `antes ${stockPreDevPeso}, después ${stockPostDevPeso}`,
+    );
+
+    // Devolución fraccionaria de una venta NORMAL (cantidad original entera):
+    // sin producto por peso de por medio, tiene que rechazarse igual que al vender.
+    const ventaNormalParaDevolver = await vender({
+      items: [{ productId: producto.id, cantidad: 2 }],
+      metodoPago: 'efectivo',
+    });
+    const devolucionFraccionRechazada = await api(
+      `/api/admin/pos/${ventaNormalParaDevolver.body.venta.id}/devolucion`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          items: [{ productId: producto.id, cantidad: 0.5 }],
+          motivo: 'QA: intento de devolución fraccionaria de un producto normal',
+        }),
+      },
+    );
+    ok(
+      devolucionFraccionRechazada.status === 400,
+      'devolver una fracción de un producto que no se vendió por peso se rechaza',
+      `status ${devolucionFraccionRechazada.status}`,
+    );
+    ok(
+      devolucionFraccionRechazada.body?.error?.code === 'devolucion-no-entera',
+      'con el código correcto',
+      JSON.stringify(devolucionFraccionRechazada.body),
+    );
+  }
+
+  // ── 12. Abono en caja (pago parcial) ────────────────────────────────────
+  console.log('\n11. Abono en caja');
+
+  const sinFichaAbono = await vender({
+    items: [{ productId: producto.id, cantidad: 1 }],
+    metodoPago: 'efectivo',
+    montoAbono: 1,
+  });
+  ok(
+    sinFichaAbono.status === 400,
+    'dejar debiendo el resto sin identificar al cliente se rechaza',
+    `status ${sinFichaAbono.status}`,
+  );
+  ok(
+    sinFichaAbono.body?.error?.code === 'sin-ficha',
+    'con el código correcto',
+    JSON.stringify(sinFichaAbono.body),
+  );
+
+  const abonoYCredito = await vender({
+    contactId: conCupo,
+    items: [{ productId: producto.id, cantidad: 1 }],
+    metodoPago: 'credito',
+    montoAbono: 1,
+  });
+  ok(
+    abonoYCredito.status === 400,
+    'un abono junto con "crédito" no tiene sentido y se rechaza',
+    `status ${abonoYCredito.status}`,
+  );
+  ok(
+    abonoYCredito.body?.error?.code === 'abono-no-aplica',
+    'con el código correcto',
+    JSON.stringify(abonoYCredito.body),
+  );
+
+  // Cliente con cupo en cero: si el abono revisara cupo como "crédito",
+  // rechazaría esto. No debe — es la misma lógica que el abono del
+  // domiciliario, que tampoco lo revisa.
+  const clienteAbono = await crearCliente('QA POS abono parcial');
+  const cantidadAbono = 3;
+  const totalAbono = precioLista * cantidadAbono;
+  const montoAbono = Math.floor(totalAbono / 3);
+
+  const ventaAbono = await vender({
+    contactId: clienteAbono,
+    items: [{ productId: producto.id, cantidad: cantidadAbono }],
+    metodoPago: 'efectivo',
+    montoAbono,
+  });
+  ok(
+    ventaAbono.status === 201,
+    'un abono parcial se registra aunque el cliente no tenga cupo abierto',
+    `status ${ventaAbono.status}`,
+  );
+  ok(
+    ventaAbono.body?.venta?.estado === 'pago',
+    'el pedido queda "pago" igual que un cobro completo — lo físico ya salió',
+    `estado ${ventaAbono.body?.venta?.estado}`,
+  );
+  ok(
+    ventaAbono.body?.venta?.factura?.saldo === totalAbono - montoAbono,
+    'la factura queda debiendo exactamente lo que faltó',
+    `saldo ${ventaAbono.body?.venta?.factura?.saldo}, esperado ${totalAbono - montoAbono}`,
+  );
+  ok(
+    ventaAbono.body?.venta?.factura?.estado === 'pagada_parcial',
+    'y su estado lo dice',
+    `estado factura ${ventaAbono.body?.venta?.factura?.estado}`,
+  );
+
+  // Escribir un número que alcanza o supera el total no es abono: es un
+  // cobro completo, igual que en el domiciliario.
+  const ventaAbonoDeMas = await vender({
+    contactId: clienteAbono,
+    items: [{ productId: producto.id, cantidad: 1 }],
+    metodoPago: 'efectivo',
+    montoAbono: precioLista * 10,
+  });
+  ok(
+    ventaAbonoDeMas.status === 201,
+    'un "abono" que alcanza o supera el total se trata como cobro completo',
+    `status ${ventaAbonoDeMas.status}`,
+  );
+  ok(
+    ventaAbonoDeMas.body?.venta?.factura?.saldo === 0,
+    'y la factura queda saldada, sin sobrecobrar',
+    `saldo ${ventaAbonoDeMas.body?.venta?.factura?.saldo}`,
+  );
+
+  // ── 13. Ajustes ────────────────────────────────────────────────────────
+  console.log('\n12. Ajustes de operación');
   const ajustes = await api('/api/admin/settings');
   ok(ajustes.status === 200, 'los ajustes se leen', `status ${ajustes.status}`);
   ok(

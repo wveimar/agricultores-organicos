@@ -180,6 +180,13 @@ for (const [id, nombre, descripcion, grupo, orden] of CATEGORIES) {
 
 lines.push('', '-- ─────────────────────────── Productos ───────────────────────────');
 
+// Solo para probar la venta por peso (migración 0033): la Papa Nativa ya se
+// vendía en 'kg', así que es el candidato natural para pesarse a granel en
+// vez de venderse en bultos de kilo entero. `Product` (mock-catalog.ts) no
+// lleva este campo porque es un dato de operación de caja, no de catálogo
+// público — de ahí que viva aquí, no en el modelo.
+const VENDIDOS_POR_PESO = new Set(['p-03']);
+
 for (const p of PRODUCTS) {
   const grupo = GRUPO_DE.get(p.categoryId);
   if (!grupo) {
@@ -195,7 +202,7 @@ for (const p of PRODUCTS) {
     // `grupo_admin` (sin `_id`) lleva un valor fijo, no el real: es la columna
     // vieja, `NOT NULL` sin DEFAULT, que la migración 0025 dejó sin usar
     // porque quitarla exigía recrear `products`. Ver esa migración.
-    `INSERT INTO products (id, slug, nombre, tagline, categoria_id, grupo_admin, grupo_admin_id, precio, precio_costo, precio_anterior, unidad, origen, rating, review_count, badge, stock_actual, stock_seguridad, imagen, imagen_hover, imagen_alt) VALUES (` +
+    `INSERT INTO products (id, slug, nombre, tagline, categoria_id, grupo_admin, grupo_admin_id, precio, precio_costo, precio_anterior, unidad, origen, rating, review_count, badge, stock_actual, stock_seguridad, imagen, imagen_hover, imagen_alt, vendido_por_peso) VALUES (` +
       [
         q(p.id),
         q(p.slug),
@@ -217,6 +224,7 @@ for (const p of PRODUCTS) {
         q(p.image),
         p.imageHover ? q(p.imageHover) : 'NULL',
         q(p.imageAlt),
+        VENDIDOS_POR_PESO.has(p.id) ? 1 : 0,
       ].join(', ') +
       ');',
   );
@@ -240,16 +248,42 @@ const ORIGENES = [...new Set(PRODUCTS.map((p) => p.origin).filter(Boolean))].sor
   a.localeCompare(b, 'es'),
 );
 
+// ── Consumidor final ──
+//
+// La venta anónima del mostrador necesita una ficha real a la que apuntar:
+// `contacts.documento` es NOT NULL UNIQUE, así que "sin identificar" no puede
+// ser un hueco. 222222222222 es el documento genérico que la DIAN reserva
+// justo para esto, así que el día que haya factura electrónica el dato ya
+// está donde tiene que estar.
+//
+// Id fijo y no generado: el Worker lo busca por documento, pero tenerlo
+// estable hace que se pueda reconocer de un vistazo al leer la tabla.
+lines.push(
+  `INSERT INTO contacts (id, nombre, es_cliente, documento, notas) VALUES (` +
+    [
+      q('consumidor-final'),
+      q('Consumidor final'),
+      1,
+      q('222222222222'),
+      q('Ficha para la venta de mostrador sin identificar. No la borres: la caja apunta aquí.'),
+    ].join(', ') +
+    ');',
+);
+
 const contactIdByOrigen = new Map();
 ORIGENES.forEach((origen, i) => {
   const id = `prov-${i + 1}`;
   contactIdByOrigen.set(origen, id);
   lines.push(
-    `INSERT INTO contacts (id, nombre, es_proveedor, notas) VALUES (` +
+    `INSERT INTO contacts (id, nombre, es_proveedor, documento, notas) VALUES (` +
       [
         q(id),
         q(origen),
         1,
+        // El documento es NOT NULL UNIQUE: cada finca necesita el suyo. En una
+        // base de demo no hay NIT reales, así que se deriva del id — es único
+        // por construcción y se distingue a simple vista de uno de verdad.
+        q(`NIT-${String(i + 1).padStart(4, '0')}`),
         q('Creado desde el origen del catálogo. Completa teléfono y cuenta.'),
       ].join(', ') +
       ');',
@@ -273,8 +307,17 @@ for (const order of ORDERS) {
   const id = `cli-${i + 1}`;
   contactIdByPhone.set(telefono, id);
   lines.push(
-    `INSERT INTO contacts (id, nombre, telefono, direccion, es_cliente) VALUES (` +
-      [q(id), q(order.customerName), q(telefono), q(order.customerAddress), 1].join(', ') +
+    `INSERT INTO contacts (id, nombre, telefono, direccion, es_cliente, documento) VALUES (` +
+      [
+        q(id),
+        q(order.customerName),
+        q(telefono),
+        q(order.customerAddress),
+        1,
+        // Cédula de demo derivada del teléfono: única, estable entre corridas
+        // del generador, y reconocible como inventada.
+        q(`10${telefono.replace(/[^0-9]/g, '').slice(-8)}`),
+      ].join(', ') +
       ');',
   );
 });
@@ -294,7 +337,7 @@ for (const order of ORDERS) {
   const aprobadoPor = order.approvedBy ? (userIdByName.get(order.approvedBy) ?? 'NULL') : 'NULL';
 
   lines.push(
-    `INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES (` +
+    `INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_cedula, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES (` +
       [
         q(order.id),
         q(order.reference),
@@ -302,6 +345,8 @@ for (const order of ORDERS) {
         // redundantes: son la copia de lo que el cliente escribió ese día.
         q(contactIdByPhone.get(order.customerPhone)),
         q(order.customerName),
+        // La cédula con la que se vendió, congelada igual que el nombre.
+        q(`10${order.customerPhone.replace(/[^0-9]/g, '').slice(-8)}`),
         q(order.customerPhone),
         q(order.customerAddress),
         q(order.status),
@@ -345,7 +390,7 @@ for (const order of ORDERS) {
     const cobrado = order.status === 'pago' || order.status === 'cancelado';
 
     lines.push(
-      `INSERT INTO invoices (id, consecutivo, numero, order_id, contact_id, cliente_nombre, cliente_telefono, subtotal, envio, total, saldo, estado, emitida_en) VALUES (` +
+      `INSERT INTO invoices (id, consecutivo, numero, order_id, contact_id, cliente_nombre, cliente_telefono, cliente_cedula, subtotal, envio, total, saldo, estado, emitida_en) VALUES (` +
         [
           q(`inv-${order.id}`),
           consecutivo,
@@ -354,6 +399,9 @@ for (const order of ORDERS) {
           q(contactIdByPhone.get(order.customerPhone)),
           q(order.customerName),
           q(order.customerPhone),
+          // La misma cedula congelada que lleva el pedido: la factura es lo que se
+          // reporta, y tiene que decir a nombre de quien se emitio.
+          q(`10${order.customerPhone.replace(/[^0-9]/g, '').slice(-8)}`),
           subtotal,
           0,
           subtotal,

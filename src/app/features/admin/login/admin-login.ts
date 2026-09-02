@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiClient, ApiErrorBody } from '../../../core/api/api-client';
 import { isWholesaleRole } from '../../../core/models/user.model';
 import { Turnstile } from '../../../shared/turnstile/turnstile';
+import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 
 /*
  * Aquí había una lista de cuentas de demostración con su contraseña a la
@@ -15,7 +16,7 @@ import { Turnstile } from '../../../shared/turnstile/turnstile';
 
 @Component({
   selector: 'app-admin-login',
-  imports: [ReactiveFormsModule, RouterLink, Turnstile],
+  imports: [ReactiveFormsModule, RouterLink, Turnstile, FieldErrorState, FieldError],
   templateUrl: './admin-login.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -108,10 +109,5 @@ export class AdminLogin {
         );
       },
     });
-  }
-
-  protected showError(field: 'email' | 'password'): boolean {
-    const control = this.form.controls[field];
-    return control.invalid && (control.touched || control.dirty);
   }
 }

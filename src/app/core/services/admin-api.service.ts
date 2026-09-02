@@ -1,7 +1,8 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { Observable, tap } from 'rxjs';
+import { Observable, map, tap } from 'rxjs';
 import {
   ApiAjuste,
+  ApiContactMatch,
   ApiCashSummary,
   ApiPosSellInput,
   ApiPosVenta,
@@ -23,6 +24,8 @@ import {
   ApiInvoice,
   ApiInvoiceInput,
   ApiInvoiceSummary,
+  ApiMerma,
+  ApiMermaReporte,
   ApiNotaInput,
   ApiOrder,
   ApiOrderStatusLogEntry,
@@ -37,6 +40,7 @@ import {
   ApiWholesaleTariff,
   ContactInput,
   ExpenseCategory,
+  MotivoMerma,
   PurchaseInput,
   PurchaseItemInput,
 } from '../api/api-client';
@@ -286,6 +290,7 @@ export class AdminApiService {
     imagenAlt: string;
     parentId?: string | null;
     varianteEtiqueta?: string | null;
+    vendidoPorPeso?: 0 | 1;
   }): Observable<ApiProduct> {
     return this.api.createProduct(input).pipe(
       tap((created) => {
@@ -303,6 +308,7 @@ export class AdminApiService {
       stockSeguridad: number;
       activo: 0 | 1;
       destacado: 0 | 1;
+      vendidoPorPeso: 0 | 1;
     }>,
   ): Observable<ApiProduct> {
     return this.api.updateProduct(id, patch).pipe(
@@ -382,6 +388,7 @@ export class AdminApiService {
     imagenAlt: string;
     parentId?: string | null;
     varianteEtiqueta?: string | null;
+    vendidoPorPeso?: 0 | 1;
   }): Observable<ApiProduct> {
     return this.api.updateProductFull(id, input).pipe(
       tap((updated) => {
@@ -1159,6 +1166,74 @@ export class AdminApiService {
     );
   }
 
+  // ──────────────── Bajas de inventario por merma (0034) ────────────────
+
+  readonly mermas = signal<readonly ApiMerma[]>([]);
+  readonly mermasLoading = signal(false);
+  readonly mermasError = signal<string | null>(null);
+
+  loadMermas(): void {
+    this.mermasLoading.set(true);
+    this.mermasError.set(null);
+    this.api.mermas().subscribe({
+      next: (list) => {
+        this.mermas.set(list);
+        this.mermasLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.mermasError.set(error.message);
+        this.mermasLoading.set(false);
+      },
+    });
+  }
+
+  /**
+   * Lo que la merma le va a restar a la ganancia de esta jornada.
+   *
+   * Solo las actas todavía sin cierre: las que ya adoptó un cierre están
+   * contadas en una ganancia congelada y volver a sumarlas aquí las contaría
+   * dos veces. Mismo criterio que `expensesTotal`.
+   */
+  readonly mermaAbiertaTotal = computed(() =>
+    this.mermas()
+      .filter((merma) => merma.closingId === null)
+      .reduce((suma, merma) => suma + merma.totalCosto, 0),
+  );
+
+  /**
+   * Registra el acta. Refresca el inventario además del historial: la baja
+   * acaba de descontar stock y la pantalla de Inventario lo está mostrando.
+   */
+  createMerma(input: {
+    observaciones?: string;
+    items: readonly {
+      productId: string;
+      cantidad: number;
+      motivo: MotivoMerma;
+      observacion?: string;
+    }[];
+  }): Observable<ApiMerma> {
+    return this.api.createMerma(input).pipe(
+      tap((creada) => {
+        this.mermas.update((list) => [creada, ...list]);
+        this.loadProducts();
+      }),
+    );
+  }
+
+  deleteMerma(id: string): Observable<void> {
+    return this.api.deleteMerma(id).pipe(
+      tap(() => {
+        this.mermas.update((list) => list.filter((merma) => merma.id !== id));
+        this.loadProducts();
+      }),
+    );
+  }
+
+  mermaReporte(rango: { desde?: string; hasta?: string } = {}): Observable<ApiMermaReporte> {
+    return this.api.mermaReporte(rango);
+  }
+
   // ───────────── Agenda: proveedores y clientes ─────────────
 
   /** La agenda completa, activos e inactivos. El filtrado va en la vista. */
@@ -1347,6 +1422,25 @@ export class AdminApiService {
 
   cashConsolidado(rango: { desde?: string; hasta?: string } = {}) {
     return this.api.cashConsolidado(rango);
+  }
+
+  /**
+   * La ficha de venta anónima, buscada por su documento genérico.
+   *
+   * Por documento y no por id: el id es un detalle de cómo se sembró la base,
+   * mientras que 222222222222 es el número que la DIAN reserva para el
+   * consumidor final y es el mismo en cualquier instalación.
+   */
+  consumidorFinal(): Observable<ApiContactMatch> {
+    return this.api.searchContacts('222222222222').pipe(
+      map((lista) => {
+        const ficha = lista[0];
+        if (!ficha) {
+          throw new Error('falta la ficha Consumidor final');
+        }
+        return ficha;
+      }),
+    );
   }
 
   readonly ajustes = signal<readonly ApiAjuste[]>([]);

@@ -123,20 +123,20 @@ describe('CheckoutPage · foco y accesibilidad', () => {
   });
 
   describe('atributos de accesibilidad', () => {
-    it('marca los tres campos como obligatorios', () => {
-      for (const id of ['nombre', 'telefono', 'direccion']) {
+    it('marca los cuatro campos como obligatorios', () => {
+      for (const id of ['nombre', 'cedula', 'telefono', 'direccion']) {
         expect(input(id).getAttribute('aria-required')).toBe('true');
       }
     });
 
     it('no marca nada como inválido antes de intentar enviar', () => {
-      for (const id of ['nombre', 'telefono', 'direccion']) {
+      for (const id of ['nombre', 'cedula', 'telefono', 'direccion']) {
         expect(input(id).getAttribute('aria-invalid')).toBe('false');
       }
     });
 
     it('cada campo tiene su etiqueta asociada', () => {
-      for (const id of ['nombre', 'telefono', 'direccion']) {
+      for (const id of ['nombre', 'cedula', 'telefono', 'direccion']) {
         const label = host.querySelector(`label[for="${id}"]`);
         expect(label).not.toBeNull();
         expect(label!.textContent!.trim().length).toBeGreaterThan(0);
@@ -162,13 +162,15 @@ describe('CheckoutPage · foco y accesibilidad', () => {
       const componente = fixture.componentInstance as unknown as {
         form: { patchValue: (v: Record<string, string>) => void };
       };
+      // Solo el nombre: el primero que falta es la cédula, que va justo
+      // detrás. Antes lo era el teléfono, cuando no se pedía documento.
       componente.form.patchValue({ name: 'Marcela Ospina' });
       fixture.detectChanges();
 
       enviar();
       await esperarTurno();
 
-      expect(document.activeElement).toBe(input('telefono'));
+      expect(document.activeElement).toBe(input('cedula'));
     });
 
     it('marca aria-invalid en los campos que fallan', () => {
@@ -186,8 +188,11 @@ describe('CheckoutPage · foco y accesibilidad', () => {
     it('enlaza cada campo con el texto que explica su error', () => {
       enviar();
 
+      // El id lo genera `FieldErrorState` (`field-error-N`), no un texto fijo
+      // como antes: lo que importa aquí es que exista y enlace con un mensaje
+      // real, no la cadena exacta que le tocó.
       const descrito = input('nombre').getAttribute('aria-describedby');
-      expect(descrito).toBe('error-nombre');
+      expect(descrito).toMatch(/^field-error-\d+$/);
 
       const mensaje = host.querySelector(`#${descrito}`);
       expect(mensaje).not.toBeNull();
@@ -199,7 +204,7 @@ describe('CheckoutPage · foco y accesibilidad', () => {
 
       const alerta = host.querySelector('[role="alert"]');
       expect(alerta).not.toBeNull();
-      expect(alerta!.textContent).toContain('Faltan 3 datos');
+      expect(alerta!.textContent).toContain('Faltan 4 datos');
     });
 
     it('lista los campos que faltan, con un atajo a cada uno', async () => {
@@ -212,9 +217,10 @@ describe('CheckoutPage · foco y accesibilidad', () => {
       const atajos = Array.from(
         host.querySelectorAll<HTMLButtonElement>('[role="alert"] button'),
       );
-      expect(atajos.length).toBe(3);
+      expect(atajos.length).toBe(4);
 
-      atajos[2].click();
+      // El último atajo es la dirección, que sigue siendo el último campo.
+      atajos[3].click();
       await esperarTurno();
       expect(document.activeElement).toBe(input('direccion'));
     });
@@ -246,6 +252,7 @@ describe('CheckoutPage · foco y accesibilidad', () => {
       };
       componente.form.patchValue({
         name: 'Marcela Ospina',
+        cedula: '1002145588',
         phone: '300 214 5588',
         address: 'Calle 127 # 15-40, Medellín',
       });

@@ -148,6 +148,15 @@ export const ADMIN_ROUTES: Routes = [
           import('./expenses/expenses-manager').then((m) => m.ExpensesManager),
       },
       {
+        path: 'mermas',
+        // Quien maneja el inventario es quien hace la inspección al cierre de
+        // jornada. El servidor aplica la misma regla — y SUPER_ADMIN, como
+        // siempre, entra por encima de cualquier rol.
+        canActivate: [roleGuard('ADMIN_INVENTARIO')],
+        title: 'Bajas por merma · Panel',
+        loadComponent: () => import('./mermas/mermas-manager').then((m) => m.MermasManager),
+      },
+      {
         path: 'contactos',
         // La agenda la usan los dos lados: quien compra necesita al proveedor
         // y quien gestiona pedidos necesita al cliente.

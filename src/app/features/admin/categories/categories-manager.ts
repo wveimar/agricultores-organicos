@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiCategory, ApiErrorBody } from '../../../core/api/api-client';
 import { CATEGORY_ICONS, CategoryIcon } from '../../../shared/category-icon/category-icon';
+import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 
 /**
  * Categorías del catálogo: los chips de la vitrina y el desplegable con el que
@@ -25,7 +26,7 @@ import { CATEGORY_ICONS, CategoryIcon } from '../../../shared/category-icon/cate
  */
 @Component({
   selector: 'app-categories-manager',
-  imports: [ReactiveFormsModule, RouterLink, CategoryIcon],
+  imports: [ReactiveFormsModule, RouterLink, CategoryIcon, FieldErrorState, FieldError],
   templateUrl: './categories-manager.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -197,11 +198,6 @@ export class CategoriesManager {
         this.rowError.set(error.message);
       },
     });
-  }
-
-  protected showError(field: 'nombre' | 'orden'): boolean {
-    const control = this.form.controls[field];
-    return control.invalid && (control.touched || control.dirty);
   }
 
   protected grupoLabel(value: string): string {

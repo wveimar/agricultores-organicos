@@ -54,8 +54,38 @@ export function isEditable(status: OrderStatus): boolean {
   return EDITABLE.includes(status);
 }
 
-/** Cómo se paga el pedido. Fuente: `orders.metodo_pago`. */
-export type PaymentMethod = 'transferencia' | 'contraentrega' | 'credito' | 'entrega_en_tienda';
+/**
+ * Cómo se paga el pedido. Fuente: `orders.metodo_pago`.
+ *
+ * Un solo campo con el valor de verdad, sin columnas de matices. Esta lista es
+ * la definición canónica del frontend: `api-client.ts` y el checkout la
+ * importan en vez de repetirla, que es como acabaron una vez desincronizadas
+ * —la tienda ofrecía un método que los tipos del panel no conocían—.
+ *
+ * Del lado del Worker no hay CHECK que la respalde, y es deliberado: en D1 una
+ * lista cerrada en la columna es una lista que ya no se puede ampliar (ver la
+ * nota junto a `orders.metodo_pago` en worker/schema.sql). La validación real
+ * está en `readMetodoPago()` y en `readMetodoPos()`.
+ */
+export type PaymentMethod =
+  | 'transferencia'
+  | 'contraentrega'
+  | 'credito'
+  | 'entrega_en_tienda'
+  | 'efectivo'
+  | 'tarjeta';
+
+/**
+ * Lo que puede elegir quien compra en la tienda web.
+ *
+ * Los tres que faltan nacen dentro del panel: fiar lo decide quien vende, y
+ * efectivo/tarjeta solo existen en el mostrador. Tenerlo como tipo aparte es
+ * lo que impide ofrecer "crédito" en el checkout por descuido.
+ */
+export type WebPaymentMethod = Extract<
+  PaymentMethod,
+  'transferencia' | 'contraentrega' | 'entrega_en_tienda'
+>;
 
 /**
  * Las acciones que mueven un pedido, no los estados a los que llega.
@@ -300,7 +330,7 @@ export interface Order {
   readonly paymentProof?: PaymentProof;
 
   /** Siempre presente: todo pedido nace con un método, no solo los contra entrega. */
-  readonly metodoPago: 'transferencia' | 'contraentrega' | 'entrega_en_tienda';
+  readonly metodoPago: WebPaymentMethod;
 
   /**
    * Cierre de caja que archivó este pedido. Tenerlo apuntando al cierre (en

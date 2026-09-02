@@ -78,6 +78,9 @@ const comprar = async (headers, telefono, nombre) => {
       clienteNombre: nombre,
       clienteTelefono: telefono,
       clienteDireccion: 'Bodega QA',
+      // La cédula es obligatoria desde que identifica al cliente. Al azar
+      // para no chocar con el índice único entre corridas del script.
+      clienteCedula: cedulaQA(),
       items: [{ productId: vendible.id, cantidad: 1 }],
     }),
   });
@@ -119,6 +122,8 @@ const CUPO = 500000;
 await patch(`/api/admin/contacts/${fichaA.id}`, {
   nombre: fichaA.nombre,
   esCliente: true,
+  // Su propio documento: editar la ficha no debe cambiarle la cedula.
+  documento: fichaA.documento,
   telefono: fichaA.telefono,
   direccion: fichaA.direccion,
   cupoCredito: CUPO,
@@ -158,6 +163,7 @@ seccion('El enlace tiene sus propias reglas');
 const { body: bProveedor } = await post('/api/admin/contacts', {
   nombre: `QA Solo Finca ${marca}`,
   esProveedor: true,
+  documento: cedulaQA(),
 });
 const { status: sNoCliente, body: bNoCliente } = await patch(
   `/api/admin/users/${mayoristaId}`,
@@ -212,3 +218,15 @@ t(sAhoraSi === 200, `libre la ficha, la segunda cuenta sí se puede enlazar (${s
 
 console.log(`\n${fallos === 0 ? '✔ Todo en orden' : `✘ ${fallos} fallo(s)`}\n`);
 process.exit(fallos === 0 ? 0 : 1);
+
+
+/**
+ * Una cédula de prueba distinta en cada llamada.
+ *
+ * `contacts.documento` es único, así que un número fijo haría fallar la
+ * segunda corrida del script contra la misma base. El prefijo 9 la marca
+ * como inventada: ninguna cédula colombiana real empieza así.
+ */
+function cedulaQA() {
+  return `9${Math.floor(Math.random() * 1_000_000_000)}`;
+}

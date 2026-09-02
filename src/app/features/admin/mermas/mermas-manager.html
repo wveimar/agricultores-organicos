@@ -1,0 +1,365 @@
+<section class="w-full px-4 py-4">
+  <header class="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+    <div class="flex min-w-0 items-baseline gap-3">
+      <h1 class="font-serif text-xl text-ink">Bajas por merma</h1>
+      <p class="hidden truncate text-xs text-ink/50 xl:block">
+        Lo que se dañó, se venció o se rompió sale del inventario con un acta detrás.
+      </p>
+    </div>
+    @if (admin.mermaAbiertaTotal() > 0) {
+      <!--
+        Lo que la jornada lleva perdido y todavía no ha congelado ningún cierre.
+        Se muestra arriba porque es la cifra que va a restar de la ganancia esta
+        noche: verla aquí, mientras se decide qué botar, es lo que convierte el
+        trámite en una decisión.
+      -->
+      <p class="shrink-0 rounded-full bg-clay/10 px-3 py-1 text-sm text-clay">
+        Esta jornada: <strong>{{ admin.mermaAbiertaTotal() | cop }}</strong> al costo
+      </p>
+    }
+  </header>
+
+  @if (ultimaActa(); as acta) {
+    <!--
+      El acta recién firmada tapa la pantalla, igual que el recibo en la caja:
+      es el momento de imprimirla y archivarla, y tener el formulario a medio
+      ver detrás invita a seguir marcando productos sobre un acta ya cerrada.
+    -->
+    <div class="mb-4 rounded-2xl border border-moss/30 bg-moss/5 p-5">
+      <div class="no-imprimir mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="font-medium text-moss">
+            Acta registrada · {{ acta.items.length }}
+            {{ acta.items.length === 1 ? 'producto' : 'productos' }}
+          </p>
+          <p class="text-sm text-ink/70">
+            El inventario ya bajó. Pérdida al costo: <strong>{{ acta.totalCosto | cop }}</strong>
+          </p>
+        </div>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            (click)="imprimir()"
+            class="rounded-lg bg-moss px-4 py-2 text-sm font-medium text-white transition hover:bg-moss/90"
+          >
+            Imprimir acta
+          </button>
+          <button
+            type="button"
+            (click)="cerrarActa()"
+            class="rounded-lg border border-sand px-4 py-2 text-sm text-ink transition hover:border-moss"
+          >
+            Registrar otra
+          </button>
+        </div>
+      </div>
+
+      <div class="mx-auto max-w-2xl">
+        <app-merma-acta [merma]="acta" />
+      </div>
+    </div>
+  }
+
+  <div class="grid gap-6 lg:grid-cols-[3fr_2fr]">
+    <!-- ── Armar el acta ───────────────────────────────────────────────── -->
+    <div class="min-w-0 space-y-4">
+      <div class="rounded-2xl border border-sand bg-white p-4">
+        <label for="merma-buscador" class="mb-1 block text-sm font-medium text-ink">
+          ¿Qué se va a dar de baja?
+        </label>
+        <input
+          id="merma-buscador"
+          type="text"
+          autocomplete="off"
+          [value]="busqueda()"
+          (input)="busqueda.set($any($event.target).value)"
+          placeholder="Busca por nombre o escanea el código…"
+          class="block w-full rounded-lg border border-sand px-4 py-2.5 text-base text-ink focus:border-moss focus:outline-none focus:ring-2 focus:ring-moss/20"
+        />
+
+        <!--
+          Solo se ofrecen productos con inventario propio y con stock: una
+          canasta o una madre de variantes tienen stock 0 por definición, y el
+          Worker las rechaza. No mostrarlas evita el callejón de armar el acta
+          y descubrir al firmar que ese producto no se podía dar de baja.
+        -->
+        <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+          @for (producto of resultados(); track producto.id) {
+            <button
+              type="button"
+              (click)="agregar(producto)"
+              class="flex flex-col gap-1 rounded-lg border border-sand bg-white p-2 text-left transition hover:border-moss hover:bg-cream"
+            >
+              <span class="line-clamp-2 text-xs font-medium leading-tight text-ink">
+                {{ producto.nombre }}
+              </span>
+              <span class="text-[10px] leading-none text-ink/45">
+                {{ presentacion(producto) }}
+              </span>
+              <span class="text-[11px] leading-none text-ink/60">
+                Quedan {{ producto.stock }}
+              </span>
+            </button>
+          } @empty {
+            <p class="col-span-full rounded-lg border border-dashed border-sand px-4 py-6 text-center text-sm text-ink/60">
+              @if (busqueda().trim() !== '') {
+                Nada coincide con «{{ busqueda() }}».
+              } @else {
+                No hay productos con inventario que dar de baja.
+              }
+            </p>
+          }
+        </div>
+      </div>
+
+      @if (borrador().length > 0) {
+        <div class="rounded-2xl border border-sand bg-white p-4">
+          <h2 class="font-serif text-base text-ink">Detalle del acta</h2>
+
+          <ul class="mt-2 divide-y divide-sand">
+            @for (linea of borrador(); track linea.product.id) {
+              <li class="py-3">
+                <div class="flex items-center gap-2">
+                  <p class="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+                    {{ linea.product.nombre }}
+                  </p>
+
+                  <label class="sr-only" [attr.for]="'cant-' + linea.product.id">
+                    Cantidad de {{ linea.product.nombre }}
+                  </label>
+                  <input
+                    [id]="'cant-' + linea.product.id"
+                    type="number"
+                    min="0"
+                    [max]="linea.product.stock"
+                    [attr.step]="paso(linea.product)"
+                    [value]="linea.cantidad"
+                    (input)="setCantidad(linea.product.id, $any($event.target).value)"
+                    class="tabular w-20 shrink-0 rounded border border-sand px-2 py-1 text-right text-sm text-ink focus:border-moss focus:outline-none"
+                  />
+                  <span class="w-12 shrink-0 text-xs text-ink/50">{{ linea.product.unidad }}</span>
+
+                  <label class="sr-only" [attr.for]="'motivo-' + linea.product.id">
+                    Motivo del descarte
+                  </label>
+                  <select
+                    [id]="'motivo-' + linea.product.id"
+                    (change)="setMotivo(linea.product.id, $any($event.target).value)"
+                    class="shrink-0 rounded border border-sand px-2 py-1 text-xs text-ink focus:border-moss focus:outline-none"
+                  >
+                    @for (motivo of MOTIVOS; track motivo[0]) {
+                      <option [value]="motivo[0]" [selected]="linea.motivo === motivo[0]">
+                        {{ motivo[1] }}
+                      </option>
+                    }
+                  </select>
+
+                  <span class="tabular w-24 shrink-0 text-right text-sm font-semibold text-ink">
+                    {{ (linea.product.precioCosto ?? 0) * linea.cantidad | cop }}
+                  </span>
+
+                  <button
+                    type="button"
+                    (click)="quitar(linea.product.id)"
+                    [attr.aria-label]="'Quitar ' + linea.product.nombre"
+                    class="shrink-0 rounded px-1.5 py-1 text-sm text-clay hover:bg-clay/10"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <input
+                  type="text"
+                  [value]="linea.observacion"
+                  (input)="setObservacion(linea.product.id, $any($event.target).value)"
+                  placeholder="Observación de esta línea (opcional)"
+                  class="mt-2 block w-full rounded border border-sand px-2 py-1 text-xs text-ink focus:border-moss focus:outline-none"
+                />
+              </li>
+            }
+          </ul>
+
+          <div class="mt-4 border-t border-sand pt-3">
+            <label for="merma-observaciones" class="mb-1 block text-sm font-medium text-ink">
+              Observaciones del acta
+            </label>
+            <input
+              id="merma-observaciones"
+              type="text"
+              [value]="observaciones()"
+              (input)="observaciones.set($any($event.target).value)"
+              placeholder="Ej.: producto expuesto en estantería que perdió humedad durante el día"
+              class="block w-full rounded-lg border border-sand px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+            />
+          </div>
+
+          @if (sinCantidad().length > 0) {
+            <p class="mt-3 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay">
+              Falta la cantidad de: {{ sinCantidad().join(', ') }}.
+            </p>
+          }
+
+          @if (error(); as mensaje) {
+            <p class="mt-3 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">
+              {{ mensaje }}
+            </p>
+          }
+
+          <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-sand pt-3">
+            <div class="text-sm">
+              <p class="font-semibold text-ink">
+                Pérdida al costo: {{ totalCosto() | cop }}
+              </p>
+              <!--
+                El valor de venta va como dato secundario y no como "la
+                pérdida": lo que de verdad salió del bolsillo es lo que se le
+                pagó a la finca. Confundirlos infla la cifra y hace que el
+                informe deje de servir para decidir.
+              -->
+              <p class="text-xs text-ink/50">
+                Se deja de facturar {{ totalVenta() | cop }}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              (click)="registrar()"
+              [disabled]="!puedeGuardar()"
+              class="rounded-lg bg-moss px-5 py-2.5 text-sm font-medium text-white transition hover:bg-moss/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {{ guardando() ? 'Registrando…' : 'Firmar y dar de baja' }}
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- ── Informe e historial ─────────────────────────────────────────── -->
+    <div class="min-w-0 space-y-4">
+      <div class="rounded-2xl border border-sand bg-white p-4">
+        <h2 class="font-serif text-base text-ink">Qué se está dañando</h2>
+
+        <div class="mt-2 flex flex-wrap items-end gap-2">
+          <label class="text-xs text-ink/60">
+            Desde
+            <input
+              type="date"
+              [value]="desde()"
+              (change)="desde.set($any($event.target).value); cargarReporte()"
+              class="mt-1 block rounded border border-sand px-2 py-1 text-sm text-ink focus:border-moss focus:outline-none"
+            />
+          </label>
+          <label class="text-xs text-ink/60">
+            Hasta
+            <input
+              type="date"
+              [value]="hasta()"
+              (change)="hasta.set($any($event.target).value); cargarReporte()"
+              class="mt-1 block rounded border border-sand px-2 py-1 text-sm text-ink focus:border-moss focus:outline-none"
+            />
+          </label>
+        </div>
+
+        @if (reporte(); as datos) {
+          <p class="mt-3 text-sm text-ink">
+            <strong>{{ datos.total.costo | cop }}</strong> perdidos en
+            {{ datos.total.actas }} {{ datos.total.actas === 1 ? 'acta' : 'actas' }}
+          </p>
+
+          @if (datos.porMotivo.length > 0) {
+            <table class="mt-3 w-full text-left text-xs">
+              <thead class="border-b border-sand text-ink/50">
+                <tr>
+                  <th class="pb-1 font-medium">Causa</th>
+                  <th class="pb-1 text-right font-medium">Costo</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-sand/60">
+                @for (fila of datos.porMotivo; track fila.motivo) {
+                  <tr>
+                    <td class="py-1.5">{{ motivoLabel(fila.motivo) }}</td>
+                    <td class="py-1.5 text-right tabular">{{ fila.costo | cop }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+
+          @if (datos.porProducto.length > 0) {
+            <p class="mt-4 text-xs font-medium uppercase tracking-wide text-ink-muted">
+              Los que más se pierden
+            </p>
+            <ul class="mt-1 divide-y divide-sand/60 text-xs">
+              @for (fila of datos.porProducto.slice(0, 8); track fila.productId) {
+                <li class="flex items-baseline justify-between gap-2 py-1.5">
+                  <span class="min-w-0 truncate">{{ fila.productoNombre }}</span>
+                  <span class="shrink-0 text-ink/50">
+                    {{ fila.cantidad }} {{ fila.unidad }}
+                  </span>
+                  <span class="tabular shrink-0 font-medium">{{ fila.costo | cop }}</span>
+                </li>
+              }
+            </ul>
+          }
+        }
+      </div>
+
+      <div class="rounded-2xl border border-sand bg-white p-4">
+        <h2 class="font-serif text-base text-ink">Actas registradas</h2>
+
+        @if (admin.mermasLoading()) {
+          <p class="mt-2 text-sm text-ink/60">Cargando…</p>
+        }
+
+        <ul class="mt-2 divide-y divide-sand">
+          @for (merma of admin.mermas(); track merma.id) {
+            <li class="py-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-ink">
+                    {{ merma.totalCosto | cop }}
+                    <span class="font-normal text-ink/50">
+                      · {{ merma.items.length }}
+                      {{ merma.items.length === 1 ? 'producto' : 'productos' }}
+                    </span>
+                  </p>
+                  <p class="text-xs text-ink/50">
+                    {{ merma.creadoEn }} · {{ merma.creadoPor ?? 'sin autor' }}
+                  </p>
+                  <p class="mt-1 truncate text-xs text-ink/60">
+                    @for (item of merma.items; track item.productId) {
+                      {{ item.productoNombre }} ({{ item.cantidad }}){{ $last ? '' : ' · ' }}
+                    }
+                  </p>
+                </div>
+
+                <!--
+                  Deshacer solo mientras la jornada siga abierta. Con cierre
+                  encima, su costo ya está restado de una ganancia congelada
+                  que no se recalcula: devolver el stock entonces dejaría el
+                  inventario diciendo una cosa y la contabilidad otra.
+                -->
+                @if (merma.closingId === null) {
+                  <button
+                    type="button"
+                    (click)="deshacer(merma)"
+                    [disabled]="borrando === merma.id"
+                    class="shrink-0 text-xs text-clay underline-offset-2 hover:underline disabled:opacity-50"
+                  >
+                    {{ borrando === merma.id ? 'Deshaciendo…' : 'Deshacer' }}
+                  </button>
+                } @else {
+                  <span class="shrink-0 rounded-full bg-sand px-2 py-0.5 text-[11px] text-ink/60">
+                    En cierre
+                  </span>
+                }
+              </div>
+            </li>
+          } @empty {
+            <li class="py-3 text-sm text-ink/60">Todavía no se ha dado de baja nada.</li>
+          }
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>

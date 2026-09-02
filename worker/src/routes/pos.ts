@@ -1,4 +1,4 @@
-import { ApiError, json, readJson, requireInt, requireString } from '../http';
+import { ApiError, json, readJson, requireInt, requireNumber, requireString } from '../http';
 import { Env, JwtPayload } from '../types';
 import { requireRole } from '../auth/middleware';
 import { discountedPrice, loadDiscounts } from '../pricing';
@@ -7,6 +7,7 @@ import { translateConstraint } from '../db-errors';
 import {
   aggregate,
   loadProducts,
+  rejectFractional,
   rejectParents,
   type IncomingItem,
   type StockRow,
@@ -41,16 +42,16 @@ import { cobrarPedidoStatements } from './payments';
  *
  * ── Cómo se guarda una venta de caja ──
  *
- *   metodo_pago = 'contraentrega'   (se paga al recibir: es literal aquí)
- *   medio_pago  = 'efectivo' | 'tarjeta'
+ *   metodo_pago = 'efectivo' | 'tarjeta' | 'credito'
  *   canal       = 'pos'
- *   estado      = 'pago', efectivo_liquidado = 1
+ *   estado      = 'pago' (o 'aprobado' si se fía), efectivo_liquidado = 1
  *
- * `metodo_pago` no lleva un valor propio porque su CHECK no se puede ampliar:
- * recrear `orders` es imposible en una base D1 que ya tiene pedidos (las cuatro
- * vías probadas están documentadas en la migración 0032). El efecto secundario
- * es bueno: RECAUDADO_WHERE ya cuenta 'contraentrega' + 'pago' + liquidado, así
- * que la venta de caja entra sola en el cierre sin tocar esa constante.
+ * El efectivo de una caja nace liquidado, al contrario que el de un
+ * domiciliario: no hay nadie que tenga que traerlo a la finca después, ya está
+ * en el cajón. Esa es toda la diferencia entre 'efectivo' y 'contraentrega', y
+ * es la razón de que sean dos métodos distintos y no uno con matices — el
+ * cierre de caja los cuenta en momentos distintos y el informe de ventas los
+ * tiene que poder separar.
  */
 
 interface PosItemBody extends IncomingItem {
@@ -66,7 +67,27 @@ interface SellBody {
   items?: unknown;
   metodoPago?: unknown;
   reciboSolicitado?: unknown;
+  /**
+   * Cuánto dio el cliente, cuando es menos que el total. Mismo campo que ya
+   * usa `orders.markPaid()` para el abono del domiciliario: ausente o mayor o
+   * igual al total es un cobro completo; con un valor menor, el resto queda
+   * vivo en el saldo de la factura, para Cartera.
+   */
+  montoAbono?: unknown;
 }
+
+/**
+ * El documento genérico que la DIAN reserva para la venta sin identificar.
+ *
+ * La caja no deja huecos: una venta anónima apunta a la ficha «Consumidor
+ * final», que existe en la base como cualquier otro cliente. Así toda venta
+ * tiene cédula —requisito para reportar— y `contacts.documento` puede ser
+ * NOT NULL sin excepciones.
+ *
+ * Se busca por documento y no por id porque el id es un detalle del sembrado;
+ * el documento es el dato de negocio, y es el mismo en cualquier instalación.
+ */
+const DOC_CONSUMIDOR_FINAL = '222222222222';
 
 type MetodoPos = 'efectivo' | 'tarjeta' | 'credito';
 
@@ -228,6 +249,21 @@ export async function sell(request: Request, env: Env, user: JwtPayload): Promis
   const metodo = readMetodoPos(body.metodoPago);
   const reciboSolicitado = body.reciboSolicitado === true || body.reciboSolicitado === 1 ? 1 : 0;
 
+  // Mismo campo y misma lectura que `orders.markPaid()`: ausente = cobro
+  // completo. Se normaliza más abajo, una vez se conoce el total — todavía no
+  // hay con qué comparar «menos que cuánto».
+  const montoAbonoRaw =
+    body.montoAbono === undefined || body.montoAbono === null || body.montoAbono === ''
+      ? undefined
+      : requireInt(body.montoAbono, 'montoAbono', 1);
+
+  if (montoAbonoRaw !== undefined && metodo === 'credito') {
+    throw ApiError.badRequest(
+      'abono-no-aplica',
+      'A crédito no se cobra nada ahora mismo: no hay abono que registrar.',
+    );
+  }
+
   if (!Array.isArray(body.items) || body.items.length === 0) {
     throw ApiError.badRequest('venta-vacia', 'La venta necesita al menos un producto.');
   }
@@ -239,6 +275,7 @@ export async function sell(request: Request, env: Env, user: JwtPayload): Promis
   const required = aggregate(items);
   const products = await loadProducts(env, [...required.keys()]);
   rejectParents(required.keys(), products);
+  rejectFractional(required, products);
 
   // Mismo corte que la tienda: lo que no está en el catálogo activo no se
   // vende, y lo que no alcanza no se despacha. El CHECK de `stock_actual >= 0`
@@ -275,9 +312,23 @@ export async function sell(request: Request, env: Env, user: JwtPayload): Promis
   const descuentos = await loadDiscounts(env, [...required.keys()], roles);
   const lineas = resolverLineas(items, required, products, descuentos);
 
-  const subtotal = lineas.reduce((suma, l) => suma + l.precioUnitario * l.cantidad, 0);
+  // Redondeado por línea: en una venta por peso `cantidad` es decimal, y COP
+  // no tiene subunidad — mismo criterio que orders.create().
+  const subtotal = lineas.reduce((suma, l) => suma + Math.round(l.precioUnitario * l.cantidad), 0);
   // Sin envío: el cliente se lleva la compra del mostrador.
   const total = subtotal;
+
+  // Igual que en el domiciliario: si lo que escribió el cajero alcanza o
+  // supera el total, no es un abono — es un cobro completo, y ese camino ya
+  // sabe qué hacer con un monto de más (no lo hay, se cobra el saldo justo).
+  const montoAbono = montoAbonoRaw !== undefined && montoAbonoRaw < total ? montoAbonoRaw : undefined;
+
+  if (montoAbono !== undefined && !contactId) {
+    throw ApiError.badRequest(
+      'sin-ficha',
+      'Para dejar debiendo el resto hace falta identificar al cliente: la deuda es de una persona, no de un mostrador.',
+    );
+  }
 
   if (metodo === 'credito') {
     await exigirCupo(env, contactId!, total);
@@ -286,25 +337,29 @@ export async function sell(request: Request, env: Env, user: JwtPayload): Promis
   // Nombre del cliente: la ficha manda; si no hay ficha, lo que escribió el
   // cajero; y si tampoco, el genérico de mostrador. Se guarda copiado, igual
   // que en la web, porque el pedido es el documento de lo que pasó ese día.
-  const ficha = contactId
-    ? await env.DB.prepare(`SELECT nombre, telefono, direccion FROM contacts WHERE id = ?1`)
-        .bind(contactId)
-        .first<{ nombre: string; telefono: string | null; direccion: string | null }>()
-    : null;
+  // Sin cliente elegido, la venta va a nombre de «Consumidor final»: una
+  // ficha de verdad, no un texto suelto. Es lo que permite que toda venta
+  // tenga cédula y que el informe por cliente cuadre con la suma de ventas.
+  const ficha = await env.DB.prepare(
+    contactId
+      ? `SELECT id, nombre, telefono, documento FROM contacts WHERE id = ?1`
+      : `SELECT id, nombre, telefono, documento FROM contacts WHERE documento = ?1`
+  )
+    .bind(contactId ?? DOC_CONSUMIDOR_FINAL)
+    .first<{ id: string; nombre: string; telefono: string | null; documento: string }>();
 
-  const clienteNombre =
-    ficha?.nombre ??
-    (body.clienteNombre === undefined || body.clienteNombre === null || body.clienteNombre === ''
-      ? 'Cliente de mostrador'
-      : requireString(body.clienteNombre, 'clienteNombre', 160));
+  if (!ficha) {
+    throw ApiError.badRequest(
+      'sin-ficha',
+      contactId
+        ? 'Esa ficha de cliente no existe.'
+        : 'Falta la ficha «Consumidor final» en la base. Se siembra con npm run db:reset.',
+    );
+  }
 
-  const clienteTelefono =
-    ficha?.telefono ??
-    (body.clienteTelefono === undefined ||
-    body.clienteTelefono === null ||
-    body.clienteTelefono === ''
-      ? ''
-      : requireString(body.clienteTelefono, 'clienteTelefono', 40));
+  const clienteNombre = ficha.nombre;
+  const clienteTelefono = ficha.telefono ?? '';
+  const clienteCedula = ficha.documento;
 
   const orderId = `ord-${crypto.randomUUID()}`;
   const invoiceId = `fac-${crypto.randomUUID()}`;
@@ -322,19 +377,19 @@ export async function sell(request: Request, env: Env, user: JwtPayload): Promis
     env.DB.prepare(
       `INSERT INTO orders (
          id, referencia, user_id, contact_id,
-         cliente_nombre, cliente_telefono, cliente_direccion,
+         cliente_nombre, cliente_cedula, cliente_telefono, cliente_direccion,
          estado, stock_reservado, subtotal, envio, total,
-         metodo_pago, medio_pago, canal, recibo_solicitado,
+         metodo_pago, canal, recibo_solicitado,
          aprobado_por, aprobado_en, aprobacion_token,
          efectivo_liquidado, vence_en
        ) VALUES (
          ?1,
          'ORD-' || (SELECT COALESCE(MAX(CAST(substr(referencia, 5) AS INTEGER)), 1000) + 1 FROM orders),
-         ?2, ?3, ?4, ?5, 'Retiro en tienda',
+         ?2, ?3, ?4, ?12, ?5, 'Retiro en tienda',
          ?6, 1, ?7, 0, ?7,
-         ?8, ?9, 'pos', ?10,
-         ?2, datetime('now'), ?11,
-         ?12,
+         ?8, 'pos', ?9,
+         ?2, datetime('now'), ?10,
+         ?11,
          ${
            esCredito
              ? `date('now', '-5 hours', '+' || (SELECT COALESCE(dias_credito, 0) FROM contacts WHERE id = ?3) || ' days')`
@@ -344,21 +399,23 @@ export async function sell(request: Request, env: Env, user: JwtPayload): Promis
     ).bind(
       orderId,
       user.sub,
-      contactId,
+      // Siempre una ficha real, incluso en la venta anónima: ahí es la de
+      // «Consumidor final». Sin esto, el informe por cliente no cuadraría con
+      // la suma de ventas — habría pedidos sin dueño.
+      ficha.id,
       clienteNombre,
       clienteTelefono,
       estado,
       total,
-      // Fiar es 'credito'; cobrar en el acto es 'contraentrega' con el
-      // instrumento real en `medio_pago`.
-      esCredito ? 'credito' : 'contraentrega',
-      esCredito ? null : metodo,
+      // El método tal cual: 'efectivo', 'tarjeta' o 'credito'.
+      metodo,
       reciboSolicitado,
       aprobacionToken,
       // El efectivo de una caja está en la caja: no hay domiciliario que lo
       // traiga después, así que nace liquidado. Es lo que hace que el cierre
       // lo cuente el mismo día.
       esCredito ? 0 : 1,
+      clienteCedula,
     ),
 
     env.DB.prepare(
@@ -424,16 +481,16 @@ export async function sell(request: Request, env: Env, user: JwtPayload): Promis
 
   // Y el cobro, cuando el dinero entra en el acto. A crédito no hay cobro que
   // registrar todavía: la deuda queda viva en el saldo de la factura y la
-  // recoge Cartera.
+  // recoge Cartera. Con abono, `monto` deja el mismo rastro: la factura recién
+  // emitida queda con saldo > 0 y Cartera la ve, exactamente igual que un
+  // abono de domiciliario contra entrega.
   if (!esCredito) {
     statements.push(
       ...cobrarPedidoStatements(env, paymentId, orderId, user, {
-        // El CHECK de `payments.metodo` no admite 'tarjeta' y no se puede
-        // ampliar; el instrumento real va en `medio_pago`.
-        metodo: 'efectivo',
+        metodo,
         liquidado: 1,
         canal: 'pos',
-        medioPago: metodo,
+        monto: montoAbono,
       }),
     );
   }
@@ -452,8 +509,9 @@ async function cargarVenta(env: Env, orderId: string): Promise<unknown> {
   const [pedidoRes, lineasRes, facturaRes] = await env.DB.batch([
     env.DB.prepare(
       `SELECT id, referencia, contact_id AS contactId, cliente_nombre AS clienteNombre,
+              cliente_cedula AS clienteCedula,
               cliente_telefono AS clienteTelefono, estado, subtotal, envio, total,
-              metodo_pago AS metodoPago, medio_pago AS medioPago, canal,
+              metodo_pago AS metodoPago, canal,
               recibo_solicitado AS reciboSolicitado, vence_en AS venceEn,
               creado_en AS creadoEn
          FROM orders WHERE id = ?1`,
@@ -554,7 +612,10 @@ export async function devolucion(
   const devueltas = new Map<string, number>();
   (body.items as { productId?: unknown; cantidad?: unknown }[]).forEach((item, i) => {
     const productId = requireString(item.productId, `items[${i}].productId`, 64);
-    const cantidad = requireInt(item.cantidad, `items[${i}].cantidad`, 1);
+    // Acepta decimales: si la línea original se vendió por peso, se puede
+    // devolver una fracción de ella. `vendida.cantidad`, abajo, es la guarda
+    // real — no hace falta releer `products.vendido_por_peso` aquí.
+    const cantidad = requireNumber(item.cantidad, `items[${i}].cantidad`, 0.001);
     devueltas.set(productId, (devueltas.get(productId) ?? 0) + cantidad);
   });
 
@@ -565,6 +626,15 @@ export async function devolucion(
       throw ApiError.badRequest(
         'no-estaba-en-la-venta',
         `El producto ${productId} no se vendió en este pedido, así que no se puede devolver aquí.`,
+      );
+    }
+    // La línea vendida es la propia guarda: si no se vendió por peso, salió
+    // en un número entero, y una devolución fraccionaria de ella no tiene
+    // cómo corresponder a lo que de verdad salió del mostrador.
+    if (!Number.isInteger(cantidad) && Number.isInteger(vendida.cantidad)) {
+      throw ApiError.badRequest(
+        'devolucion-no-entera',
+        `"${vendida.productoNombre}" no se vendió por peso: la cantidad a devolver tiene que ser un número entero.`,
       );
     }
     if (cantidad > vendida.cantidad) {
@@ -578,7 +648,8 @@ export async function devolucion(
       descripcion: `Devolución · ${vendida.productoNombre}`,
       cantidad,
       precioUnitario: vendida.precioUnitario,
-      importe: cantidad * vendida.precioUnitario,
+      // Redondeado: ver el comentario equivalente en orders.create().
+      importe: Math.round(cantidad * vendida.precioUnitario),
     });
   }
 
@@ -653,8 +724,9 @@ export async function ventas(env: Env, user: JwtPayload, url: URL): Promise<Resp
 
   const { results: ventasRows } = await env.DB.prepare(
     `SELECT o.id, o.referencia, o.cliente_nombre AS clienteNombre, o.contact_id AS contactId,
+            o.cliente_cedula AS clienteCedula,
             o.estado, o.subtotal, o.total, o.metodo_pago AS metodoPago,
-            o.medio_pago AS medioPago, o.recibo_solicitado AS reciboSolicitado,
+            o.recibo_solicitado AS reciboSolicitado,
             o.closing_id AS closingId, o.creado_en AS creadoEn,
             (SELECT i.id     FROM invoices i WHERE i.order_id = o.id AND i.estado <> 'anulada') AS invoiceId,
             (SELECT i.numero FROM invoices i WHERE i.order_id = o.id AND i.estado <> 'anulada') AS invoiceNumero

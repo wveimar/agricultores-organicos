@@ -4,7 +4,13 @@ import { CartService } from './cart.service';
 import { KV_KEYS, KvStore } from './kv-store.service';
 import { ApiClient } from '../api/api-client';
 import { FREE_SHIPPING_THRESHOLD, SHIPPING_COST } from '../models/cart.model';
-import { Order, OrderLine, OrderTotals, PaymentProof } from '../models/order.model';
+import {
+  Order,
+  OrderLine,
+  OrderTotals,
+  PaymentProof,
+  WebPaymentMethod,
+} from '../models/order.model';
 
 /**
  * Número de la cooperativa en formato internacional, sin `+` ni espacios.
@@ -47,7 +53,7 @@ export class CheckoutService {
   readonly proof = signal<PaymentProof | null>(null);
 
   /** Forma de pago: default es contraentrega. */
-  readonly metodoPago = signal<'contraentrega' | 'transferencia' | 'entrega_en_tienda'>('contraentrega');
+  readonly metodoPago = signal<WebPaymentMethod>('contraentrega');
 
   readonly subtotal = this.cart.subtotal;
 
@@ -98,7 +104,10 @@ export class CheckoutService {
     name: string;
     phone: string;
     address: string;
-    metodoPago: 'transferencia' | 'contraentrega' | 'entrega_en_tienda';
+    /** La cédula. Obligatoria: es la llave con la que se reencuentra al
+     *  cliente entre compras y el dato que va en la factura. */
+    cedula: string;
+    metodoPago: WebPaymentMethod;
   }): Observable<Order> {
     const cartLines = this.cart.items();
     // Un comprobante no significa nada en contra entrega: no hay nada que
@@ -121,6 +130,7 @@ export class CheckoutService {
         clienteNombre: customer.name,
         clienteTelefono: customer.phone,
         clienteDireccion: customer.address,
+        clienteCedula: customer.cedula,
         envio: totals.shipping,
         items: cartLines.map((line) => ({ productId: line.product.id, cantidad: line.quantity })),
         metodoPago: customer.metodoPago,

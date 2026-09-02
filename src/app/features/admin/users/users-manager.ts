@@ -4,6 +4,7 @@ import { AdminApiService } from '../../../core/services/admin-api.service';
 import { TokenStore } from '../../../core/api/token-store';
 import { ApiErrorBody, ApiUser } from '../../../core/api/api-client';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
+import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 import {
   ROLE_HINTS,
   ROLE_LABELS,
@@ -53,7 +54,7 @@ const USER_FILTERS: ReadonlyArray<{ value: UserFilter; label: string }> = [
 
 @Component({
   selector: 'app-users-manager',
-  imports: [ReactiveFormsModule, CopPipe],
+  imports: [ReactiveFormsModule, CopPipe, FieldErrorState, FieldError],
   templateUrl: './users-manager.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -480,11 +481,6 @@ export class UsersManager {
       partes.push(`compra con ${tarifa.map((r) => ROLE_LABELS[r]).join(', ')}`);
     }
     return `Esta cuenta ${partes.join(' y ')}.`;
-  }
-
-  protected showCreateError(field: 'nombre' | 'email' | 'password'): boolean {
-    const control = this.createForm.controls[field];
-    return control.invalid && (control.touched || control.dirty);
   }
 
   protected formatDate(iso: string): string {

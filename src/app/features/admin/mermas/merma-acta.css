@@ -1,0 +1,34 @@
+/*
+ * Al imprimir queda solo el acta, a lo ancho del papel.
+ *
+ * `visibility` y no `display: none`: ocultar el panel con display sacaría el
+ * acta del flujo junto con sus antecesores y no se imprimiría nada. Con
+ * visibility los ancestros siguen ocupando su sitio pero no pintan, y el acta
+ * se reposiciona arriba del todo. Mismo criterio que `pos-receipt.css`.
+ *
+ * A diferencia del recibo de caja —que va a papel térmico de 80 mm— esta acta
+ * se archiva: se imprime a hoja completa.
+ */
+@media print {
+  :host {
+    position: absolute;
+    inset: 0;
+    visibility: visible;
+  }
+
+  :host ::ng-deep * {
+    visibility: visible;
+  }
+
+  .acta {
+    width: 100%;
+    margin: 0;
+    border: 0;
+    box-shadow: none;
+    font-size: 12px;
+  }
+
+  .no-imprimir {
+    display: none !important;
+  }
+}

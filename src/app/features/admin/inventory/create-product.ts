@@ -13,6 +13,7 @@ import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
 import { ImageField } from './image-field/image-field';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
+import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 import {
   ALL_UNITS,
   ProductUnit,
@@ -22,7 +23,7 @@ import {
 
 @Component({
   selector: 'app-create-product',
-  imports: [ReactiveFormsModule, RouterLink, ImageField, CopPipe],
+  imports: [ReactiveFormsModule, RouterLink, ImageField, CopPipe, FieldErrorState, FieldError],
   templateUrl: './create-product.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -45,6 +46,8 @@ export class CreateProduct {
     precioCosto: [0, [Validators.required, Validators.min(0)]],
     unidad: ['unidad', Validators.required],
     cantidadUnidad: [1, [Validators.required, Validators.min(1)]],
+    /** 1 = se vende a granel: la caja pide un peso decimal, no un conteo. */
+    vendidoPorPeso: [false],
     origen: ['', Validators.required],
     imagenAlt: ['', Validators.required],
     imagen: ['', Validators.required],
@@ -239,7 +242,7 @@ export class CreateProduct {
     this.createError = null;
     this.creatingProduct = true;
 
-    const { nombre, slug, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover, imagenAlt, parentId, varianteEtiqueta } = this.form.getRawValue();
+    const { nombre, slug, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, vendidoPorPeso, origen, imagen, imagenHover, imagenAlt, parentId, varianteEtiqueta } = this.form.getRawValue();
 
     this.adminApi
       .createProduct({
@@ -252,6 +255,7 @@ export class CreateProduct {
         precioCosto,
         unidad,
         cantidadUnidad,
+        vendidoPorPeso: vendidoPorPeso ? 1 : 0,
         origen,
         imagen,
         imagenHover: imagenHover || undefined,
@@ -273,8 +277,4 @@ export class CreateProduct {
       });
   }
 
-  protected showError(field: 'nombre' | 'categoriaId' | 'grupoAdmin' | 'precio' | 'precioCosto' | 'unidad' | 'cantidadUnidad' | 'origen' | 'imagenAlt' | 'imagen' | 'imagenHover'): boolean {
-    const control = this.form.get(field);
-    return control ? control.invalid && (control.touched || control.dirty) : false;
-  }
 }

@@ -141,6 +141,9 @@ const pedir = (quien) =>
       clienteNombre: `Cliente ${quien}`,
       clienteTelefono: '3002145588',
       clienteDireccion: 'Calle 10 #43-20, Medellín',
+      // La cédula es obligatoria desde que identifica al cliente. Al azar
+      // para no chocar con el índice único entre corridas del script.
+      clienteCedula: cedulaQA(),
       envio: 0,
       items: [{ productId: objetivo.id, cantidad: 1 }],
     }),
@@ -168,9 +171,19 @@ const stockFinal = despues.find((x) => x.id === objetivo.id)?.stock ?? 0;
 t(stockFinal === 0, `El stock queda en 0, nunca en negativo (quedó ${stockFinal})`);
 
 // La reserva del que falló no puede haber quedado a medias.
+//
+// Se cuentan SOLO los pedidos que acaba de crear este script, no todos los
+// abiertos que haya en la base. El sembrado trae pedidos de ejemplo, y si
+// alguno lleva el producto que le tocó a esta prueba —`objetivo` es
+// sencillamente el primero del catálogo con stock— sus unidades se sumaban
+// aquí y la comprobación fallaba con "13 unidades comprometidas" sin que
+// hubiera ninguna reserva huérfana: 12 eran del pedido ORD-1043 del sembrado
+// y 1 la del pedido que sí prosperó. Medía otra cosa distinta de la que dice.
+const idsDeEstaPrueba = new Set(cuerpos.map((c) => c?.order?.id).filter(Boolean));
+
 const listado = await (await fetch(`${BASE}/api/admin/orders?abiertos=1`, { headers: H })).json();
-const delProducto = listado.orders.filter((o) =>
-  o.items.some((i) => i.productId === objetivo.id),
+const delProducto = listado.orders.filter(
+  (o) => idsDeEstaPrueba.has(o.id) && o.items.some((i) => i.productId === objetivo.id),
 );
 const unidadesReservadas = delProducto.reduce(
   (suma, o) => suma + o.items.filter((i) => i.productId === objetivo.id).reduce((s, i) => s + i.cantidad, 0),
@@ -178,7 +191,7 @@ const unidadesReservadas = delProducto.reduce(
 );
 t(
   unidadesReservadas <= 1,
-  `No hay pedidos huérfanos: ${unidadesReservadas} unidad(es) comprometida(s)`,
+  `No hay pedidos huérfanos: ${unidadesReservadas} unidad(es) comprometida(s) por esta prueba`,
 );
 
 // ──────────────────────── Validación de entrada ────────────────────────
@@ -191,6 +204,9 @@ const cantidadNegativa = await fetch(`${BASE}/api/orders`, {
   body: JSON.stringify({
     clienteNombre: 'QA', clienteTelefono: '3002145588',
     clienteDireccion: 'Calle 10 #43-20, Medellín', envio: 0,
+    // La cédula es obligatoria desde que identifica al cliente. Al azar
+    // para no chocar con el índice único entre corridas del script.
+    clienteCedula: cedulaQA(),
     items: [{ productId: objetivo.id, cantidad: -5 }],
   }),
 });
@@ -202,6 +218,9 @@ const envioNegativo = await fetch(`${BASE}/api/orders`, {
   body: JSON.stringify({
     clienteNombre: 'QA', clienteTelefono: '3002145588',
     clienteDireccion: 'Calle 10 #43-20, Medellín', envio: -9900,
+    // La cédula es obligatoria desde que identifica al cliente. Al azar
+    // para no chocar con el índice único entre corridas del script.
+    clienteCedula: cedulaQA(),
     items: [{ productId: objetivo.id, cantidad: 1 }],
   }),
 });
@@ -213,6 +232,9 @@ const sinItems = await fetch(`${BASE}/api/orders`, {
   body: JSON.stringify({
     clienteNombre: 'QA', clienteTelefono: '3002145588',
     clienteDireccion: 'Calle 10 #43-20, Medellín', envio: 0, items: [],
+    // La cédula es obligatoria desde que identifica al cliente. Al azar
+    // para no chocar con el índice único entre corridas del script.
+    clienteCedula: cedulaQA(),
   }),
 });
 t(sinItems.status >= 400, `Pedido sin líneas → ${sinItems.status}`);
@@ -233,3 +255,15 @@ console.log(
     : `\n✘ ${fallos} comprobación(es) sin pasar.`,
 );
 if (fallos > 0) process.exitCode = 1;
+
+
+/**
+ * Una cédula de prueba distinta en cada llamada.
+ *
+ * `contacts.documento` es único, así que un número fijo haría fallar la
+ * segunda corrida del script contra la misma base. El prefijo 9 la marca
+ * como inventada: ninguna cédula colombiana real empieza así.
+ */
+function cedulaQA() {
+  return `9${Math.floor(Math.random() * 1_000_000_000)}`;
+}

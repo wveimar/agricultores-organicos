@@ -4,6 +4,7 @@ import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiErrorBody, ApiInvoice, ApiInvoiceInput } from '../../../core/api/api-client';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
+import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 
 /** Los estados, en el orden en que se miran: primero lo que falta por cobrar. */
 const ESTADOS = [
@@ -43,7 +44,7 @@ interface GrupoFacturas {
  */
 @Component({
   selector: 'app-invoices-manager',
-  imports: [CopPipe, ReactiveFormsModule],
+  imports: [CopPipe, ReactiveFormsModule, FieldErrorState, FieldError],
   templateUrl: './invoices-manager.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

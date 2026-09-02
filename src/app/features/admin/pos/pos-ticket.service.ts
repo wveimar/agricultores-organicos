@@ -56,9 +56,17 @@ export class PosTicketService {
     ),
   );
 
-  /** Cuántas unidades caben todavía de este producto. */
+  /**
+   * Cuántas unidades caben todavía de este producto.
+   *
+   * Sin piso de 1: los dos que llaman a esto (`agregar`, `setCantidad`) ya
+   * garantizan `cantidad > 0` antes de llegar aquí, y un producto por peso
+   * necesita poder quedar en 0.5 — un `Math.max(1, ...)` se lo subiría a 1
+   * en silencio, dejando el peso decimal escrito en el input pero no en el
+   * ticket.
+   */
   private tope(product: ApiProduct, cantidad: number): number {
-    return Math.max(1, Math.min(cantidad, product.stock));
+    return Math.min(cantidad, product.stock);
   }
 
   /**

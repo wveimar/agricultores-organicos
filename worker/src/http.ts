@@ -97,6 +97,23 @@ export function requireInt(value: unknown, field: string, min = 0): number {
   return value;
 }
 
+/**
+ * Número finito no negativo o error 400. Rechaza NaN e Infinity, pero SÍ
+ * acepta decimales — a diferencia de `requireInt`, para campos como la
+ * cantidad de una venta por peso. Que el decimal esté permitido AQUÍ no
+ * significa que valga para cualquier producto: eso lo decide después
+ * `rejectFractional()`, una vez se sabe cuál de los dos es.
+ */
+export function requireNumber(value: unknown, field: string, min = 0): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min) {
+    throw ApiError.badRequest(
+      'campo-invalido',
+      `El campo "${field}" debe ser un número mayor o igual a ${min}.`,
+    );
+  }
+  return value;
+}
+
 /** Cadena no vacía o error 400. */
 export function requireString(value: unknown, field: string, maxLength = 500): string {
   if (typeof value !== 'string' || value.trim() === '') {

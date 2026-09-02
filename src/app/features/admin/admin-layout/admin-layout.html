@@ -4,15 +4,52 @@
 -->
 <div class="flex min-h-screen bg-linen">
   <!-- Barra lateral -->
+  <!--
+    `transition-all` y no solo `transition-transform`: ahora también se anima
+    el ancho al colapsar. En móvil el menú sigue entrando y saliendo entero
+    —ahí el problema es que estorba, no que ocupe—, así que el colapso solo
+    aplica desde `lg`.
+  -->
   <aside
-    class="fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-moss transition-transform duration-300 ease-[cubic-bezier(.22,1,.36,1)] lg:translate-x-0"
+    class="fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-moss transition-all duration-300 ease-[cubic-bezier(.22,1,.36,1)] lg:translate-x-0"
     [class.translate-x-0]="isSidebarOpen()"
     [class.-translate-x-full]="!isSidebarOpen()"
+    [class.lg:w-16]="isSidebarCollapsed()"
   >
-    <div class="flex h-16 items-center border-b border-bone/10 px-5">
-      <a routerLink="/" class="font-display text-lg text-bone">
-        Agricultores <span class="text-sage">Orgánicos</span>
+    <div class="flex h-16 items-center gap-2 border-b border-bone/10 px-3">
+      <!--
+        Colapsado se queda la «A»: el sitio del logo no puede quedar vacío o el
+        menú parece roto, y sigue siendo el enlace de vuelta a la tienda.
+      -->
+      <a routerLink="/" class="min-w-0 flex-1 truncate px-2 font-display text-lg text-bone">
+        @if (isSidebarCollapsed()) {
+          <span class="lg:hidden">Agricultores <span class="text-sage">Orgánicos</span></span>
+          <span class="hidden lg:inline">A<span class="text-sage">O</span></span>
+        } @else {
+          Agricultores <span class="text-sage">Orgánicos</span>
+        }
       </a>
+
+      <!--
+        Solo en escritorio: en un teléfono el menú ya se cierra entero con el
+        velo, y un segundo control para encogerlo no significaría nada.
+      -->
+      <button
+        type="button"
+        (click)="toggleCollapsed()"
+        class="hidden size-9 shrink-0 items-center justify-center rounded-md text-bone/70 transition-colors duration-200 hover:bg-bone/10 hover:text-bone lg:flex"
+        [attr.aria-label]="isSidebarCollapsed() ? 'Expandir el menú' : 'Colapsar el menú'"
+        [attr.aria-expanded]="!isSidebarCollapsed()"
+      >
+        <svg
+          class="size-5 transition-transform duration-300"
+          [class.rotate-180]="isSidebarCollapsed()"
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+        >
+          <path d="M15 6l-6 6 6 6" />
+        </svg>
+      </button>
     </div>
 
     <nav class="flex flex-1 flex-col gap-1 p-3" aria-label="Secciones de administración">
@@ -20,12 +57,38 @@
         <a
           [routerLink]="item.path"
           routerLinkActive="bg-bone/12 text-bone"
-          class="flex items-center justify-between rounded-md px-3 py-2.5 text-sm text-bone/70 transition-colors duration-200 hover:bg-bone/8 hover:text-bone"
+          class="group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-bone/70 transition-colors duration-200 hover:bg-bone/8 hover:text-bone"
+          [class.lg:justify-center]="isSidebarCollapsed()"
+          [class.lg:px-0]="isSidebarCollapsed()"
           (click)="closeSidebar()"
+          [attr.title]="isSidebarCollapsed() ? item.label : null"
         >
-          {{ item.label }}
+          <app-admin-nav-icon [name]="item.icon" />
+
+          <!--
+            Colapsado, la etiqueta se esconde con `sr-only` y no con `hidden`:
+            así el enlace conserva su nombre accesible. Con `hidden`, un lector
+            de pantalla anunciaría dieciséis enlaces sin texto y el menú se
+            volvería inservible justo para quien más lo necesita.
+          -->
+          <span class="min-w-0 flex-1 truncate" [class.lg:sr-only]="isSidebarCollapsed()">
+            {{ item.label }}
+          </span>
+
           @if (item.badge && item.badge(); as count) {
-            <span class="tabular rounded-full bg-clay px-2 py-0.5 text-[11px] font-semibold text-bone">
+            <!--
+              Expandido el contador va al final de la fila; colapsado no cabe,
+              así que se convierte en una insignia sobre el icono — que es lo
+              único que queda para avisar de que hay algo pendiente.
+            -->
+            <span
+              class="tabular rounded-full bg-clay px-2 py-0.5 text-[11px] font-semibold text-bone"
+              [class]="
+                isSidebarCollapsed()
+                  ? 'lg:absolute lg:right-1.5 lg:top-1 lg:px-1.5 lg:py-0'
+                  : ''
+              "
+            >
               {{ count }}
             </span>
           }
@@ -36,9 +99,13 @@
     <div class="border-t border-bone/10 p-3">
       <a
         routerLink="/"
-        class="block rounded-md px-3 py-2.5 text-sm text-bone/60 transition-colors duration-200 hover:bg-bone/8 hover:text-bone"
+        class="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-bone/60 transition-colors duration-200 hover:bg-bone/8 hover:text-bone"
+        [class.lg:justify-center]="isSidebarCollapsed()"
+        [class.lg:px-0]="isSidebarCollapsed()"
+        [attr.title]="isSidebarCollapsed() ? 'Volver a la tienda' : null"
       >
-        ← Volver a la tienda
+        <span aria-hidden="true">←</span>
+        <span [class.lg:sr-only]="isSidebarCollapsed()">Volver a la tienda</span>
       </a>
     </div>
   </aside>
@@ -53,7 +120,16 @@
   }
 
   <!-- Columna de contenido -->
-  <div class="flex min-w-0 flex-1 flex-col lg:pl-64">
+  <!--
+    El hueco que deja el menú fijo. Cambia con el colapso y se anima con la
+    misma curva y duración que el `aside`, para que las dos cosas se muevan
+    como una sola en vez de perseguirse.
+  -->
+  <div
+    class="flex min-w-0 flex-1 flex-col transition-all duration-300 ease-[cubic-bezier(.22,1,.36,1)]"
+    [class.lg:pl-64]="!isSidebarCollapsed()"
+    [class.lg:pl-16]="isSidebarCollapsed()"
+  >
     <header class="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-sand bg-bone/90 px-5 backdrop-blur-md">
       <button
         type="button"

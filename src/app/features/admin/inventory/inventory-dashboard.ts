@@ -7,6 +7,7 @@ import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
 import { ProductUnit, pluralizeVariantLabel, unitPresentation } from '../../../core/models/product.model';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { CategoryFilterComponent } from '../../../shared/components/category-filter/category-filter';
+import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 
 type StockLevel = 'agotado' | 'critico' | 'ok';
 
@@ -26,7 +27,7 @@ function levelOf(product: ApiProduct): StockLevel {
 
 @Component({
   selector: 'app-inventory-dashboard',
-  imports: [ReactiveFormsModule, RouterLink, CopPipe, CategoryFilterComponent],
+  imports: [ReactiveFormsModule, RouterLink, CopPipe, CategoryFilterComponent, FieldErrorState, FieldError],
   templateUrl: './inventory-dashboard.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -308,10 +309,6 @@ export class InventoryDashboard {
       });
   }
 
-  protected showError(field: 'price' | 'costPrice' | 'stock' | 'safetyStock'): boolean {
-    const control = this.form.controls[field];
-    return control.invalid && (control.touched || control.dirty);
-  }
 
   protected setGroup(group: string): void {
     this.activeGroup.set(group);

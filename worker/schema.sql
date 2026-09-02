@@ -31,6 +31,10 @@ DROP TABLE IF EXISTS invoice_items;
 DROP TABLE IF EXISTS invoices;
 DROP TABLE IF EXISTS provider_purchase_items;
 DROP TABLE IF EXISTS provider_purchases;
+-- Mermas antes que `products` y `cash_closings`: `merma_items` referencia el
+-- producto con ON DELETE RESTRICT y la cabecera al cierre que la adoptó.
+DROP TABLE IF EXISTS merma_items;
+DROP TABLE IF EXISTS mermas;
 DROP TABLE IF EXISTS expenses;
 DROP TABLE IF EXISTS order_item_components;
 DROP TABLE IF EXISTS order_status_log;
@@ -156,7 +160,21 @@ CREATE TABLE contacts (
   tipo_cuenta    TEXT    CHECK (tipo_cuenta IS NULL OR tipo_cuenta IN ('ahorros', 'corriente', 'nequi', 'daviplata')),
   numero_cuenta  TEXT,
   titular        TEXT,
-  documento      TEXT,
+
+  -- La cédula (o NIT). Es la LLAVE DE NEGOCIO de la ficha: lo que el cajero
+  -- teclea cuando el cliente se la dicta en el mostrador, y el campo que la
+  -- DIAN exige para reportar una venta el día que haya factura electrónica.
+  --
+  -- NOT NULL y UNIQUE: una persona es una ficha. Sin la restricción, el mismo
+  -- cliente acaba con tres fichas —una por cada vez que alguien lo dio de alta
+  -- de prisa— y su deuda queda repartida entre las tres, que es justo el error
+  -- que vuelve impagable una cartera.
+  --
+  -- La venta anónima del mostrador no deja la columna vacía: tiene su propia
+  -- ficha, «Consumidor final», con el documento genérico 222222222222 que la
+  -- DIAN reserva para eso. Así "sin identificar" es un cliente concreto y no
+  -- un hueco en la tabla, y sigue habiendo una sola fila por documento.
+  documento      TEXT    NOT NULL,
 
   -- Crédito (migración 0023). Vive aquí y no en `users` porque la deuda la
   -- tiene una persona, no un login: la tienda se compra sin cuenta y al
@@ -186,6 +204,11 @@ CREATE TABLE contacts (
 -- porque un proveedor puede no tener teléfono y varios NULL no chocan.
 CREATE UNIQUE INDEX idx_contacts_telefono
   ON contacts (telefono) WHERE telefono IS NOT NULL AND telefono <> '';
+
+-- La búsqueda del mostrador entra por aquí: el cajero teclea la cédula que le
+-- dictan y tiene que resolver en un salto, no escaneando la tabla. El UNIQUE
+-- es además lo que impide dos fichas para la misma persona.
+CREATE UNIQUE INDEX idx_contacts_documento ON contacts (documento);
 
 CREATE INDEX idx_contacts_proveedor ON contacts (es_proveedor, activo, nombre);
 CREATE INDEX idx_contacts_cliente   ON contacts (es_cliente,   activo, nombre);
@@ -277,6 +300,14 @@ CREATE TABLE products (
   -- Cuánto lleva la presentación que se vende: 500 con unidad 'gr', 5 con
   -- 'unidad'. `precio` es lo que se cobra por esa presentación entera.
   cantidad_unidad INTEGER NOT NULL DEFAULT 1 CHECK (cantidad_unidad > 0),
+  -- 1 = se vende a granel, pesado en el mostrador (migración 0033): el
+  -- cajero teclea un peso decimal en vez de un conteo de unidades. Decide
+  -- si `order_items.cantidad` puede llegar fraccionaria para este producto
+  -- — la validación vive en el Worker (`rejectFractional()` en orders.ts),
+  -- no en un CHECK: uno que cruzara esta columna con `cantidad` exigiría
+  -- recrear la tabla, y las demás columnas de cantidad/stock ya aceptan
+  -- decimales tal cual gracias a la afinidad de tipos de SQLite.
+  vendido_por_peso INTEGER NOT NULL DEFAULT 0 CHECK (vendido_por_peso IN (0, 1)),
   origen          TEXT    NOT NULL,
   rating          REAL    NOT NULL DEFAULT 0 CHECK (rating >= 0 AND rating <= 5),
   review_count    INTEGER NOT NULL DEFAULT 0 CHECK (review_count >= 0),
@@ -421,6 +452,13 @@ CREATE TABLE cash_closings (
   -- entre "cuánto margen dejó la fruta" y "cuánto quedó de verdad". Ver 0020.
   total_gastos       INTEGER NOT NULL DEFAULT 0 CHECK (total_gastos       >= 0),
 
+  -- Lo que se dio de baja por merma en la jornada, valorado al COSTO
+  -- (migración 0034). También se resta de `ganancia`: a diferencia de la
+  -- compra a la finca —que se recupera al vender y por eso no se resta—, lo
+  -- que se bota nunca pasa por una venta, así que su costo no lo descuenta
+  -- nadie más. Sin esta columna la jornada mostraría un margen que no existe.
+  total_merma        INTEGER NOT NULL DEFAULT 0 CHECK (total_merma        >= 0),
+
   -- Cuánto se COBRÓ en la jornada, frente a `total_recaudado`, que es cuánto
   -- se VENDIÓ (migración 0028). Las dos conviven porque responden preguntas
   -- distintas: esta cuadra con el dinero del cajón —incluidos abonos de
@@ -460,6 +498,15 @@ CREATE TABLE orders (
   -- `order_items.producto_nombre`.
   contact_id         TEXT    REFERENCES contacts(id) ON DELETE SET NULL,
   cliente_nombre     TEXT    NOT NULL,
+  -- La cédula CON LA QUE SE VENDIÓ, copiada igual que el nombre y por el
+  -- mismo motivo: el pedido es el documento de lo que pasó ese día. Si mañana
+  -- se corrige una cédula mal tecleada en la ficha, esta venta tiene que
+  -- seguir diciendo a nombre de quién se hizo — es lo que se reportó.
+  --
+  -- Copia y no FK a `contacts(documento)`: una llave natural en la relación
+  -- obligaría a arrastrar en cascada pedidos, facturas, cobros y trazas cada
+  -- vez que alguien arregla un dígito. El vínculo vivo es `contact_id`.
+  cliente_cedula     TEXT    NOT NULL DEFAULT '',
   cliente_telefono   TEXT    NOT NULL,
   cliente_direccion  TEXT    NOT NULL,
 
@@ -509,31 +556,40 @@ CREATE TABLE orders (
   -- 'credito' vive aquí y no en `estado` a propósito: fiar no es una fase del
   -- pedido, es de dónde sale el dinero. Un pedido fiado sigue recorriendo
   -- aprobado → enviado como cualquier otro. Ver la migración 0017.
-  -- ⚠ ESTA LISTA NO SE PUEDE AMPLIAR. Añadir un valor exige recrear la tabla, y
-  -- eso es imposible en una base D1 que ya tiene pedidos: el DROP TABLE choca
-  -- con el RESTRICT de `invoices.order_id` y arrastraría los CASCADE de
-  -- `order_items`, `order_status_log` y `order_item_components`. Ninguno de los
-  -- pragmas de SQLite lo evita bajo wrangler — está medido y documentado en la
-  -- cabecera de la migración 0032. La 0031 se anuló justo por intentarlo.
+  -- De dónde sale el dinero. UN valor por pedido, el de verdad:
   --
-  -- Si hace falta un matiz nuevo de pago, va en `medio_pago`, no aquí.
-  metodo_pago        TEXT    NOT NULL DEFAULT 'transferencia'
-                             CHECK (metodo_pago IN ('transferencia', 'contraentrega', 'credito')),
-
-  -- Cómo se pagó de verdad, cuando `metodo_pago` se queda corto (migración
-  -- 0032). Sin CHECK, para que ampliarlo nunca vuelva a exigir recrear la
-  -- tabla. NULL = "lo que diga metodo_pago, sin matices", que es el caso de
-  -- toda compra web de siempre.
+  --   'transferencia'     consigna y manda el comprobante
+  --   'contraentrega'     paga en efectivo cuando el domiciliario toca la puerta
+  --   'credito'           fiado, contra el cupo de su ficha
+  --   'entrega_en_tienda' compra web que el cliente pasa a recoger y pagar
+  --   'efectivo'          venta de mostrador, en billete
+  --   'tarjeta'           venta de mostrador, con datáfono
   --
-  --   'efectivo' | 'tarjeta'   sobre 'contraentrega' → venta en el mostrador
-  --   'entrega_en_tienda'      sobre 'contraentrega' → compra web que se retira
+  -- ⚠ SIN CHECK, y es una decisión pensada, no un descuido.
   --
-  -- 'contraentrega' no es un apaño para ninguno de los dos: significa "se paga
-  -- al recibir", que es literalmente lo que ocurre en una caja y lo que ocurre
-  -- cuando alguien va a recoger su pedido. El efecto secundario es bueno:
-  -- RECAUDADO_WHERE ya cuenta 'contraentrega' con estado 'pago' y
-  -- efectivo_liquidado = 1, así que la venta de caja entra sola en el cierre.
-  medio_pago         TEXT,
+  -- En D1 una lista cerrada aquí es una lista que NO SE PUEDE AMPLIAR NUNCA:
+  -- añadir un valor obliga a recrear la tabla, y recrear `orders` es imposible
+  -- en cuanto tiene pedidos — el DROP TABLE choca con el RESTRICT de
+  -- `invoices.order_id` y arrastra los CASCADE de `order_items`,
+  -- `order_status_log` y `order_item_components`. Se probaron las cuatro
+  -- salidas (foreign_keys = OFF, defer_foreign_keys, legacy_alter_table con
+  -- doble renombrado, y el DROP directo) y ninguna funciona bajo wrangler,
+  -- que envuelve cada fichero en una transacción. La migración 0031 nació
+  -- muerta justo por esto.
+  --
+  -- Y el CHECK aquí no compraba lo que compra en otras columnas. El de
+  -- `stock_actual >= 0` es una defensa contra CARRERAS: dos peticiones
+  -- concurrentes pasan la validación de la aplicación y la base es lo único
+  -- que las frena. Una lista de valores no tiene carrera posible — nada
+  -- convierte 'efectivo' en basura entre la validación y el INSERT. Solo
+  -- protege contra un error de programación, y de eso ya se encarga
+  -- `readMetodoPago()` en routes/orders.ts, que además da un 400 legible en
+  -- vez del texto crudo de SQLite.
+  --
+  -- Resumen: los CHECK que defienden invariantes de concurrencia se quedan;
+  -- los que solo enumeran valores se van, porque en esta base cuestan la
+  -- capacidad de evolucionar y no aportan seguridad real.
+  metodo_pago        TEXT    NOT NULL DEFAULT 'transferencia',
 
   -- Cuándo vence la deuda. NULL en todo lo que no sea 'credito': no hay nada
   -- que vencer donde el dinero ya entró o se cobra en la puerta.
@@ -567,8 +623,9 @@ CREATE TABLE orders (
   --
   -- Se llama `canal` y no `origen` porque `products.origen` ya significa "de
   -- qué finca viene": reusar el nombre confundiría al leer el código.
-  -- Sin CHECK por la misma razón que `medio_pago`: que ampliarlo mañana no
-  -- obligue a recrear una tabla que no se puede recrear.
+  -- Sin CHECK por lo mismo que `metodo_pago`: que abrir un canal nuevo mañana
+  -- —un marketplace, una segunda tienda— no obligue a recrear una tabla que no
+  -- se puede recrear. Lo valida el Worker.
   canal               TEXT NOT NULL DEFAULT 'ecommerce',
 
   -- Si el cliente pidió recibo impreso en el mostrador. Dato operativo; NO
@@ -591,6 +648,9 @@ CREATE INDEX idx_orders_user    ON orders (user_id);
 CREATE INDEX idx_orders_credito ON orders (metodo_pago, estado, vence_en);
 -- "Todos los pedidos de este cliente", que es la ficha de la agenda.
 CREATE INDEX idx_orders_contact ON orders (contact_id);
+-- "Todo lo que ha comprado esta cédula", que es como pregunta el mostrador:
+-- el cliente dicta su número, no el id interno de su ficha.
+CREATE INDEX idx_orders_cedula  ON orders (cliente_cedula, creado_en DESC);
 -- "Las ventas de caja de hoy", que es lo que pregunta el historial del POS en
 -- cada carga. Parcial: la caja física es una fracción de todos los pedidos.
 CREATE INDEX idx_orders_canal   ON orders (canal, creado_en DESC) WHERE canal = 'pos';
@@ -703,6 +763,9 @@ CREATE TABLE invoices (
   -- Copia congelada, igual que `orders.cliente_nombre`.
   cliente_nombre    TEXT    NOT NULL,
   cliente_telefono  TEXT    NOT NULL DEFAULT '',
+  -- Igual que en `orders`: es el dato que la DIAN pide para reportar la
+  -- venta, y una factura emitida no se reescribe nunca.
+  cliente_cedula    TEXT    NOT NULL DEFAULT '',
 
   subtotal          INTEGER NOT NULL DEFAULT 0 CHECK (subtotal >= 0),
   envio             INTEGER NOT NULL DEFAULT 0 CHECK (envio    >= 0),
@@ -768,6 +831,8 @@ CREATE UNIQUE INDEX idx_invoices_order_viva
 
 CREATE INDEX idx_invoices_cartera ON invoices (estado, vence_en);
 CREATE INDEX idx_invoices_contact ON invoices (contact_id, emitida_en DESC);
+-- El estado de cuenta buscado por cédula, sin pasar por la ficha.
+CREATE INDEX idx_invoices_cedula  ON invoices (cliente_cedula, emitida_en DESC);
 -- "¿Qué notas tiene esta factura encima?", que es lo que el saldo pregunta en
 -- cada recálculo. Parcial: casi ninguna factura acaba teniendo notas.
 CREATE INDEX idx_invoices_origen
@@ -810,8 +875,13 @@ CREATE TABLE payments (
   cliente_nombre      TEXT    NOT NULL,
 
   monto               INTEGER NOT NULL CHECK (monto > 0),
-  metodo              TEXT    NOT NULL DEFAULT 'efectivo'
-                              CHECK (metodo IN ('efectivo', 'transferencia', 'nequi', 'daviplata')),
+  -- 'efectivo', 'transferencia', 'nequi', 'daviplata', 'tarjeta'.
+  --
+  -- Sin CHECK por el mismo motivo que `orders.metodo_pago`, agravado aquí:
+  -- recrear `payments` dispararía el CASCADE de `payment_allocations` y se
+  -- llevaría por delante la asignación de cobros a facturas, que es la cartera
+  -- entera. Lo valida `leerMetodo()` en routes/payments.ts.
+  metodo              TEXT    NOT NULL DEFAULT 'efectivo',
 
   -- Cuándo entró la plata. No tiene por qué coincidir con la fecha de la
   -- factura: representar ese desfase es el motivo de este módulo.
@@ -835,17 +905,12 @@ CREATE TABLE payments (
   -- Es también lo que hace que un abono que alguien viene a pagar a la tienda
   -- cuadre contra el cierre del POS: ese billete está en ESE cajón.
   --
-  -- Sin CHECK, por el mismo motivo que en `cash_closings`: recrear esta tabla
-  -- para añadirlo dispararía el CASCADE de `payment_allocations` y se llevaría
-  -- la asignación de cobros a facturas, que es la cartera entera.
-  canal               TEXT    NOT NULL DEFAULT 'ecommerce',
-
-  -- Mismo papel que `orders.medio_pago`: el CHECK de `metodo` de arriba tampoco
-  -- admite 'tarjeta' y tampoco se puede ampliar. Un cobro con datáfono se
-  -- registra como 'efectivo' —para el cierre lo que importa es que la plata
-  -- está en la caja desde el primer segundo, sin el desfase de `liquidado` que
-  -- sí tiene el domiciliario— y el instrumento real queda aquí.
-  medio_pago          TEXT
+  -- En qué caja entró la plata: 'ecommerce' o 'pos'. `payments` no tiene FK a
+  -- `orders`, así que sin esta columna el cierre del mostrador no podría
+  -- distinguir sus cobros de los de cartera al barrer `closing_id IS NULL`.
+  -- Es también lo que hace que un abono que alguien viene a pagar a la tienda
+  -- cuadre contra el cierre del POS: ese billete está en ESE cajón.
+  canal               TEXT    NOT NULL DEFAULT 'ecommerce'
 );
 
 CREATE INDEX idx_payments_closing ON payments (closing_id, liquidado);
@@ -937,6 +1002,72 @@ CREATE TABLE provider_purchase_items (
 
 CREATE INDEX idx_purchase_items_purchase ON provider_purchase_items (purchase_id);
 CREATE INDEX idx_purchase_items_product  ON provider_purchase_items (product_id);
+
+-- ────────────────── Baja de inventario por merma (0034) ──────────────────
+--
+-- El cierre de jornada de la bodega: lo que se deshidrató, se pudrió, se
+-- venció o se rompió y ya no se puede vender. Antes el stock solo bajaba
+-- vendiendo, y corregirlo a mano en Inventario no dejaba rastro de POR QUÉ
+-- bajó — que es justo lo que pregunta una auditoría.
+--
+-- Misma forma que `provider_purchases` + sus líneas, porque es el otro
+-- documento que mueve inventario, solo que en sentido contrario.
+--
+-- A diferencia de la compra, la merma SÍ resta de `ganancia`: el costo de la
+-- compra se recupera al vender (congelado en `order_items.costo_unitario`),
+-- pero lo que se bota nunca se vende y su costo no lo descuenta nadie más.
+
+CREATE TABLE mermas (
+  id            TEXT    PRIMARY KEY,
+  -- Las dos valoraciones del mismo descarte, congeladas al registrarlo:
+  --   · `total_costo` es la pérdida REAL —lo que se le pagó a la finca— y es
+  --     la que resta de la ganancia.
+  --   · `total_venta` es lo que se habría facturado de haberse vendido. No
+  --     entra en ninguna cuenta; dimensiona el problema en el informe.
+  total_costo   INTEGER NOT NULL CHECK (total_costo >= 0),
+  total_venta   INTEGER NOT NULL DEFAULT 0 CHECK (total_venta >= 0),
+  observaciones TEXT,
+  creado_por    TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  creado_en     TEXT    NOT NULL DEFAULT (datetime('now')),
+  -- NULL mientras la jornada sigue abierta; el cierre la adopta, igual que a
+  -- los gastos. Con cierre puesto ya no se deshace: es cuenta congelada.
+  closing_id    TEXT    REFERENCES cash_closings(id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_mermas_closing ON mermas (closing_id, creado_en DESC);
+
+CREATE TABLE merma_items (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- CASCADE: una línea no significa nada sin su acta. El stock que descontó se
+  -- devuelve antes, en la misma transacción (ver remove() en mermas.ts).
+  merma_id        TEXT    NOT NULL REFERENCES mermas(id) ON DELETE CASCADE,
+  -- RESTRICT como en `order_items`: lo que alguna vez se dio de baja no se
+  -- borra del catálogo mientras esta línea lo nombre.
+  product_id      TEXT    NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  -- Nombre y unidad COPIADOS: el acta es el documento de lo que pasó ese día.
+  producto_nombre TEXT    NOT NULL,
+  unidad          TEXT    NOT NULL,
+  -- NUMERIC y no INTEGER: desde la 0033 hay productos que se venden por peso y
+  -- se bota "0.4 kg" tan a menudo como "3 unidades". La afinidad NUMERIC
+  -- guarda el 3 como entero y el 0.4 como real, sin tener que elegir.
+  cantidad        NUMERIC NOT NULL CHECK (cantidad > 0),
+  costo_unitario  INTEGER NOT NULL CHECK (costo_unitario >= 0),
+  subtotal_costo  INTEGER NOT NULL CHECK (subtotal_costo >= 0),
+  precio_unitario INTEGER NOT NULL DEFAULT 0 CHECK (precio_unitario >= 0),
+  subtotal_venta  INTEGER NOT NULL DEFAULT 0 CHECK (subtotal_venta >= 0),
+  -- La causa raíz. Lista cerrada a propósito: es la columna por la que agrupa
+  -- el informe, y con texto libre ("podrido", "pudrición") no sumaría nada.
+  motivo          TEXT    NOT NULL CHECK (
+                    motivo IN ('deshidratacion', 'pudricion', 'vencimiento', 'rotura', 'otro')
+                  ),
+  observacion     TEXT,
+  -- Una sola línea por producto y acta, mismo criterio que `order_items`.
+  UNIQUE (merma_id, product_id)
+);
+
+CREATE INDEX idx_merma_items_merma   ON merma_items (merma_id);
+CREATE INDEX idx_merma_items_product ON merma_items (product_id);
+CREATE INDEX idx_merma_items_motivo  ON merma_items (motivo);
 
 -- ─────────────────────── Ajustes de operación (0032) ───────────────────────
 -- Banderas que un SUPER_ADMIN cambia en vivo desde el panel, sin desplegar.

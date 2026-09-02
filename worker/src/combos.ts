@@ -145,12 +145,21 @@ export async function stockDeCanastas(
 
   const placeholders = ids.map((_, i) => `?${i + 1}`).join(', ');
   const { results } = await env.DB.prepare(
-    // La división entera de SQLite trunca hacia abajo con enteros positivos,
-    // que es el FLOOR que hace falta: con 5 kg de papa y 2 kg por canasta
-    // salen 2 canastas, no 2,5.
+    // El FLOOR es explícito y no heredado de la división entera de SQLite.
+    //
+    // Antes se confiaba en que dividir dos enteros trunca hacia abajo: con 5 kg
+    // de papa y 2 kg por canasta salen 2 canastas, no 2,5. Eso dejó de ser
+    // cierto en cuanto un componente puede ser decimal —un «Paquete de 500 g»
+    // lleva `cantidad_requerida = 0.5`— o el stock del hijo lo es, porque se
+    // vende por peso: ahí SQLite hace división real y 42,3 kg / 0,5 devolvía
+    // «84,6 paquetes disponibles». No llegaba a ser sobreventa (pedir 85 se
+    // rechazaba igual), pero es un número que no significa nada en pantalla.
+    //
+    // `CAST(... AS INTEGER)` trunca hacia cero, que con cantidades positivas
+    // —el CHECK de las dos columnas lo garantiza— es exactamente el FLOOR.
     `SELECT pc.parent_product_id AS id,
             MIN(CASE WHEN h.activo = 1
-                     THEN h.stock_actual / pc.cantidad_requerida
+                     THEN CAST(h.stock_actual / pc.cantidad_requerida AS INTEGER)
                      ELSE 0 END) AS disponibles
        FROM product_components pc
        JOIN products h ON h.id = pc.child_product_id

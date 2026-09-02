@@ -82,19 +82,18 @@ import { ApiPosVenta } from '../../../core/api/api-client';
           <span>{{ venta().total | cop }}</span>
         </div>
         <p class="mt-1 text-xs text-ink/60">
-          @switch (venta().medioPago) {
+          @switch (venta().metodoPago) {
             @case ('efectivo') {
               Pagado en efectivo
             }
             @case ('tarjeta') {
               Pagado con tarjeta
             }
+            @case ('credito') {
+              A crédito · vence el {{ venta().venceEn }}
+            }
             @default {
-              @if (venta().metodoPago === 'credito') {
-                A crédito · vence el {{ venta().venceEn }}
-              } @else {
-                Pagado
-              }
+              Pagado
             }
           }
         </p>

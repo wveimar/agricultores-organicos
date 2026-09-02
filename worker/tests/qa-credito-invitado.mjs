@@ -66,6 +66,9 @@ const pedidoInvitado = async (cantidad) => {
       clienteNombre: `QA Restaurante ${marca}`,
       clienteTelefono: TELEFONO,
       clienteDireccion: 'Plaza principal, local 3',
+      // La cédula es obligatoria desde que identifica al cliente. Al azar
+      // para no chocar con el índice único entre corridas del script.
+      clienteCedula: cedulaQA(),
       items: [{ productId: vendible.id, cantidad }],
     }),
   });
@@ -113,6 +116,7 @@ const CUPO = Math.floor(a.total * 1.6);
 const { status: sCupo } = await patch(`/api/admin/contacts/${ficha.id}`, {
   nombre: ficha.nombre,
   esCliente: true,
+  documento: cedulaQA(),
   esProveedor: false,
   telefono: ficha.telefono,
   direccion: ficha.direccion,
@@ -174,3 +178,15 @@ t(sSegundo === 200, `pagado lo anterior, el cupo se libera y ya cabe (${sSegundo
 
 console.log(`\n${fallos === 0 ? '✔ Todo en orden' : `✘ ${fallos} fallo(s)`}\n`);
 process.exit(fallos === 0 ? 0 : 1);
+
+
+/**
+ * Una cédula de prueba distinta en cada llamada.
+ *
+ * `contacts.documento` es único, así que un número fijo haría fallar la
+ * segunda corrida del script contra la misma base. El prefijo 9 la marca
+ * como inventada: ninguna cédula colombiana real empieza así.
+ */
+function cedulaQA() {
+  return `9${Math.floor(Math.random() * 1_000_000_000)}`;
+}

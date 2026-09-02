@@ -4,17 +4,21 @@ import { ApiClient } from '../../../core/api/api-client';
 import { TokenStore } from '../../../core/api/token-store';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { UserRole } from '../../../core/models/user.model';
+import { AdminNavIcon } from './admin-nav-icon';
 
 interface NavItem {
   readonly path: string;
   readonly label: string;
+  /** Clave de la silueta. Ver `AdminNavIcon`: es lo único que queda visible
+   *  cuando el menú está colapsado. */
+  readonly icon: string;
   readonly roles: readonly UserRole[];
   readonly badge?: () => number;
 }
 
 @Component({
   selector: 'app-admin-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, AdminNavIcon],
   templateUrl: './admin-layout.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -26,63 +30,111 @@ export class AdminLayout {
 
   protected readonly isSidebarOpen = signal(false);
 
+  /**
+   * Menú encogido a solo iconos.
+   *
+   * Se recuerda entre navegaciones y recargas porque es una preferencia de
+   * cómo se trabaja, no un estado de la pantalla: quien atiende la caja en un
+   * monitor pequeño lo colapsa una vez y espera encontrarlo así mañana.
+   *
+   * `localStorage` puede lanzar —ventana privada, cookies bloqueadas— así que
+   * lectura y escritura van protegidas: sin poder recordarlo, el menú sigue
+   * funcionando, simplemente arranca abierto.
+   */
+  private static readonly CLAVE_COLAPSO = 'ao.admin.sidebar.colapsado';
+
+  protected readonly isSidebarCollapsed = signal(AdminLayout.leerColapso());
+
+  private static leerColapso(): boolean {
+    try {
+      return localStorage.getItem(AdminLayout.CLAVE_COLAPSO) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  protected toggleCollapsed(): void {
+    const siguiente = !this.isSidebarCollapsed();
+    this.isSidebarCollapsed.set(siguiente);
+    try {
+      localStorage.setItem(AdminLayout.CLAVE_COLAPSO, siguiente ? '1' : '0');
+    } catch {
+      // Sin dónde guardarlo, el menú se comporta igual durante esta sesión.
+    }
+  }
+
   private readonly allItems: readonly NavItem[] = [
     {
       path: '/admin/inventario',
       label: 'Inventario',
+      icon: 'inventario',
       roles: ['ADMIN_INVENTARIO'],
       badge: this.adminApi.alertCount,
     },
     // Va pegada al inventario: son las dos listas con las que se archiva cada
     // producto, y quien las toca es la misma persona.
-    { path: '/admin/categorias', label: 'Categorías', roles: ['ADMIN_INVENTARIO'] },
-    { path: '/admin/grupos', label: 'Grupos', roles: ['ADMIN_INVENTARIO'] },
+    { path: '/admin/categorias', label: 'Categorías', icon: 'categorias', roles: ['ADMIN_INVENTARIO'] },
+    { path: '/admin/grupos', label: 'Grupos', icon: 'grupos', roles: ['ADMIN_INVENTARIO'] },
     // Primero la caja: es la pantalla que se abre al empezar el día en la
     // tienda física y la única que se usa con un cliente esperando enfrente.
-    { path: '/admin/caja', label: 'Caja', roles: ['GESTOR_PEDIDOS'] },
+    { path: '/admin/caja', label: 'Caja', icon: 'caja', roles: ['GESTOR_PEDIDOS'] },
     {
       path: '/admin/pedidos',
       label: 'Pedidos',
+      icon: 'pedidos',
       roles: ['GESTOR_PEDIDOS'],
       badge: this.adminApi.pendingCount,
     },
     {
       path: '/admin/consolidado',
       label: 'Consolidado',
+      icon: 'consolidado',
       roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'],
     },
-    { path: '/admin/reportes', label: 'Reportes', roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'] },
+    { path: '/admin/reportes', label: 'Reportes', icon: 'reportes', roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'] },
     // Facturación antes que Cartera, en el orden en que ocurren: primero se
     // emite el documento, después se persigue el cobro.
-    { path: '/admin/facturacion', label: 'Facturación', roles: ['GESTOR_PEDIDOS'] },
+    { path: '/admin/facturacion', label: 'Facturación', icon: 'facturacion', roles: ['GESTOR_PEDIDOS'] },
     // Cobros va justo después de Facturación: se emite, se cobra, y lo que
     // queda sin cobrar es lo que mira Cartera.
-    { path: '/admin/cobros', label: 'Cobros', roles: ['GESTOR_PEDIDOS'] },
+    { path: '/admin/cobros', label: 'Cobros', icon: 'cobros', roles: ['GESTOR_PEDIDOS'] },
     // Junto a Reportes: las dos hablan de dinero, y de la cartera se sale a
     // mirar la caja para ver qué falta por entrar.
-    { path: '/admin/cartera', label: 'Cartera', roles: ['GESTOR_PEDIDOS'] },
+    { path: '/admin/cartera', label: 'Cartera', icon: 'cartera', roles: ['GESTOR_PEDIDOS'] },
     // El bloque de plata que SALE, después del de la que entra: gastos se
     // registra durante la jornada y pagos a fincas se resuelve tras cerrarla.
-    { path: '/admin/gastos', label: 'Gastos', roles: ['GESTOR_PEDIDOS'] },
+    { path: '/admin/gastos', label: 'Gastos', icon: 'gastos', roles: ['GESTOR_PEDIDOS'] },
     {
       path: '/admin/compras',
       label: 'Compras',
+      icon: 'compras',
       roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'],
+    },
+    // Junto a Compras y no junto a Gastos, aunque las dos resten de la
+    // ganancia: la merma se decide mirando la bodega, no la caja, y quien la
+    // firma es quien acaba de registrar la entrada de esa misma fruta.
+    {
+      path: '/admin/mermas',
+      label: 'Mermas',
+      icon: 'mermas',
+      roles: ['ADMIN_INVENTARIO'],
     },
     // Pegada a Compras: el proveedor al que se le compra sale de aquí.
     {
       path: '/admin/contactos',
       label: 'Contactos',
+      icon: 'contactos',
       roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'],
     },
     {
       path: '/admin/entregas',
       label: 'Entregas',
+      icon: 'entregas',
       roles: ['DOMICILIARIO'],
       badge: this.adminApi.deliveryCount,
     },
-    { path: '/admin/mayoristas', label: 'Mayoristas', roles: ['SUPER_ADMIN'] },
-    { path: '/admin/usuarios', label: 'Usuarios', roles: ['SUPER_ADMIN'] },
+    { path: '/admin/mayoristas', label: 'Mayoristas', icon: 'mayoristas', roles: ['SUPER_ADMIN'] },
+    { path: '/admin/usuarios', label: 'Usuarios', icon: 'usuarios', roles: ['SUPER_ADMIN'] },
   ];
 
   /** El menú solo muestra lo que el rol puede abrir de verdad. */

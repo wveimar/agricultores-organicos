@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiClient, ApiErrorBody } from '../../../core/api/api-client';
+import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 
 const MIN_PASSWORD = 8;
 
@@ -17,7 +18,7 @@ const MIN_PASSWORD = 8;
  */
 @Component({
   selector: 'app-recover-password',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, FieldErrorState, FieldError],
   templateUrl: './recover-password.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -111,10 +112,5 @@ export class RecoverPassword {
         this.error.set(err.message);
       },
     });
-  }
-
-  protected mostrarError(campo: 'nueva' | 'repetir'): boolean {
-    const control = this.nuevaForm.controls[campo];
-    return control.invalid && (control.touched || control.dirty);
   }
 }

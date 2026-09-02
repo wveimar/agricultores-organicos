@@ -120,6 +120,9 @@ const creado = await (
     body: JSON.stringify({
       clienteNombre: 'QA Borrado', clienteTelefono: '3002145588',
       clienteDireccion: 'Calle 10 #43-20, Medellín', envio: 0,
+      // La cédula es obligatoria desde que identifica al cliente. Al azar
+      // para no chocar con el índice único entre corridas del script.
+      clienteCedula: cedulaQA(),
       items: [{ productId: producto.id, cantidad: 2 }],
     }),
   })
@@ -157,6 +160,9 @@ const paraCerrar = await (
     body: JSON.stringify({
       clienteNombre: 'QA Cierre', clienteTelefono: '3002145588',
       clienteDireccion: 'Calle 10 #43-20, Medellín', envio: 0,
+      // La cédula es obligatoria desde que identifica al cliente. Al azar
+      // para no chocar con el índice único entre corridas del script.
+      clienteCedula: cedulaQA(),
       items: [{ productId: producto.id, cantidad: 1 }],
     }),
   })
@@ -192,3 +198,15 @@ t(sinSesion.status === 401, `Sin sesión → ${sinSesion.status}`);
 
 console.log(fallos === 0 ? '\n✔ Todo en orden.' : `\n✘ ${fallos} comprobación(es) sin pasar.`);
 if (fallos > 0) process.exitCode = 1;
+
+
+/**
+ * Una cédula de prueba distinta en cada llamada.
+ *
+ * `contacts.documento` es único, así que un número fijo haría fallar la
+ * segunda corrida del script contra la misma base. El prefijo 9 la marca
+ * como inventada: ninguna cédula colombiana real empieza así.
+ */
+function cedulaQA() {
+  return `9${Math.floor(Math.random() * 1_000_000_000)}`;
+}

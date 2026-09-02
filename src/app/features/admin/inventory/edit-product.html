@@ -64,15 +64,14 @@
           <label for="nombre" class="block text-sm font-semibold text-ink">Nombre</label>
           <input
             id="nombre"
+            #errNombre="fieldError"
             type="text"
             formControlName="nombre"
-            class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-            [class]="showError('nombre') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+            [appFieldError]="form.controls.nombre"
+            class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
             placeholder="Ej: Tomate Orgánico"
           />
-          @if (showError('nombre')) {
-            <p class="mt-2 text-sm text-berry">El nombre es requerido (mín. 2 caracteres)</p>
-          }
+          <app-field-error [for]="errNombre" message="El nombre es requerido (mín. 2 caracteres)" />
         </div>
 
         <!-- Slug -->
@@ -104,10 +103,11 @@
           <label for="categoria" class="block text-sm font-semibold text-ink">Categoría</label>
           <select
             id="categoria"
+            #errCategoria="fieldError"
             formControlName="categoriaId"
+            [appFieldError]="form.controls.categoriaId"
             (change)="onCategoriaChange($event)"
-            class="mt-2 w-full rounded-md border bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200"
-            [class]="showError('categoriaId') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+            class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
           >
             <option value="">Elige una categoría…</option>
             @for (categoria of categorias(); track categoria.id) {
@@ -122,9 +122,7 @@
               <option [value]="suelta">{{ suelta }} · fuera del catálogo</option>
             }
           </select>
-          @if (showError('categoriaId')) {
-            <p class="mt-2 text-sm text-berry">La categoría es requerida</p>
-          }
+          <app-field-error [for]="errCategoria" message="La categoría es requerida" />
         </div>
 
         <!-- Grupo Admin: sale de admin_groups, no de una lista fija (0025) -->
@@ -147,30 +145,28 @@
             <label for="precio" class="block text-sm font-semibold text-ink">Precio venta</label>
             <input
               id="precio"
+              #errPrecio="fieldError"
               type="number"
               formControlName="precio"
-              class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-              [class]="showError('precio') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+              [appFieldError]="form.controls.precio"
+              class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
               min="1"
             />
-            @if (showError('precio')) {
-              <p class="mt-2 text-sm text-berry">Requerido (mín. 1)</p>
-            }
+            <app-field-error [for]="errPrecio" message="Requerido (mín. 1)" />
           </div>
 
           <div>
             <label for="costo" class="block text-sm font-semibold text-ink">Precio costo</label>
             <input
               id="costo"
+              #errPrecioCosto="fieldError"
               type="number"
               formControlName="precioCosto"
-              class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-              [class]="showError('precioCosto') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+              [appFieldError]="form.controls.precioCosto"
+              class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
               min="1"
             />
-            @if (showError('precioCosto')) {
-              <p class="mt-2 text-sm text-berry">Requerido (mín. 1)</p>
-            }
+            <app-field-error [for]="errPrecioCosto" message="Requerido (mín. 1)" />
           </div>
         </div>
           <!-- Presentación: cuánto se lleva el cliente por el precio marcado -->
@@ -179,19 +175,17 @@
               <label for="cantidad" class="block text-sm font-semibold text-ink">Cantidad</label>
               <input
                 id="cantidad"
+                #errCantidad="fieldError"
                 type="number"
                 formControlName="cantidadUnidad"
+                [appFieldError]="form.controls.cantidadUnidad"
                 min="1"
                 step="1"
                 required
                 aria-required="true"
-                class="tabular mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200"
-                [class]="showError('cantidadUnidad') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
-                [attr.aria-invalid]="showError('cantidadUnidad')"
+                class="tabular mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
               />
-              @if (showError('cantidadUnidad')) {
-                <p class="mt-2 text-sm text-berry">Mínimo 1.</p>
-              }
+              <app-field-error [for]="errCantidad" message="Mínimo 1." />
             </div>
 
             <div>
@@ -214,20 +208,32 @@
           El cliente verá <strong class="text-ink">{{ vistaPrevia() }}</strong> junto al precio.
         </p>
 
+        <!--
+          Solo afecta a la caja: si está marcado, el ticket del POS pide un
+          peso en kg con decimales en vez de un conteo de unidades enteras.
+        -->
+        <label class="flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            formControlName="vendidoPorPeso"
+            class="h-4 w-4 rounded border-sand text-moss focus:ring-moss/30"
+          />
+          Se vende a granel, pesado en la caja
+        </label>
+
         <!-- Origen -->
         <div>
           <label for="origen" class="block text-sm font-semibold text-ink">Origen</label>
           <input
             id="origen"
+            #errOrigen="fieldError"
             type="text"
             formControlName="origen"
-            class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-            [class]="showError('origen') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+            [appFieldError]="form.controls.origen"
+            class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
             placeholder="Finca, región…"
           />
-          @if (showError('origen')) {
-            <p class="mt-2 text-sm text-berry">Requerido</p>
-          }
+          <app-field-error [for]="errOrigen" message="Requerido" />
         </div>
 
         <!--
@@ -353,14 +359,14 @@
 
           <div>
             <app-image-field
+              #errImagen="fieldError"
               [control]="form.controls.imagen"
+              [appFieldError]="form.controls.imagen"
               label="Imagen principal"
               fieldId="imagen"
               hint="Un enlace pesa nada y lo sirve el CDN de origen; una foto subida se guarda en la base."
             />
-            @if (showError('imagen')) {
-              <p class="mt-2 text-sm text-berry">Requerida</p>
-            }
+            <app-field-error [for]="errImagen" message="Requerida" />
           </div>
 
           <app-image-field
@@ -373,15 +379,14 @@
             <label for="imagen-alt" class="block text-sm font-semibold text-ink">Texto alternativo de imagen</label>
             <input
               id="imagen-alt"
+              #errImagenAlt="fieldError"
               type="text"
               formControlName="imagenAlt"
-              class="mt-2 w-full rounded-md border bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted"
-              [class]="showError('imagenAlt') ? 'border-berry' : 'border-sand hover:border-stone focus:border-moss'"
+              [appFieldError]="form.controls.imagenAlt"
+              class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
               placeholder="Descripción para accesibilidad"
             />
-            @if (showError('imagenAlt')) {
-              <p class="mt-2 text-sm text-berry">Requerido</p>
-            }
+            <app-field-error [for]="errImagenAlt" message="Requerido" />
           </div>
         </div>
 
