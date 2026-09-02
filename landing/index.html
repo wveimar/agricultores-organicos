@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="es-CO">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agricultores Orgánicos · Sistema de tienda, caja e inventario</title>
+  <meta name="description" content="Un solo inventario para el mostrador y para internet. Caja, cartera, mermas y cierre de jornada para tiendas de fruta y verdura.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+
+<!-- ─────────────────────────── Barra superior ─────────────────────────── -->
+<header class="barra" id="barra">
+  <div class="wrap barra-inner">
+    <a class="marca" href="#inicio">
+      <span class="marca-nombre">Agricultores Orgánicos</span>
+    </a>
+
+    <nav class="nav" aria-label="Secciones">
+      <a href="#problema">El problema</a>
+      <a href="#jornada">La jornada</a>
+      <a href="#modulos">Módulos</a>
+      <a href="#pruebas">Pruebas</a>
+    </nav>
+
+    <a class="boton boton-solido" href="#contacto">Pedir demostración</a>
+  </div>
+  <!-- Barrita de progreso de lectura: la mueve el JS. -->
+  <div class="progreso" id="progreso" aria-hidden="true"></div>
+</header>
+
+<!-- ─────────────────────────────── Portada ─────────────────────────────── -->
+<section class="portada" id="inicio">
+  <div class="wrap portada-inner">
+    <p class="eyebrow reveal">Para tiendas de fruta, verdura y mercado</p>
+
+    <h1 class="reveal">
+      Un solo inventario para el
+      <span class="resalte">mostrador</span> y para
+      <span class="resalte">internet</span>.
+    </h1>
+
+    <p class="bajada reveal">
+      La misma papa que usted pesa en la balanza es la que se le descuenta al
+      paquete que alguien pidió por la página. Sin cuadernos, sin dos cuentas
+      distintas y sin quedarse hasta las nueve cuadrando la caja.
+    </p>
+
+    <div class="portada-acciones reveal">
+      <a class="boton boton-solido boton-grande" href="#contacto">Pedir una demostración</a>
+      <a class="boton boton-linea boton-grande" href="#jornada">Ver cómo funciona</a>
+    </div>
+
+    <!-- Las cifras se animan al entrar (ver animaciones.js). -->
+    <dl class="cifras reveal">
+      <div class="cifra">
+        <dt>Módulos</dt>
+        <dd><span class="conteo" data-hasta="14">14</span></dd>
+        <p>De la compra en la finca al cierre del día</p>
+      </div>
+      <div class="cifra">
+        <dt>Pruebas automáticas</dt>
+        <dd><span class="conteo" data-hasta="26">26</span></dd>
+        <p>Baterías completas, todas pasando</p>
+      </div>
+      <div class="cifra">
+        <dt>Catálogo con 10 clientes</dt>
+        <dd><span class="conteo" data-hasta="134">134</span> ms</dd>
+        <p>Lo que tarda en responder, medido</p>
+      </div>
+      <div class="cifra">
+        <dt>Servidor propio</dt>
+        <dd class="cifra-texto">Ninguno</dd>
+        <p>Funciona sobre la red de Cloudflare</p>
+      </div>
+    </dl>
+  </div>
+</section>
+
+<!-- ─────────────────────────────── Problema ────────────────────────────── -->
+<section class="seccion" id="problema">
+  <div class="wrap">
+    <div class="cabecera reveal">
+      <p class="eyebrow">Lo que pasa hoy</p>
+      <h2>La plata no se pierde de golpe: se va en detalles</h2>
+      <p class="entradilla">
+        Ninguno de estos líos es de tecnología. Son de plata. Así se ven hoy, y
+        así quedan con el sistema.
+      </p>
+    </div>
+
+    <div class="comparacion">
+      <article class="fila reveal">
+        <div class="antes">
+          <h3>«Yo creo que quedaban como diez kilos»</h3>
+          <p>
+            El inventario vive en la memoria de alguien y en un cuaderno que
+            nadie cuadra hasta fin de mes.
+          </p>
+        </div>
+        <div class="despues">
+          <p>
+            Cada venta, cada compra y cada descarte mueve el inventario en el
+            mismo momento. Y no lo deja vender si no hay.
+          </p>
+        </div>
+      </article>
+
+      <article class="fila reveal">
+        <div class="antes">
+          <h3>Lo que se daña no se le descuenta a nadie</h3>
+          <p>
+            Se bota y ahí quedó. A fin de mes la ganancia le dice más de lo que
+            de verdad le quedó en el cajón.
+          </p>
+        </div>
+        <div class="despues">
+          <p>
+            La merma sale con acta firmada, se valora al costo y se le resta a
+            la ganancia del día. Y le muestra qué es lo que más se le está
+            dañando.
+          </p>
+        </div>
+      </article>
+
+      <article class="fila reveal">
+        <div class="antes">
+          <h3>«Ese señor me debe… algo»</h3>
+          <p>
+            Lo fiado se anota en un papelito al lado de la registradora, y el
+            papelito se pierde.
+          </p>
+        </div>
+        <div class="despues">
+          <p>
+            El fiado y los abonos quedan contra la cédula del cliente, con
+            cupo, fecha de vencimiento y quién recibió la plata.
+          </p>
+        </div>
+      </article>
+
+      <article class="fila reveal">
+        <div class="antes">
+          <h3>Vender por internet toca con otro inventario</h3>
+          <p>
+            Dos listas distintas que se descuadran el primer sábado que se
+            llene el local.
+          </p>
+        </div>
+        <div class="despues">
+          <p>
+            La página y el mostrador descuentan del mismo montón. Si venden
+            tres paquetes de 500 g, del granel salen 1,5 kg. Así de simple.
+          </p>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────── Jornada ─────────────────────────────── -->
+<section class="seccion seccion-alterna" id="jornada">
+  <div class="wrap">
+    <div class="cabecera reveal">
+      <p class="eyebrow">Cómo se usa</p>
+      <h2>Un día completo, de abrir a cerrar</h2>
+      <p class="entradilla">
+        El sistema está armado alrededor de la jornada, que es como trabaja una
+        tienda de verdad. Cada momento tiene sus pantallas.
+      </p>
+    </div>
+
+    <ol class="jornada">
+      <li class="momento reveal">
+        <div class="momento-titulo">
+          <span class="momento-num" aria-hidden="true">01</span>
+          <h3>Antes de abrir</h3>
+        </div>
+        <div class="momento-cuerpo">
+          <p>
+            Llega el carro con la remesa. Usted registra la compra: entra el
+            surtido y queda anotado a quién le compró, a cómo se lo dejó y si ya
+            le giró. Ese costo es el que después le dice cuánto se ganó de
+            verdad con cada cosa.
+          </p>
+          <div class="etiquetas">
+            <span class="etiqueta">Compras a fincas</span>
+            <span class="etiqueta">Inventario</span>
+            <span class="etiqueta">Contactos</span>
+          </div>
+        </div>
+      </li>
+
+      <li class="momento reveal">
+        <div class="momento-titulo">
+          <span class="momento-num" aria-hidden="true">02</span>
+          <h3>Con el local abierto</h3>
+        </div>
+        <div class="momento-cuerpo">
+          <p>
+            El cajero pasa el lector o busca por nombre, pesa lo que va a granel
+            y cobra. Si el cliente le abona una parte, el resto le queda anotado
+            en la cuenta. El recibo se imprime si lo piden.
+          </p>
+          <p>
+            Al mismo tiempo la página recibe pedidos, del mismo catálogo y del
+            mismo inventario.
+          </p>
+          <div class="etiquetas">
+            <span class="etiqueta">Caja</span>
+            <span class="etiqueta">Tienda en línea</span>
+            <span class="etiqueta">Pedidos</span>
+            <span class="etiqueta">Domicilios</span>
+          </div>
+        </div>
+      </li>
+
+      <li class="momento reveal">
+        <div class="momento-titulo">
+          <span class="momento-num" aria-hidden="true">03</span>
+          <h3>Para cerrar</h3>
+        </div>
+        <div class="momento-cuerpo">
+          <p>
+            Se revisa lo que no aguanta otro día y se da de baja con su acta. Se
+            anotan los gastos. Y se cierra la jornada: el sistema congela las
+            cifras, archiva los pedidos y le saca lo que quedó después de pagar
+            mercancía, gastos y lo que se dañó.
+          </p>
+          <div class="etiquetas">
+            <span class="etiqueta">Mermas</span>
+            <span class="etiqueta">Gastos</span>
+            <span class="etiqueta">Cuadre de caja</span>
+            <span class="etiqueta">Consolidado</span>
+          </div>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ──────────────────────────────── Videos ─────────────────────────────── -->
+<section class="seccion" id="videos">
+  <div class="wrap">
+    <div class="cabecera reveal">
+      <p class="eyebrow">Véalo funcionando</p>
+      <h2>Tres cosas que pasan todos los días</h2>
+      <p class="entradilla">
+        Grabado del sistema andando, sin montaje. Toque para reproducir.
+      </p>
+    </div>
+
+    <div class="videos">
+      <figure class="video reveal">
+        <button class="video-marco" type="button" data-video="videos/tut-01-venta-en-caja.webm">
+          <img src="imagenes/18-caja.jpg" alt="Pantalla de caja con productos en el ticket" loading="lazy">
+          <span class="play" aria-hidden="true"></span>
+          <span class="visually-hidden">Reproducir: una venta en la caja</span>
+        </button>
+        <figcaption>
+          <b>Una venta en la caja.</b> Identificar al cliente, marcar lo que
+          lleva, ajustar la cantidad y cobrar.
+        </figcaption>
+      </figure>
+
+      <figure class="video reveal">
+        <button class="video-marco" type="button" data-video="videos/tut-02-baja-por-merma.webm">
+          <img src="imagenes/14-mermas.jpg" alt="Pantalla de bajas por merma" loading="lazy">
+          <span class="play" aria-hidden="true"></span>
+          <span class="visually-hidden">Reproducir: dar de baja lo que se dañó</span>
+        </button>
+        <figcaption>
+          <b>Dar de baja lo dañado.</b> Se escoge, se pone la causa y se firma
+          el acta. El inventario baja de una.
+        </figcaption>
+      </figure>
+
+      <figure class="video reveal">
+        <button class="video-marco" type="button" data-video="videos/tut-03-compra-en-la-tienda.webm">
+          <img src="imagenes/03-checkout.jpg" alt="Formulario de compra en la tienda en línea" loading="lazy">
+          <span class="play" aria-hidden="true"></span>
+          <span class="visually-hidden">Reproducir: un cliente comprando por la página</span>
+        </button>
+        <figcaption>
+          <b>Un cliente comprando.</b> Desde el catálogo hasta los datos, con
+          la cédula de una vez.
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────── Módulos ─────────────────────────────── -->
+<section class="seccion seccion-alterna" id="modulos">
+  <div class="wrap">
+    <div class="cabecera reveal">
+      <p class="eyebrow">Qué trae</p>
+      <h2>Pantalla por pantalla</h2>
+      <p class="entradilla">
+        Todas las imágenes son del sistema real, con datos de ejemplo de una
+        tienda de fruta y verdura. Toque cualquiera para verla en grande.
+      </p>
+    </div>
+
+    <!-- Los filtros los maneja el JS. -->
+    <div class="filtros reveal" role="tablist" aria-label="Filtrar módulos">
+      <button class="filtro activo" data-filtro="todos" role="tab" aria-selected="true">Todos</button>
+      <button class="filtro" data-filtro="mostrador" role="tab" aria-selected="false">Mostrador</button>
+      <button class="filtro" data-filtro="bodega" role="tab" aria-selected="false">Bodega</button>
+      <button class="filtro" data-filtro="plata" role="tab" aria-selected="false">Plata</button>
+    </div>
+
+    <div class="modulos" id="modulos-lista">
+
+      <article class="modulo reveal" data-grupo="mostrador">
+        <div class="modulo-texto">
+          <p class="rol">Para el cajero</p>
+          <h3>Caja</h3>
+          <p>
+            Hecha para atender con el cliente ahí parado: el cursor se devuelve
+            solo al buscador después de cada producto, y el ticket nunca se le
+            pierde de vista.
+          </p>
+          <ul class="lista">
+            <li>Lector de código de barras, o buscar por nombre.</li>
+            <li><b>Venta por peso:</b> teclea 2,3 kg y el precio sale solo.</li>
+            <li><b>Abono:</b> si le dieron menos, el resto queda en la cuenta.</li>
+            <li>Efectivo, tarjeta o fiado contra el cupo del cliente.</li>
+            <li>Cambiar un precio a mano, pero siempre diciendo por qué.</li>
+            <li>Recibo para imprimir y reimpresión de ventas viejas.</li>
+          </ul>
+        </div>
+        <figure class="lamina">
+          <img src="imagenes/18-caja.jpg" alt="Pantalla de caja: catálogo a la izquierda, ticket a la derecha" loading="lazy" data-ampliar>
+          <figcaption>Caja, con cuatro productos en el ticket</figcaption>
+        </figure>
+      </article>
+
+      <article class="modulo reveal" data-grupo="mostrador">
+        <div class="modulo-texto">
+          <p class="rol">Para el cliente</p>
+          <h3>Tienda en línea</h3>
+          <p>
+            El catálogo público con la cosecha de la semana, vendiendo del mismo
+            inventario del mostrador.
+          </p>
+          <ul class="lista">
+            <li>Filtros por grupo y categoría, y buscador.</li>
+            <li>Canastas y combos mostrando lo que llevan dentro.</li>
+            <li>Presentaciones fijas (500 g, 1 kg) que salen del granel.</li>
+            <li>Precio de mayorista automático para el que lo tiene.</li>
+            <li>Domicilio gratis desde el monto que usted decida.</li>
+          </ul>
+        </div>
+        <figure class="lamina">
+          <img src="imagenes/01-tienda.jpg" alt="Portada de la tienda en línea" loading="lazy" data-ampliar>
+          <figcaption>Portada de la tienda</figcaption>
+        </figure>
+      </article>
+
+      <article class="modulo reveal" data-grupo="mostrador">
+        <div class="modulo-texto">
+          <p class="rol">Para el cliente</p>
+          <h3>Cierre de la compra</h3>
+          <p>
+            Donde se remata el pedido. La cédula es obligatoria: es lo que
+            permite reconocer al cliente de una compra a otra y lo que se
+            reporta al facturar.
+          </p>
+          <ul class="lista">
+            <li>Transferencia, contra entrega o recoger en el local.</li>
+            <li>Comprobante de pago adjunto cuando toca.</li>
+            <li>Los errores se explican campo por campo, no con un aviso suelto.</li>
+          </ul>
+        </div>
+        <figure class="lamina">
+          <img src="imagenes/03-checkout.jpg" alt="Formulario de cierre de compra" loading="lazy" data-ampliar>
+          <figcaption>Cierre de la compra</figcaption>
+        </figure>
+      </article>
+
+      <article class="modulo reveal" data-grupo="bodega">
+        <div class="modulo-texto">
+          <p class="rol">Para el que maneja el surtido</p>
+          <h3>Inventario</h3>
+          <p>
+            Todo el catálogo con existencias, costo, margen y clasificación de
+            cada referencia.
+          </p>
+          <ul class="lista">
+            <li>Aviso de lo que está por debajo del mínimo.</li>
+            <li>Presentaciones (miel de 300, 500 y 1000 g) con su propio stock.</li>
+            <li>Canastas con receta: su disponible sale de lo que llevan.</li>
+            <li>Marcar un producto como <b>a granel</b> para pesarlo en la caja.</li>
+          </ul>
+        </div>
+        <figure class="lamina">
+          <img src="imagenes/06-inventario.jpg" alt="Tabla de inventario con existencias y márgenes" loading="lazy" data-ampliar>
+          <figcaption>Inventario</figcaption>
+        </figure>
+      </article>
+
+      <article class="modulo reveal" data-grupo="bodega">
+        <div class="modulo-texto">
+          <p class="rol">Para el que responde por la bodega</p>
+          <h3>Bajas por merma</h3>
+          <p>
+            El cierre de la bodega: lo que se secó, se pudrió, se venció o se
+            rompió sale del inventario con un acta detrás.
+          </p>
+          <ul class="lista">
+            <li>Causa por línea: deshidratación, pudrición, vencimiento, rotura.</li>
+            <li>Acta para imprimir, con responsable, hora y firma del jefe.</li>
+            <li>Se valora al costo y <b>se le resta a la ganancia</b> del día.</li>
+            <li>Informe de qué es lo que más se le está dañando.</li>
+          </ul>
+        </div>
+        <figure class="lamina">
+          <img src="imagenes/14-mermas.jpg" alt="Pantalla de bajas por merma con el informe al lado" loading="lazy" data-ampliar>
+          <figcaption>Mermas, con el informe por causa</figcaption>
+        </figure>
+      </article>
+
+      <article class="modulo reveal" data-grupo="bodega">
+        <div class="modulo-texto">
+          <p class="rol">Para el que compra</p>
+          <h3>Compras a fincas</h3>
+          <p>
+            Qué le compró a cada agricultor, a cómo, y si ya le giró. Al
+            registrarla sube el surtido y se actualiza el costo del catálogo.
+          </p>
+          <ul class="lista">
+            <li>Los datos bancarios del proveedor a la mano para girar.</li>
+            <li>Lo que está pendiente de pago, separado de lo ya girado.</li>
+            <li>Corregir una compra devuelve y vuelve a descontar el surtido.</li>
+          </ul>
+        </div>
+        <figure class="lamina">
+          <img src="imagenes/13-compras.jpg" alt="Pantalla de compras a fincas" loading="lazy" data-ampliar>
+          <figcaption>Compras a fincas</figcaption>
+        </figure>
+      </article>
+
+      <article class="modulo reveal" data-grupo="plata">
+        <div class="modulo-texto">
+          <p class="rol">Para el que lleva las cuentas</p>
+          <h3>Ventas y cuadre de caja</h3>
+          <p>
+            Lo que se vendió, lo que costó y lo que quedó. Al cerrar, las cifras
+            se congelan y los pedidos se archivan.
+          </p>
+          <ul class="lista">
+            <li>Ganancia de verdad: ventas menos mercancía, gastos y merma.</li>
+            <li>Lo recaudado separado por forma de pago.</li>
+            <li>Lo más vendido, con el margen de cada cosa.</li>
+            <li>La caja del mostrador y la de la página se cierran aparte.</li>
+          </ul>
+        </div>
+        <figure class="lamina">
+          <img src="imagenes/11-reportes.jpg" alt="Panel de ventas con indicadores y cierre de jornada" loading="lazy" data-ampliar>
+          <figcaption>Ventas y cuadre de la jornada</figcaption>
+        </figure>
+      </article>
+
+      <article class="modulo reveal" data-grupo="plata">
+        <div class="modulo-texto">
+          <p class="rol">Para el que cobra</p>
+          <h3>Facturación, cobros y cartera</h3>
+          <p>
+            Cada venta aprobada saca su factura con numeración seguida. Los
+            abonos se reparten contra las facturas abiertas del cliente.
+          </p>
+          <ul class="lista">
+            <li>Notas crédito y débito para corregir sin reescribir lo pasado.</li>
+            <li>Un pago puede tapar varias facturas, de la más vieja a la nueva.</li>
+            <li>Lo que sobra queda de anticipo, no se pierde.</li>
+            <li>Cartera con lo vencido y lo que está por vencerse.</li>
+          </ul>
+        </div>
+        <figure class="lamina">
+          <img src="imagenes/08-facturacion.jpg" alt="Listado de facturación con totales" loading="lazy" data-ampliar>
+          <figcaption>Facturación</figcaption>
+        </figure>
+      </article>
+
+      <article class="modulo reveal" data-grupo="plata">
+        <div class="modulo-texto">
+          <p class="rol">Para el dueño</p>
+          <h3>Consolidado y mayoristas</h3>
+          <p>
+            La mirada de arriba: las dos cajas sumadas, y las tarifas especiales
+            del que compra al por mayor.
+          </p>
+          <ul class="lista">
+            <li>Niveles de mayorista con descuento por producto.</li>
+            <li>El precio correcto se aplica solo, en la página y en la caja.</li>
+            <li>Consolidado por el rango de fechas que quiera.</li>
+          </ul>
+        </div>
+        <figure class="lamina">
+          <img src="imagenes/12-consolidado.jpg" alt="Informe consolidado de las dos cajas" loading="lazy" data-ampliar>
+          <figcaption>Consolidado</figcaption>
+        </figure>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<!-- ────────────────────────────── Garantías ────────────────────────────── -->
+<section class="seccion" id="garantias">
+  <div class="wrap">
+    <div class="cabecera reveal">
+      <p class="eyebrow">Lo que le cuida el negocio</p>
+      <h2>Decisiones que no se ven, pero se notan</h2>
+      <p class="entradilla">
+        Cada una responde a una forma concreta de perder plata. Y cada una está
+        comprobada con una prueba automática.
+      </p>
+    </div>
+
+    <div class="garantias">
+      <article class="garantia reveal">
+        <h3>No se puede vender lo que no hay</h3>
+        <p>
+          Dos clientes comprando la última unidad al mismo tiempo: uno pasa, al
+          otro se le explica. El inventario nunca queda en negativo.
+        </p>
+        <p class="prueba">Probado: 2 pedidos a la vez → 1 pasa, 1 se rechaza, queda en 0</p>
+      </article>
+
+      <article class="garantia reveal">
+        <h3>Toda venta queda con cédula</h3>
+        <p>
+          Hasta la venta rápida del mostrador, que queda a nombre de «Consumidor
+          final» con el documento genérico de la DIAN.
+        </p>
+        <p class="prueba">Sin cédula no cierra una venta, por ningún lado</p>
+      </article>
+
+      <article class="garantia reveal">
+        <h3>Los documentos no cambian después</h3>
+        <p>
+          El precio, el nombre y la receta se copian dentro del pedido. Si
+          mañana sube el precio, la factura de ayer sigue diciendo lo de ayer.
+        </p>
+        <p class="prueba">Probado con devoluciones de canastas de días anteriores</p>
+      </article>
+
+      <article class="garantia reveal">
+        <h3>Un descuento sin razón no se guarda</h3>
+        <p>
+          El cajero puede cambiar cualquier precio —sin tope, así lo decidió el
+          negocio— pero tiene que escribir por qué. Queda con su nombre y la hora.
+        </p>
+        <p class="prueba">Probado: precio cambiado sin motivo → no lo deja</p>
+      </article>
+
+      <article class="garantia reveal">
+        <h3>Lo cerrado no se toca</h3>
+        <p>
+          Apenas se cierra una jornada, sus pedidos, gastos, cobros y actas
+          quedan congelados. Para corregir se saca un documento nuevo.
+        </p>
+        <p class="prueba">Probado: borrar un gasto o un acta ya cerrada → no lo deja</p>
+      </article>
+
+      <article class="garantia reveal">
+        <h3>Meterse a la fuerza sale caro</h3>
+        <p>
+          Bloquea después de varios intentos fallidos desde la misma conexión,
+          sin dejar por fuera al administrador que entra desde otro lado.
+        </p>
+        <p class="prueba">Probado: bloquea en el intento 9 — 6 ms contra 99 ms</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────── Pruebas ─────────────────────────────── -->
+<section class="seccion seccion-oscura" id="pruebas">
+  <div class="wrap">
+    <div class="cabecera reveal">
+      <p class="eyebrow">Evidencia</p>
+      <h2>Cómo sabemos que funciona</h2>
+      <p class="entradilla">
+        No es una promesa: son las pruebas que corren contra el sistema completo,
+        cada una sobre una base de datos recién creada.
+      </p>
+    </div>
+
+    <div class="pruebas-grid">
+      <div class="reveal">
+        <h3 class="sub">Pruebas del negocio</h3>
+        <table class="tabla">
+          <thead>
+            <tr><th>Batería</th><th>Qué revisa</th><th><span class="visually-hidden">Resultado</span></th></tr>
+          </thead>
+          <tbody>
+            <tr><td>qa-pos</td><td>Venta de mostrador, fiado, devolución, cierre</td><td class="ok">✓</td></tr>
+            <tr><td>qa-granel</td><td>Peso decimal y paquetes web del mismo montón</td><td class="ok">✓</td></tr>
+            <tr><td>qa-mermas</td><td>Baja por merma, acta y efecto en la ganancia</td><td class="ok">✓</td></tr>
+            <tr><td>qa-cartera</td><td>Abonos, anticipos y reparto entre facturas</td><td class="ok">✓</td></tr>
+            <tr><td>qa-facturacion</td><td>Emisión, numeración y anulación</td><td class="ok">✓</td></tr>
+            <tr><td>qa-canastas</td><td>Recetas y disponible derivado</td><td class="ok">✓</td></tr>
+            <tr><td>qa-compras</td><td>Entrada de surtido y pago a fincas</td><td class="ok">✓</td></tr>
+            <tr><td>qa-credito</td><td>Cupo, vencimiento y recaudo</td><td class="ok">✓</td></tr>
+            <tr><td>qa-seguridad</td><td>Roles, concurrencia y validación de datos</td><td class="ok">✓</td></tr>
+            <tr><td colspan="3" class="mas">y 17 baterías más — 26 en total, todas pasando</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="reveal">
+        <h3 class="sub">Rendimiento y aguante</h3>
+        <pre class="terminal"><span class="dim">$ node worker/tests/qa-carga.mjs · 10 clientes · 12 s</span>
+
+GET /api/products   <span class="dim">(catálogo)</span>
+  peticiones   <span class="num">1227</span>
+  correctas    <span class="verde">100.0 %</span>
+  latencia     p50 <span class="num">90ms</span> · p90 <span class="num">134ms</span> · p99 <span class="num">325ms</span>
+
+POST /api/auth/login
+  peticiones   <span class="num">151</span>
+  correctas    <span class="verde">100.0 %</span>
+
+POST login <span class="dim">(clave equivocada)</span>
+  bloqueadas   <span class="num">1731</span> <span class="dim">por límite de intentos</span>
+
+<span class="dim">── Lectura ──</span>
+  <span class="verde">Sin degradación a esta concurrencia.</span></pre>
+
+        <p class="nota">
+          Además: <b>123 pruebas unitarias</b> del lado del navegador y
+          compilación limpia. La clave se guarda con PBKDF2 de 100.000
+          vueltas — por eso entrar cuesta casi un segundo, y por eso adivinar
+          a ciegas no le sirve a nadie.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ────────────────────────────── Requisitos ───────────────────────────── -->
+<section class="seccion" id="requisitos">
+  <div class="wrap">
+    <div class="cabecera reveal">
+      <p class="eyebrow">Para arrancar</p>
+      <h2>Qué necesita su tienda</h2>
+    </div>
+
+    <dl class="requisitos">
+      <div class="requisito reveal">
+        <dt>Un computador</dt>
+        <dd>Cualquiera con navegador al día. No se instala nada.</dd>
+      </div>
+      <div class="requisito reveal">
+        <dt>Internet</dt>
+        <dd>La conexión normal de un local. El catálogo responde en menos de dos décimas.</dd>
+      </div>
+      <div class="requisito reveal">
+        <dt>Lector de código de barras</dt>
+        <dd>Opcional. Sirve cualquiera de los de USB; también funciona buscando por nombre.</dd>
+      </div>
+      <div class="requisito reveal">
+        <dt>Impresora</dt>
+        <dd>Opcional, para recibos y actas. También se guardan en PDF desde el navegador.</dd>
+      </div>
+      <div class="requisito reveal">
+        <dt>Balanza</dt>
+        <dd>La que ya tenga. El peso se teclea en la caja.</dd>
+      </div>
+      <div class="requisito reveal">
+        <dt>Servidor</dt>
+        <dd>Ninguno. Corre sobre la red de Cloudflare: no hay máquina que mantener ni copias que hacer a mano.</dd>
+      </div>
+    </dl>
+  </div>
+</section>
+
+<!-- ──────────────────────────────── Cierre ─────────────────────────────── -->
+<section class="cierre" id="contacto">
+  <div class="wrap cierre-inner">
+    <h2 class="reveal">Listo para atender el primer cliente.</h2>
+    <p class="reveal">
+      El sistema está hecho, probado y funcionando. Lo que falta es cargar el
+      catálogo de su tienda, crear los usuarios del equipo y abrir la caja.
+    </p>
+    <div class="cierre-acciones reveal">
+      <!-- Cambie este correo por el suyo. -->
+      <a class="boton boton-claro boton-grande" href="mailto:hola@agricultoresorganicos.co?subject=Quiero%20una%20demostraci%C3%B3n">
+        Escribir para una demostración
+      </a>
+      <a class="boton boton-linea-clara boton-grande" href="#inicio">Volver arriba</a>
+    </div>
+  </div>
+</section>
+
+<footer class="pie">
+  <div class="wrap pie-inner">
+    <span>Agricultores Orgánicos · Sistema de tienda, caja e inventario</span>
+    <span>Las imágenes y las cifras salen del sistema funcionando</span>
+  </div>
+</footer>
+
+<!-- Visor para ampliar las imágenes. El JS lo abre y lo cierra. -->
+<div class="visor" id="visor" role="dialog" aria-modal="true" aria-label="Imagen ampliada" hidden>
+  <button class="visor-cerrar" id="visor-cerrar" type="button" aria-label="Cerrar">✕</button>
+  <img id="visor-img" src="" alt="">
+</div>
+
+<script src="animaciones.js"></script>
+</body>
+</html>

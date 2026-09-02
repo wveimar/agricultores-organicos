@@ -1,0 +1,727 @@
+/* ==========================================================================
+   Landing de Agricultores Orgánicos
+   --------------------------------------------------------------------------
+   Los colores y las tipografías son los mismos del sistema (src/styles.css):
+   la página que lo vende tiene que verse como el producto, no como una
+   plantilla ajena.
+
+   Está organizado así:
+     1. Tokens y base
+     2. Piezas repetidas (botones, etiquetas, cabeceras)
+     3. Cada sección, en el mismo orden del HTML
+     4. Animación (lo que enciende el JS)
+     5. Responsive y accesibilidad
+   ========================================================================== */
+
+/* ── 1. Tokens ─────────────────────────────────────────────────────────── */
+:root {
+  --hueso: #faf8f4;
+  --lino: #f3ede3;
+  --blanco: #ffffff;
+  --arena: #e7dccb;
+  --piedra: #c9bca8;
+  --musgo: #2e4034;
+  --musgo-hondo: #1e2b23;
+  --salvia: #8da189;
+  --arcilla: #c0674a;
+  --miel: #d9a441;
+  --tinta: #1f1b16;
+  --tinta-suave: #5c5348;
+  --tinta-tenue: #8a7f70;
+
+  --display: 'Fraunces', ui-serif, Georgia, serif;
+  --sans: 'Inter', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  --ancho: 1180px;
+  --medida: 62ch;
+  --curva: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--hueso);
+  color: var(--tinta);
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+h1, h2, h3 {
+  font-family: var(--display);
+  font-weight: 400;
+  margin: 0;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+p { margin: 0; text-wrap: pretty; }
+img { max-width: 100%; display: block; }
+b, strong { font-weight: 600; }
+
+a { color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--arcilla);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.wrap {
+  max-width: var(--ancho);
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── 2. Piezas repetidas ───────────────────────────────────────────────── */
+.eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--tinta-tenue);
+  margin-bottom: 12px;
+}
+
+.boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: transform 0.2s var(--curva), background-color 0.2s, border-color 0.2s;
+  cursor: pointer;
+}
+
+.boton-grande { padding: 14px 28px; font-size: 16px; }
+
+.boton-solido { background: var(--musgo); color: #f6f3ed; }
+.boton-solido:hover { background: var(--musgo-hondo); transform: translateY(-2px); }
+
+.boton-linea { border-color: var(--arena); color: var(--tinta); background: var(--blanco); }
+.boton-linea:hover { border-color: var(--musgo); color: var(--musgo); transform: translateY(-2px); }
+
+.boton-claro { background: #f6f3ed; color: var(--musgo-hondo); }
+.boton-claro:hover { background: #ffffff; transform: translateY(-2px); }
+
+.boton-linea-clara { border-color: rgba(246, 243, 237, 0.35); color: #f6f3ed; }
+.boton-linea-clara:hover { border-color: #f6f3ed; transform: translateY(-2px); }
+
+.seccion { padding-block: clamp(56px, 7vw, 96px); }
+.seccion-alterna { background: var(--lino); border-block: 1px solid var(--arena); }
+
+.cabecera { max-width: var(--medida); margin-bottom: 44px; }
+.cabecera h2 { font-size: clamp(28px, 3.6vw, 42px); line-height: 1.12; }
+.entradilla { color: var(--tinta-suave); margin-top: 14px; }
+.sub { font-family: var(--display); font-size: 21px; margin-bottom: 14px; }
+
+/* ── 3. Barra superior ─────────────────────────────────────────────────── */
+.barra {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(250, 248, 244, 0.86);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+/* La clase la pone el JS cuando se baja del inicio. */
+.barra.pegada {
+  border-bottom-color: var(--arena);
+  box-shadow: 0 1px 20px rgba(31, 27, 22, 0.05);
+}
+
+.barra-inner {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-height: 64px;
+}
+
+.marca { text-decoration: none; margin-right: auto; }
+.marca-nombre { font-family: var(--display); font-size: 18px; font-weight: 500; }
+
+.nav { display: flex; gap: 22px; }
+
+.nav a {
+  font-size: 14.5px;
+  color: var(--tinta-suave);
+  text-decoration: none;
+  position: relative;
+  padding-block: 4px;
+}
+
+.nav a::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: var(--musgo);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.25s var(--curva);
+}
+
+.nav a:hover { color: var(--tinta); }
+.nav a:hover::after,
+.nav a.activo::after { transform: scaleX(1); }
+.nav a.activo { color: var(--musgo); font-weight: 500; }
+
+.progreso {
+  height: 2px;
+  width: 0%;
+  background: var(--arcilla);
+  transition: width 0.1s linear;
+}
+
+/* ── Portada ───────────────────────────────────────────────────────────── */
+.portada {
+  background:
+    radial-gradient(115% 85% at 10% 0%, rgba(46, 64, 52, 0.10), transparent 60%),
+    var(--lino);
+  border-bottom: 1px solid var(--arena);
+}
+
+.portada-inner { padding-block: clamp(52px, 8vw, 96px); }
+
+.portada h1 {
+  font-size: clamp(38px, 6.2vw, 70px);
+  line-height: 1.04;
+  max-width: 17ch;
+}
+
+/* El subrayado del resalte lo dibuja el JS al entrar. */
+.resalte {
+  position: relative;
+  white-space: nowrap;
+}
+
+.resalte::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  bottom: 0.08em;
+  height: 0.14em;
+  background: var(--arcilla);
+  opacity: 0.32;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.7s var(--curva);
+}
+
+.resalte.trazado::after { transform: scaleX(1); }
+
+.bajada {
+  font-size: clamp(17px, 1.9vw, 20px);
+  color: var(--tinta-suave);
+  max-width: 54ch;
+  margin-top: 22px;
+}
+
+.portada-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+.cifras {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--arena);
+  border: 1px solid var(--arena);
+  margin: 46px 0 0;
+}
+
+.cifra {
+  background: var(--lino);
+  padding: 18px 20px;
+}
+
+.cifra dt {
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tinta-tenue);
+}
+
+.cifra dd {
+  margin: 4px 0 2px;
+  font-family: var(--display);
+  font-size: 30px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.cifra-texto { font-size: 26px; }
+.cifra p { font-size: 13.5px; color: var(--tinta-tenue); }
+
+/* ── Comparación antes / después ───────────────────────────────────────── */
+.comparacion { border-top: 1px solid var(--arena); }
+
+.fila {
+  display: grid;
+  gap: 10px 36px;
+  padding-block: 26px;
+  border-bottom: 1px solid var(--arena);
+}
+
+.antes h3 { font-size: 19px; margin-bottom: 6px; }
+.antes p { color: var(--tinta-tenue); }
+
+.despues {
+  padding-left: 18px;
+  border-left: 2px solid var(--musgo);
+  align-self: center;
+}
+
+/* ── Jornada ───────────────────────────────────────────────────────────── */
+.jornada { list-style: none; margin: 0; padding: 0; }
+
+.momento {
+  display: grid;
+  gap: 12px 32px;
+  padding-block: 30px;
+  border-top: 1px solid var(--arena);
+}
+
+.momento-titulo { display: flex; align-items: baseline; gap: 12px; }
+
+.momento-num {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--arcilla);
+  letter-spacing: 0.08em;
+}
+
+.momento-titulo h3 { font-size: 22px; }
+.momento-cuerpo p { color: var(--tinta-suave); }
+.momento-cuerpo p + p { margin-top: 10px; }
+
+.etiquetas { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+
+.etiqueta {
+  font-size: 13px;
+  padding: 4px 12px;
+  border: 1px solid var(--arena);
+  border-radius: 999px;
+  background: var(--blanco);
+  color: var(--tinta-suave);
+}
+
+/* ── Videos ────────────────────────────────────────────────────────────── */
+.videos {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 26px;
+}
+
+.video { margin: 0; }
+
+.video-marco {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--arena);
+  background: var(--lino);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.video-marco img { transition: transform 0.5s var(--curva), filter 0.4s; }
+.video-marco:hover img { transform: scale(1.02); filter: brightness(0.94); }
+
+/* El triángulo del play, dibujado con bordes: sin imagen que cargar. */
+.play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: rgba(46, 64, 52, 0.92);
+  display: grid;
+  place-items: center;
+  transition: transform 0.3s var(--curva), background-color 0.3s;
+}
+
+.play::after {
+  content: "";
+  width: 0; height: 0;
+  border-style: solid;
+  border-width: 10px 0 10px 17px;
+  border-color: transparent transparent transparent #f6f3ed;
+  margin-left: 4px;
+}
+
+.video-marco:hover .play { transform: scale(1.08); background: var(--musgo-hondo); }
+
+.video video { width: 100%; display: block; border: 1px solid var(--arena); }
+
+.video figcaption {
+  margin-top: 12px;
+  font-size: 14.5px;
+  color: var(--tinta-suave);
+}
+
+/* ── Filtros y módulos ─────────────────────────────────────────────────── */
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.filtro {
+  font-family: inherit;
+  font-size: 14.5px;
+  padding: 7px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--arena);
+  background: var(--blanco);
+  color: var(--tinta-suave);
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.filtro:hover { border-color: var(--musgo); color: var(--musgo); }
+
+.filtro.activo {
+  background: var(--musgo);
+  border-color: var(--musgo);
+  color: #f6f3ed;
+  font-weight: 500;
+}
+
+.modulos { display: grid; }
+
+.modulo {
+  display: grid;
+  gap: 24px;
+  padding-block: 42px;
+  border-top: 1px solid var(--arena);
+}
+
+/* La pone el JS al filtrar. */
+.modulo.oculto { display: none; }
+
+.rol {
+  font-size: 11.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--arcilla);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.modulo h3 { font-size: 26px; margin-bottom: 10px; }
+.modulo-texto > p { color: var(--tinta-suave); }
+
+.lista {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 9px;
+}
+
+.lista li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 15.5px;
+  color: var(--tinta-suave);
+}
+
+.lista li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.62em;
+  width: 8px;
+  height: 1px;
+  background: var(--piedra);
+}
+
+.lista li b { color: var(--tinta); }
+
+.lamina {
+  margin: 0;
+  background: var(--blanco);
+  border: 1px solid var(--arena);
+  padding: 10px;
+}
+
+.seccion-alterna .lamina { background: var(--blanco); }
+
+.lamina img {
+  border: 1px solid var(--arena);
+  cursor: zoom-in;
+  transition: transform 0.4s var(--curva);
+}
+
+.lamina img:hover { transform: scale(1.01); }
+
+.lamina figcaption {
+  margin-top: 9px;
+  font-size: 13px;
+  color: var(--tinta-tenue);
+}
+
+/* ── Garantías ─────────────────────────────────────────────────────────── */
+/* Columnas explícitas: son seis, y 2 o 3 dividen exacto. Con `auto-fit`
+   quedaban celdas vacías pintadas del color del borde. */
+.garantias {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1px;
+  background: var(--arena);
+  border: 1px solid var(--arena);
+}
+
+.garantia {
+  background: var(--blanco);
+  padding: 24px;
+  transition: background-color 0.3s;
+}
+
+.garantia:hover { background: var(--lino); }
+.garantia h3 { font-size: 19px; line-height: 1.25; margin-bottom: 8px; }
+.garantia p { font-size: 15.5px; color: var(--tinta-suave); }
+
+.prueba {
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--musgo);
+  line-height: 1.5;
+}
+
+/* ── Pruebas (sección oscura) ──────────────────────────────────────────── */
+.seccion-oscura {
+  background: var(--musgo-hondo);
+  color: #ece7dd;
+}
+
+.seccion-oscura .eyebrow { color: #9aa79a; }
+.seccion-oscura h2 { color: #f6f3ed; }
+.seccion-oscura .entradilla { color: #c3c8bd; }
+.seccion-oscura .sub { color: #f6f3ed; }
+
+.pruebas-grid { display: grid; gap: 36px; }
+
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+}
+
+.tabla th {
+  text-align: left;
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #9aa79a;
+  font-weight: 600;
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid rgba(236, 231, 221, 0.18);
+}
+
+.tabla td {
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid rgba(236, 231, 221, 0.1);
+  vertical-align: top;
+}
+
+.tabla td:first-child { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+.tabla .ok { color: var(--salvia); font-weight: 600; }
+.tabla .mas { color: #9aa79a; font-size: 14px; padding-top: 12px; border-bottom: 0; }
+
+.terminal {
+  background: #100d0a;
+  border: 1px solid rgba(236, 231, 221, 0.14);
+  color: #e8e1d5;
+  padding: 20px 22px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.75;
+  overflow-x: auto;
+}
+
+.terminal .dim { color: #9b9184; }
+.terminal .num { color: var(--miel); }
+.terminal .verde { color: #93c5a3; }
+
+.nota { margin-top: 18px; color: #c3c8bd; font-size: 15.5px; }
+.nota b { color: #f6f3ed; }
+
+/* ── Requisitos ────────────────────────────────────────────────────────── */
+.requisitos { margin: 0; }
+
+.requisito {
+  display: grid;
+  gap: 4px 24px;
+  padding-block: 17px;
+  border-bottom: 1px solid var(--arena);
+}
+
+.requisito dt { font-weight: 600; }
+.requisito dd { margin: 0; color: var(--tinta-suave); }
+
+/* ── Cierre ────────────────────────────────────────────────────────────── */
+.cierre { background: var(--musgo); color: #f6f3ed; }
+.cierre-inner { padding-block: clamp(52px, 7vw, 88px); }
+.cierre h2 { font-size: clamp(28px, 3.6vw, 42px); color: #f8f5ef; max-width: 20ch; }
+.cierre p { color: #d5dcd2; max-width: 56ch; margin-top: 16px; }
+.cierre-acciones { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+
+.pie { border-top: 1px solid var(--arena); }
+
+.pie-inner {
+  padding-block: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  justify-content: space-between;
+  font-size: 13.5px;
+  color: var(--tinta-tenue);
+}
+
+/* ── Visor de imágenes ─────────────────────────────────────────────────── */
+.visor {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(21, 18, 14, 0.92);
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.visor[hidden] { display: none; }
+.visor.abierto { opacity: 1; }
+
+.visor img {
+  max-width: 100%;
+  max-height: 90vh;
+  border: 1px solid rgba(236, 231, 221, 0.25);
+  transform: scale(0.97);
+  transition: transform 0.3s var(--curva);
+}
+
+.visor.abierto img { transform: scale(1); }
+
+.visor-cerrar {
+  position: absolute;
+  top: 18px; right: 20px;
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  border: 1px solid rgba(236, 231, 221, 0.3);
+  background: transparent;
+  color: #ece7dd;
+  font-size: 17px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.visor-cerrar:hover { background: rgba(236, 231, 221, 0.12); }
+
+/* ── 4. Animación ──────────────────────────────────────────────────────────
+   Regla de oro: sin JavaScript, TODO se ve. El JS pone `data-animar="si"`
+   en el <html> y solo entonces los bloques arrancan escondidos y aparecen
+   al entrar en pantalla. Así, si el script falla o alguien lo bloquea, la
+   página sigue completa en vez de quedar en blanco.                        */
+html[data-animar="si"] .reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.6s var(--curva), transform 0.6s var(--curva);
+}
+
+html[data-animar="si"] .reveal.visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* ── 5. Responsive ─────────────────────────────────────────────────────── */
+@media (min-width: 640px) {
+  .videos { grid-template-columns: repeat(2, 1fr); }
+  .garantias { grid-template-columns: repeat(2, 1fr); }
+  .requisito { grid-template-columns: 220px 1fr; align-items: baseline; }
+}
+
+@media (min-width: 860px) {
+  .cifras { grid-template-columns: repeat(4, 1fr); }
+  .fila { grid-template-columns: 1fr 1fr; align-items: start; }
+  .momento { grid-template-columns: 230px 1fr; }
+  .pruebas-grid { grid-template-columns: 1fr 1fr; gap: 44px; }
+}
+
+@media (min-width: 1000px) {
+  .garantias { grid-template-columns: repeat(3, 1fr); }
+  .videos { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (min-width: 940px) {
+  .modulo {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 44px;
+    align-items: start;
+  }
+}
+
+/* La navegación del medio estorba en pantallas chicas: el contenido está a
+   un scroll de distancia y los botones siguen ahí. */
+@media (max-width: 780px) {
+  .nav { display: none; }
+}
+
+@media (max-width: 520px) {
+  .barra .boton { display: none; }
+  .marca { margin-right: 0; }
+}
+
+/* ── Accesibilidad ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  /* Con movimiento reducido nada se esconde: se ve todo de entrada. */
+  html[data-animar="si"] .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
