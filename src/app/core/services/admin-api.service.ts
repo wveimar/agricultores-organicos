@@ -23,9 +23,13 @@ import {
   ApiExpense,
   ApiInvoice,
   ApiInvoiceInput,
+  ApiAntiguedad,
   ApiInvoiceSummary,
   ApiMerma,
   ApiMermaReporte,
+  ApiProyeccionCaja,
+  ApiResumenTesoreria,
+  ApiTurnoCaja,
   ApiNotaInput,
   ApiOrder,
   ApiOrderStatusLogEntry,
@@ -1148,6 +1152,7 @@ export class AdminApiService {
     descripcion: string;
     monto: number;
     categoria: ExpenseCategory;
+    cuentaId?: string;
   }): Observable<ApiExpense> {
     return this.api.createExpense(gasto).pipe(
       tap((creado) => {
@@ -1232,6 +1237,92 @@ export class AdminApiService {
 
   mermaReporte(rango: { desde?: string; hasta?: string } = {}): Observable<ApiMermaReporte> {
     return this.api.mermaReporte(rango);
+  }
+
+  // ──────────────────────────── Tesorería (0035) ────────────────────────────
+
+  /**
+   * El resumen manda sobre las cuentas.
+   *
+   * Los saldos que pinta la cabecera salen de aquí y no de una señal aparte:
+   * dos fuentes para el mismo número acabarían mostrando cifras distintas en
+   * la misma pantalla cuando una se recargue y la otra no.
+   */
+  readonly tesoreria = signal<ApiResumenTesoreria | null>(null);
+  readonly tesoreriaLoading = signal(false);
+  readonly tesoreriaError = signal<string | null>(null);
+
+  readonly cuentasTesoreria = computed(() => this.tesoreria()?.cuentas ?? []);
+
+  loadTesoreria(): void {
+    this.tesoreriaLoading.set(true);
+    this.tesoreriaError.set(null);
+    this.api.tesoreriaResumen().subscribe({
+      next: (datos) => {
+        this.tesoreria.set(datos);
+        this.tesoreriaLoading.set(false);
+      },
+      error: (error: ApiErrorBody) => {
+        this.tesoreriaError.set(error.message);
+        this.tesoreriaLoading.set(false);
+      },
+    });
+  }
+
+  tesoreriaMovimientos(filtro: { cuenta?: string; tipo?: string; q?: string } = {}) {
+    return this.api.tesoreriaMovimientos(filtro);
+  }
+
+  tesoreriaAntiguedad(): Observable<ApiAntiguedad> {
+    return this.api.tesoreriaAntiguedad();
+  }
+
+  tesoreriaProyeccion(): Observable<ApiProyeccionCaja> {
+    return this.api.tesoreriaProyeccion();
+  }
+
+  tesoreriaTurno(cuenta = 'caja-efectivo') {
+    return this.api.tesoreriaTurno(cuenta);
+  }
+
+  tesoreriaDevoluciones() {
+    return this.api.tesoreriaDevoluciones();
+  }
+
+  /** Devolver plata baja el saldo de una cuenta: el resumen se recarga. */
+  registrarDevolucion(
+    notaId: string,
+    input: { monto?: number; metodo?: 'efectivo' | 'transferencia'; observaciones?: string },
+  ) {
+    return this.api.registrarDevolucion(notaId, input).pipe(tap(() => this.loadTesoreria()));
+  }
+
+  /** Cualquier movimiento cambia los saldos, así que el resumen se recarga. */
+  crearMovimientoTesoreria(input: {
+    tipo: 'ingreso' | 'egreso' | 'traslado';
+    cuentaId: string;
+    cuentaDestinoId?: string;
+    monto: number;
+    concepto: string;
+    tercero?: string;
+    referencia?: string;
+  }): Observable<{ id: string }> {
+    return this.api.crearMovimientoTesoreria(input).pipe(tap(() => this.loadTesoreria()));
+  }
+
+  abrirTurno(input: { cuentaId?: string; fondoApertura: number }): Observable<ApiTurnoCaja> {
+    return this.api.abrirTurno(input);
+  }
+
+  cerrarTurno(input: {
+    cuentaId?: string;
+    efectivoContado: number;
+    vouchersContados?: number;
+    notas?: string;
+    recibeUsuario: string;
+    recibeClave: string;
+  }) {
+    return this.api.cerrarTurno(input).pipe(tap(() => this.loadTesoreria()));
   }
 
   // ───────────── Agenda: proveedores y clientes ─────────────
@@ -1355,8 +1446,11 @@ export class AdminApiService {
   }
 
   /** Solo cambia el estado: el inventario ya se movió al registrar. */
-  markPurchasePaid(id: string): Observable<ApiPurchase> {
-    return this.api.markPurchasePaid(id).pipe(
+  markPurchasePaid(
+    id: string,
+    abono: { monto?: number; metodo?: 'efectivo' | 'transferencia'; nota?: string } = {},
+  ): Observable<ApiPurchase> {
+    return this.api.markPurchasePaid(id, abono).pipe(
       tap((actualizada) => {
         this.purchases.update((list) => list.map((c) => (c.id === id ? actualizada : c)));
       }),

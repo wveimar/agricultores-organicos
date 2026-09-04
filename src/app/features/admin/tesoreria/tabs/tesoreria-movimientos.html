@@ -1,0 +1,122 @@
+<!-- ── Filtros ─────────────────────────────────────────────────────────── -->
+<div class="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-sand bg-white p-3">
+  <div class="min-w-0 grow basis-64">
+    <label for="mov-buscar" class="sr-only">Buscar movimiento</label>
+    <input
+      id="mov-buscar"
+      type="search"
+      [value]="busqueda()"
+      (input)="onBusqueda($any($event.target).value)"
+      (keydown.enter)="cargar()"
+      (search)="cargar()"
+      placeholder="Concepto, tercero o referencia…"
+      class="block w-full rounded-lg border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+    />
+  </div>
+
+  <label class="sr-only" for="mov-cuenta">Cuenta</label>
+  <select
+    id="mov-cuenta"
+    (change)="onCuenta($any($event.target).value)"
+    class="shrink-0 rounded-lg border border-sand bg-white px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+  >
+    <option value="">Todas las cuentas</option>
+    @for (c of admin.cuentasTesoreria(); track c.id) {
+      <option [value]="c.id" [selected]="cuenta() === c.id">{{ c.nombre }}</option>
+    }
+  </select>
+
+  <label class="sr-only" for="mov-tipo">Tipo</label>
+  <select
+    id="mov-tipo"
+    (change)="onTipo($any($event.target).value)"
+    class="shrink-0 rounded-lg border border-sand bg-white px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+  >
+    <option value="">Todos los tipos</option>
+    @for (t of TIPOS; track t.id) {
+      <option [value]="t.id" [selected]="tipo() === t.id">{{ t.texto }}</option>
+    }
+  </select>
+</div>
+
+<!-- ── La tabla ────────────────────────────────────────────────────────── -->
+<div class="overflow-hidden rounded-xl border border-sand bg-white">
+  <div class="overflow-x-auto">
+    <table class="w-full min-w-[880px] text-sm">
+      <thead>
+        <tr class="border-b border-sand bg-cream/40 text-[11px] uppercase tracking-wider text-ink-muted">
+          <th class="px-4 py-2.5 text-left font-medium">Fecha</th>
+          <th class="px-3 py-2.5 text-left font-medium">Cuenta</th>
+          <th class="px-3 py-2.5 text-left font-medium">Tipo</th>
+          <th class="px-3 py-2.5 text-left font-medium">Concepto</th>
+          <th class="px-3 py-2.5 text-left font-medium">Tercero</th>
+          <th class="px-3 py-2.5 text-left font-medium">Ref.</th>
+          <th class="px-3 py-2.5 text-right font-medium">Entra</th>
+          <th class="px-4 py-2.5 text-right font-medium">Sale</th>
+        </tr>
+      </thead>
+
+      <tbody class="divide-y divide-sand">
+        @for (m of movimientos(); track m.id) {
+          <tr class="transition-colors hover:bg-cream/30">
+            <td class="whitespace-nowrap px-4 py-2.5">
+              <span class="block text-ink">{{ fecha(m.fecha) }}</span>
+              <span class="tabular block text-xs text-ink/40">{{ hora(m.fecha) }}</span>
+            </td>
+            <td class="whitespace-nowrap px-3 py-2.5 text-ink/70">{{ m.cuentaNombre }}</td>
+            <td class="px-3 py-2.5">
+              <span
+                class="whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium"
+                [class]="etiqueta(m.tipo).clase"
+              >
+                {{ etiqueta(m.tipo).texto }}
+              </span>
+            </td>
+            <td class="max-w-[240px] truncate px-3 py-2.5 text-ink">{{ m.concepto }}</td>
+            <td class="max-w-[160px] truncate px-3 py-2.5 text-ink/60">{{ m.tercero || '—' }}</td>
+            <td class="whitespace-nowrap px-3 py-2.5 text-xs text-ink/40">
+              {{ m.referencia || '—' }}
+            </td>
+            <!--
+              Entra y sale en dos columnas y no en una con signo: en un libro
+              se leen por columna —«¿cuánto entró hoy?»— y con una sola habría
+              que ir sumando y restando con la vista.
+            -->
+            <td class="tabular whitespace-nowrap px-3 py-2.5 text-right">
+              @if (m.entra > 0) {
+                <span class="font-medium text-moss">{{ m.entra | cop }}</span>
+              }
+            </td>
+            <td class="tabular whitespace-nowrap px-4 py-2.5 text-right">
+              @if (m.sale > 0) {
+                <span class="font-medium text-clay">{{ m.sale | cop }}</span>
+              }
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="8" class="px-4 py-12 text-center text-sm text-ink/50">
+              @if (cargando()) {
+                Cargando movimientos…
+              } @else {
+                No hay movimientos que coincidan con el filtro.
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+
+      @if (cuantos() > 0) {
+        <tfoot>
+          <tr class="border-t border-sand bg-cream/40 text-sm font-medium">
+            <td class="px-4 py-2.5 text-[11px] uppercase tracking-wider text-ink-muted" colspan="6">
+              {{ cuantos() }} movimiento{{ cuantos() === 1 ? '' : 's' }}
+            </td>
+            <td class="tabular px-3 py-2.5 text-right text-moss">{{ totales().entra | cop }}</td>
+            <td class="tabular px-4 py-2.5 text-right text-clay">{{ totales().sale | cop }}</td>
+          </tr>
+        </tfoot>
+      }
+    </table>
+  </div>
+</div>

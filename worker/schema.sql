@@ -28,7 +28,11 @@ PRAGMA foreign_keys = ON;
 DROP TABLE IF EXISTS payment_allocations;
 DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS invoice_items;
+-- Antes que `invoices`: referencia una nota crédito, y por ella —aunque sea
+-- de forma indirecta— a `treasury_accounts`, que también se suelta más abajo.
+DROP TABLE IF EXISTS invoice_refunds;
 DROP TABLE IF EXISTS invoices;
+DROP TABLE IF EXISTS provider_payments;
 DROP TABLE IF EXISTS provider_purchase_items;
 DROP TABLE IF EXISTS provider_purchases;
 -- Mermas antes que `products` y `cash_closings`: `merma_items` referencia el
@@ -36,6 +40,12 @@ DROP TABLE IF EXISTS provider_purchases;
 DROP TABLE IF EXISTS merma_items;
 DROP TABLE IF EXISTS mermas;
 DROP TABLE IF EXISTS expenses;
+-- Tesorería: los hijos antes que las cuentas. `treasury_accounts` además la
+-- referencian `payments`, `expenses` y `provider_purchases`, que ya se
+-- soltaron arriba — por eso va después de ellas y no antes.
+DROP TABLE IF EXISTS treasury_movements;
+DROP TABLE IF EXISTS cashier_shifts;
+DROP TABLE IF EXISTS treasury_accounts;
 DROP TABLE IF EXISTS order_item_components;
 DROP TABLE IF EXISTS order_status_log;
 DROP TABLE IF EXISTS order_items;
@@ -776,6 +786,13 @@ CREATE TABLE invoices (
   -- siempre dentro del mismo `batch()` que inserta el abono.
   saldo             INTEGER NOT NULL DEFAULT 0 CHECK (saldo >= 0),
 
+  -- Cuánto de una nota crédito ya se devolvió en plata (migración 0037).
+  -- Caché recalculada desde `invoice_refunds`, igual que `monto_pagado` en
+  -- `provider_purchases`. En una FACTURA se queda siempre en 0: una factura
+  -- no se «devuelve», se corrige con una nota. `saldo` de una nota es siempre
+  -- 0 por diseño (no se cobra, corrige) — este es el campo que sí le importa.
+  monto_devuelto    INTEGER NOT NULL DEFAULT 0,
+
   estado            TEXT    NOT NULL DEFAULT 'emitida'
                             CHECK (estado IN ('emitida', 'pagada_parcial', 'pagada', 'anulada')),
 
@@ -838,6 +855,31 @@ CREATE INDEX idx_invoices_cedula  ON invoices (cliente_cedula, emitida_en DESC);
 CREATE INDEX idx_invoices_origen
   ON invoices (invoice_origen_id) WHERE invoice_origen_id IS NOT NULL;
 
+-- Cada devolución de dinero, atada a la nota crédito que la autoriza
+-- (migración 0037).
+--
+-- Una nota crédito ya podía emitirse contra una factura pagada por completo
+-- —eso es justamente una devolución— pero sin esta tabla esa plata no
+-- quedaba registrada en ningún lado: `saldo` de una nota es siempre 0 por
+-- diseño. Es la misma forma que `provider_payments` (0036) para los abonos a
+-- una finca: una fila por movimiento, con su propia cuenta y su propia fecha,
+-- porque una devolución también se puede pagar en varias partes.
+CREATE TABLE invoice_refunds (
+  id                TEXT    PRIMARY KEY,
+  -- CASCADE: una devolución no significa nada sin la nota que la autoriza.
+  nota_credito_id   TEXT    NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  monto             INTEGER NOT NULL CHECK (monto > 0),
+  -- Sin CHECK, igual que `payments.metodo`: la lista vive en el Worker.
+  metodo            TEXT    NOT NULL DEFAULT 'efectivo',
+  cuenta_id         TEXT    REFERENCES treasury_accounts(id),
+  observaciones     TEXT,
+  devuelto_por      TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  devuelto_en       TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_invoice_refunds_nota   ON invoice_refunds (nota_credito_id, devuelto_en DESC);
+CREATE INDEX idx_invoice_refunds_cuenta ON invoice_refunds (cuenta_id, devuelto_en DESC);
+
 -- Líneas de la factura, congeladas igual que `order_items`. Existen para que
 -- una factura pueda vivir sin pedido detrás (venta de mostrador, un servicio):
 -- sin ellas, facturar a mano obligaría a inventar un pedido falso.
@@ -899,18 +941,21 @@ CREATE TABLE payments (
   comprobante_url     TEXT,
   nota                TEXT,
 
-  -- En qué caja entró la plata (migración 0032). `payments` no tiene FK a
-  -- `orders`, así que sin esta columna el cierre del mostrador no podría
-  -- distinguir sus cobros de los de cartera al barrer `closing_id IS NULL`.
-  -- Es también lo que hace que un abono que alguien viene a pagar a la tienda
-  -- cuadre contra el cierre del POS: ese billete está en ESE cajón.
-  --
-  -- En qué caja entró la plata: 'ecommerce' o 'pos'. `payments` no tiene FK a
-  -- `orders`, así que sin esta columna el cierre del mostrador no podría
-  -- distinguir sus cobros de los de cartera al barrer `closing_id IS NULL`.
-  -- Es también lo que hace que un abono que alguien viene a pagar a la tienda
-  -- cuadre contra el cierre del POS: ese billete está en ESE cajón.
-  canal               TEXT    NOT NULL DEFAULT 'ecommerce'
+  -- Por qué CAJA entró la plata: 'ecommerce' o 'pos' (migración 0032).
+  -- `payments` no tiene FK a `orders`, así que sin esta columna el cierre del
+  -- mostrador no podría distinguir sus cobros de los de cartera al barrer
+  -- `closing_id IS NULL`. Es también lo que hace que un abono que alguien viene
+  -- a pagar a la tienda cuadre contra el cierre del POS: ese billete está en
+  -- ESE cajón.
+  canal               TEXT    NOT NULL DEFAULT 'ecommerce',
+
+  -- En qué CUENTA quedó la plata (migración 0035): el cajón o el banco.
+  -- Distinto de `canal`, que dice por qué puerta entró la venta, y distinto de
+  -- `metodo`, que dice cómo pagó el cliente. Un cobro en efectivo hecho en la
+  -- tienda web —el domiciliario que trae el billete— es canal 'ecommerce',
+  -- método 'efectivo' y cuenta 'caja-efectivo': las tres cosas a la vez, y
+  -- ninguna se puede deducir de las otras dos.
+  cuenta_id           TEXT    REFERENCES treasury_accounts(id)
 );
 
 CREATE INDEX idx_payments_closing ON payments (closing_id, liquidado);
@@ -947,10 +992,14 @@ CREATE TABLE expenses (
   creado_en   TEXT    NOT NULL DEFAULT (datetime('now')),
   -- NULL mientras la jornada sigue abierta; el cierre lo adopta, igual que a
   -- los pedidos. Con cierre puesto ya no se puede borrar: es cuenta congelada.
-  closing_id  TEXT    REFERENCES cash_closings(id) ON DELETE SET NULL
+  closing_id  TEXT    REFERENCES cash_closings(id) ON DELETE SET NULL,
+  -- De qué cuenta salió la plata (migración 0035). Sin esto, un gasto bajaba
+  -- la ganancia pero no bajaba ningún saldo, y el cajón cuadraba de menos.
+  cuenta_id   TEXT    REFERENCES treasury_accounts(id)
 );
 
 CREATE INDEX idx_expenses_closing ON expenses (closing_id, creado_en DESC);
+CREATE INDEX idx_expenses_cuenta  ON expenses (cuenta_id, creado_en DESC);
 
 -- ──────────────────────── Compras a las fincas (0021) ────────────────────────
 --
@@ -971,19 +1020,58 @@ CREATE TABLE provider_purchases (
   origen      TEXT    NOT NULL,
   -- Suma del detalle, verificada por el servidor antes de escribirla.
   total_pago  INTEGER NOT NULL CHECK (total_pago >= 0),
-  -- 'pendiente': la mercancía ya entró pero no se ha girado al agricultor.
+  -- 'pendiente': la mercancía ya entró pero no se ha terminado de girar.
   estado      TEXT    NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'pagado')),
+  -- Suma de los abonos de `provider_payments` (migración 0036). Es una CACHÉ,
+  -- no una verdad: se recalcula desde esa tabla en el mismo lote que inserta
+  -- cada abono, nunca se incrementa a ciegas, así que no puede desviarse.
+  monto_pagado INTEGER NOT NULL DEFAULT 0,
   notas       TEXT,
   creado_por  TEXT    REFERENCES users(id) ON DELETE SET NULL,
   creado_en   TEXT    NOT NULL DEFAULT (datetime('now')),
   pagado_por  TEXT    REFERENCES users(id) ON DELETE SET NULL,
-  pagado_en   TEXT
+  pagado_en   TEXT,
+  -- De qué cuenta se le giró (migración 0035). Se escribe al marcar el pago,
+  -- no al registrar la compra: mientras está pendiente no ha salido plata de
+  -- ningún lado, y por eso la compra pendiente no toca ningún saldo.
+  cuenta_id   TEXT    REFERENCES treasury_accounts(id)
 );
 
 CREATE INDEX idx_purchases_origen ON provider_purchases (origen, creado_en DESC);
+CREATE INDEX idx_purchases_cuenta ON provider_purchases (cuenta_id, pagado_en DESC);
 CREATE INDEX idx_purchases_estado  ON provider_purchases (estado, creado_en DESC);
 -- "Todo lo que le he comprado a este proveedor", que es su ficha en la agenda.
 CREATE INDEX idx_purchases_contact ON provider_purchases (contact_id);
+
+-- Cada giro a una finca, uno por fila (migración 0036).
+--
+-- Una compra se puede abonar en varias veces: hoy lo que hay en el cajón, el
+-- viernes el resto por transferencia. Cada abono trae SU cuenta y SU fecha,
+-- que es lo que necesita el libro de Tesorería para cuadrar contra el cajón.
+-- Con una sola columna «monto_pagado» en la compra, dos abonos de bolsillos
+-- distintos serían indistinguibles y el saldo mentiría.
+--
+-- Es la simetría del lado de los clientes: `payments` guarda el cobro y
+-- `payment_allocations` a qué factura fue; aquí cada fila guarda el giro y a
+-- qué compra fue.
+CREATE TABLE provider_payments (
+  id          TEXT    PRIMARY KEY,
+  -- CASCADE porque un abono no significa nada sin su compra. Borrar una compra
+  -- que ya tiene abonos no se permite en el Worker justamente por eso: sería
+  -- borrar el rastro de plata que ya salió de una cuenta.
+  purchase_id TEXT    NOT NULL REFERENCES provider_purchases(id) ON DELETE CASCADE,
+  monto       INTEGER NOT NULL CHECK (monto > 0),
+  -- Sin CHECK, igual que `payments.metodo`: la lista vive en el Worker, donde
+  -- ampliarla no obliga a recrear la tabla.
+  metodo      TEXT    NOT NULL DEFAULT 'transferencia',
+  cuenta_id   TEXT    REFERENCES treasury_accounts(id),
+  nota        TEXT,
+  pagado_por  TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  pagado_en   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_provider_payments_compra ON provider_payments (purchase_id, pagado_en DESC);
+CREATE INDEX idx_provider_payments_cuenta ON provider_payments (cuenta_id, pagado_en DESC);
 
 CREATE TABLE provider_purchase_items (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1068,6 +1156,116 @@ CREATE TABLE merma_items (
 CREATE INDEX idx_merma_items_merma   ON merma_items (merma_id);
 CREATE INDEX idx_merma_items_product ON merma_items (product_id);
 CREATE INDEX idx_merma_items_motivo  ON merma_items (motivo);
+
+-- ──────────────────────────── Tesorería (0035) ────────────────────────────
+--
+-- Responde «¿cuánto hay en el cajón?» y «¿cuánto hay en el banco?», que hoy
+-- nadie podía contestar sin sumar a mano.
+--
+-- La decisión de fondo: NO existe un libro que lo registre todo. Un cobro ya
+-- vive en `payments` y un gasto en `expenses`; copiarlos a una tabla de
+-- movimientos sería una segunda verdad sobre el mismo hecho, y se rompería el
+-- día que alguien escriba un pago por otro camino. En su lugar, a esas tablas
+-- se les dice EN QUÉ CUENTA movieron la plata (`cuenta_id`), y el saldo de
+-- cada cuenta se calcula sumándolas al leer. Un saldo calculado no se puede
+-- desincronizar. Mismo criterio que el stock de una canasta, que tampoco se
+-- guarda (ver `stockDeCanastas()` en combos.ts).
+--
+-- `treasury_movements` existe solo para lo que HOY no tiene dónde vivir:
+-- traslados entre cuentas, y la plata que entra o sale sin ser cobro, gasto ni
+-- compra.
+
+CREATE TABLE treasury_accounts (
+  id          TEXT    PRIMARY KEY,
+  nombre      TEXT    NOT NULL,
+  -- 'efectivo' es el cajón físico —el único que se cuenta a mano en un
+  -- arqueo— y 'banco' es todo lo que llega por transferencia o datáfono.
+  tipo        TEXT    NOT NULL CHECK (tipo IN ('efectivo', 'banco')),
+  descripcion TEXT,
+  -- Con cuánto arrancó antes de que el sistema registrara nada. Sin esto, una
+  -- caja que ya tenía plata el día de la instalación aparecería en cero.
+  saldo_inicial INTEGER NOT NULL DEFAULT 0,
+  activo      INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
+  orden       INTEGER NOT NULL DEFAULT 0,
+  creado_en   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_treasury_accounts_activo ON treasury_accounts (activo, orden);
+
+-- Ids fijos y legibles: el Worker los usa como destino por defecto según el
+-- método de pago, así que tienen que ser iguales en cualquier instalación.
+INSERT INTO treasury_accounts (id, nombre, tipo, descripcion, orden) VALUES
+  ('caja-efectivo',   'Caja (efectivo)', 'efectivo', 'El cajón del mostrador',   1),
+  ('cuenta-bancaria', 'Cuenta bancaria', 'banco',    'Tarjeta y transferencias', 2);
+
+CREATE TABLE treasury_movements (
+  id          TEXT    PRIMARY KEY,
+  tipo        TEXT    NOT NULL CHECK (tipo IN ('ingreso', 'egreso', 'traslado')),
+  -- En un traslado, de DÓNDE sale; en un ingreso, a dónde entra; en un
+  -- egreso, de dónde sale.
+  cuenta_id   TEXT    NOT NULL REFERENCES treasury_accounts(id),
+  -- Solo en traslados: a dónde llega.
+  cuenta_destino_id TEXT REFERENCES treasury_accounts(id),
+  monto       INTEGER NOT NULL CHECK (monto > 0),
+  concepto    TEXT    NOT NULL,
+  -- Texto libre y no FK a `contacts`: un ingreso puede venir del dueño, que no
+  -- es ni cliente ni proveedor.
+  tercero     TEXT,
+  referencia  TEXT,
+  creado_por  TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  creado_en   TEXT    NOT NULL DEFAULT (datetime('now')),
+  -- Un traslado tiene destino y no puede ser a sí mismo; lo que no es traslado
+  -- no puede tenerlo. Así ninguna fila queda a medio significar.
+  CHECK (
+    (tipo = 'traslado' AND cuenta_destino_id IS NOT NULL AND cuenta_destino_id <> cuenta_id)
+    OR (tipo <> 'traslado' AND cuenta_destino_id IS NULL)
+  )
+);
+
+CREATE INDEX idx_treasury_movements_fecha  ON treasury_movements (creado_en DESC);
+CREATE INDEX idx_treasury_movements_cuenta ON treasury_movements (cuenta_id, creado_en DESC);
+
+-- ── Turnos de cajero ──
+--
+-- El arqueo: con cuánto abrió, cuánto contó al cerrar y en cuánto falló.
+-- Convive con el cierre de jornada sin reemplazarlo: el turno responde
+-- «¿cuadró el cajón de este cajero?» y el cierre «¿cuánto se ganó hoy?».
+-- Dentro de una jornada caben varios turnos.
+--
+-- Los cobros del turno NO se marcan con una columna en `payments`: se sacan
+-- por rango de horas. Es lo que hace un arqueo de verdad —«lo que pasó por el
+-- cajón mientras yo estuve»— y evita otra columna que habría que acordarse de
+-- escribir en cada camino que cobra.
+CREATE TABLE cashier_shifts (
+  id             TEXT    PRIMARY KEY,
+  -- TRN-AAAAMMDD-N, con N reiniciando cada día. Lo arma el Worker.
+  referencia     TEXT    NOT NULL UNIQUE,
+  cuenta_id      TEXT    NOT NULL REFERENCES treasury_accounts(id),
+  cajero_id      TEXT    REFERENCES users(id) ON DELETE SET NULL,
+  cajero_nombre  TEXT    NOT NULL,
+  abierto_en     TEXT    NOT NULL DEFAULT (datetime('now')),
+  fondo_apertura INTEGER NOT NULL DEFAULT 0 CHECK (fondo_apertura >= 0),
+
+  -- Todo lo de abajo es NULL hasta que se cierra.
+  cerrado_en     TEXT,
+  efectivo_contado  INTEGER CHECK (efectivo_contado IS NULL OR efectivo_contado >= 0),
+  vouchers_contados INTEGER CHECK (vouchers_contados IS NULL OR vouchers_contados >= 0),
+  -- Lo que el sistema decía que debía haber, CONGELADO al cerrar: recalcularlo
+  -- después daría otra cifra en cuanto entre un cobro atrasado, y entonces la
+  -- diferencia que alguien firmó dejaría de cuadrar con nada.
+  efectivo_esperado INTEGER,
+  -- Contado menos esperado. Negativa es faltante.
+  diferencia     INTEGER,
+  notas          TEXT,
+  -- Quién recibe el turno, confirmado con su usuario y su clave: es lo que
+  -- convierte la entrega en algo que dos personas firmaron.
+  recibido_por        TEXT REFERENCES users(id) ON DELETE SET NULL,
+  recibido_por_nombre TEXT,
+  CHECK (cerrado_en IS NULL OR efectivo_contado IS NOT NULL)
+);
+
+CREATE INDEX idx_shifts_abierto ON cashier_shifts (cuenta_id, cerrado_en);
+CREATE INDEX idx_shifts_fecha   ON cashier_shifts (abierto_en DESC);
 
 -- ─────────────────────── Ajustes de operación (0032) ───────────────────────
 -- Banderas que un SUPER_ADMIN cambia en vivo desde el panel, sin desplegar.

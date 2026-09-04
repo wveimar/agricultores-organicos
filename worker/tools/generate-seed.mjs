@@ -436,6 +436,68 @@ for (const order of ORDERS) {
   }
 }
 
+// ─────────────────────────── Tesorería (0035) ───────────────────────────
+//
+// Movimientos de ejemplo para que el módulo abra con algo que mirar: sin
+// ellos, las dos cuentas arrancan en cero y todas las pantallas se ven vacías
+// aunque funcionen.
+//
+// Solo va lo que NO puede salir de otra tabla: la base con la que arrancó el
+// cajón y una consignación. Los cobros y los gastos ya los produce el resto
+// del sembrado, y duplicarlos aquí descuadraría los saldos.
+lines.push('', '-- ─────────────────────────── Tesorería ───────────────────────────');
+
+lines.push(
+  `INSERT INTO treasury_movements (id, tipo, cuenta_id, cuenta_destino_id, monto, concepto, tercero, referencia, creado_por, creado_en) VALUES (` +
+    [
+      q('mov-base-caja'),
+      q('ingreso'),
+      q('caja-efectivo'),
+      'NULL',
+      400000,
+      q('Base para dar vueltas'),
+      q('Nicolás Ruiz'),
+      q('BASE-001'),
+      q('u-03'),
+      `datetime('now', '-2 days')`,
+    ].join(', ') +
+    ');',
+);
+
+lines.push(
+  `INSERT INTO treasury_movements (id, tipo, cuenta_id, cuenta_destino_id, monto, concepto, tercero, referencia, creado_por, creado_en) VALUES (` +
+    [
+      q('mov-consignacion'),
+      q('traslado'),
+      q('caja-efectivo'),
+      q('cuenta-bancaria'),
+      150000,
+      q('Consignación del cierre de ayer'),
+      'NULL',
+      q('CONS-014'),
+      q('u-03'),
+      `datetime('now', '-1 days')`,
+    ].join(', ') +
+    ');',
+);
+
+lines.push(
+  `INSERT INTO treasury_movements (id, tipo, cuenta_id, cuenta_destino_id, monto, concepto, tercero, referencia, creado_por, creado_en) VALUES (` +
+    [
+      q('mov-arriendo'),
+      q('egreso'),
+      q('cuenta-bancaria'),
+      'NULL',
+      90000,
+      q('Arriendo del local'),
+      q('Inmobiliaria del Centro'),
+      q('ARR-09'),
+      q('u-03'),
+      `datetime('now', '-1 days')`,
+    ].join(', ') +
+    ');',
+);
+
 lines.push('');
 
 const out = join(root, 'worker', 'seed.sql');

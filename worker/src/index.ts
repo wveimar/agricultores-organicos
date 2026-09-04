@@ -11,6 +11,7 @@ import * as orders from './routes/orders';
 import * as reports from './routes/reports';
 import * as expenses from './routes/expenses';
 import * as mermas from './routes/mermas';
+import * as tesoreria from './routes/tesoreria';
 import * as purchases from './routes/purchases';
 import * as contacts from './routes/contacts';
 import * as users from './routes/users';
@@ -462,6 +463,44 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return mermas.remove(env, user, mermaMatch[1]);
     }
 
+    // Tesorería: dónde está la plata y a dónde se va. Casi todas las rutas
+    // son literales, así que el orden entre ellas da igual — la única con
+    // parámetro es «devoluciones/:notaId», y por eso va en su propio patrón.
+    if (pathname === '/api/admin/tesoreria/resumen' && method === 'GET') {
+      return tesoreria.resumen(env, user);
+    }
+    if (pathname === '/api/admin/tesoreria/cuentas' && method === 'GET') {
+      return tesoreria.cuentas(env, user);
+    }
+    if (pathname === '/api/admin/tesoreria/movimientos' && method === 'GET') {
+      return tesoreria.movimientos(env, user, url);
+    }
+    if (pathname === '/api/admin/tesoreria/movimientos' && method === 'POST') {
+      return tesoreria.crearMovimiento(request, env, user);
+    }
+    if (pathname === '/api/admin/tesoreria/antiguedad' && method === 'GET') {
+      return tesoreria.antiguedad(env, user);
+    }
+    if (pathname === '/api/admin/tesoreria/proyeccion' && method === 'GET') {
+      return tesoreria.proyeccion(env, user);
+    }
+    if (pathname === '/api/admin/tesoreria/devoluciones' && method === 'GET') {
+      return tesoreria.porDevolver(env, user);
+    }
+    const devolucionDineroMatch = pathname.match(/^\/api\/admin\/tesoreria\/devoluciones\/([\w-]+)$/);
+    if (devolucionDineroMatch && method === 'POST') {
+      return tesoreria.registrarDevolucion(request, env, user, devolucionDineroMatch[1]);
+    }
+    if (pathname === '/api/admin/tesoreria/turno' && method === 'GET') {
+      return tesoreria.turno(env, user, url);
+    }
+    if (pathname === '/api/admin/tesoreria/turno/abrir' && method === 'POST') {
+      return tesoreria.abrirTurno(request, env, user);
+    }
+    if (pathname === '/api/admin/tesoreria/turno/cerrar' && method === 'POST') {
+      return tesoreria.cerrarTurno(request, env, user);
+    }
+
     // Agenda: proveedores y clientes en una sola lista, con banderas.
     if (pathname === '/api/admin/contacts/search' && method === 'GET') {
       return contacts.search(env, user, url);
@@ -496,7 +535,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       /^\/api\/admin\/providers\/purchases\/([\w-]+)\/pagar$/,
     );
     if (purchasePayMatch && method === 'POST') {
-      return purchases.markPaid(env, user, purchasePayMatch[1]);
+      return purchases.markPaid(request, env, user, purchasePayMatch[1]);
     }
 
     const purchaseMatch = pathname.match(/^\/api\/admin\/providers\/purchases\/([\w-]+)$/);

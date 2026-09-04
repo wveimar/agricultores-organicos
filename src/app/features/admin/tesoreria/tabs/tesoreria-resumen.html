@@ -1,0 +1,204 @@
+<!-- ── Los cuatro indicadores del día ──────────────────────────────────── -->
+<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+  <div class="rounded-xl border border-sand bg-white p-4">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Por cobrar</p>
+    <p class="tabular mt-1 text-2xl font-semibold text-ink">
+      {{ resumen()?.porCobrar?.total ?? 0 | cop }}
+    </p>
+    <p class="mt-0.5 text-xs" [class]="(resumen()?.porCobrar?.vencido ?? 0) > 0 ? 'text-clay' : 'text-ink/45'">
+      vencido {{ resumen()?.porCobrar?.vencido ?? 0 | cop }}
+    </p>
+  </div>
+
+  <div class="rounded-xl border border-sand bg-white p-4">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Por pagar</p>
+    <p class="tabular mt-1 text-2xl font-semibold text-ink">
+      {{ resumen()?.porPagar?.total ?? 0 | cop }}
+    </p>
+    <p class="mt-0.5 text-xs text-ink/45">
+      {{ resumen()?.porPagar?.cuentas ?? 0 }} cuenta(s) pendiente(s)
+    </p>
+  </div>
+
+  <div class="rounded-xl border border-sand bg-white p-4">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+      Movimiento de hoy
+    </p>
+    <p class="tabular mt-1 text-2xl font-semibold text-ink">
+      {{ resumen()?.hoy?.neto ?? 0 | cop }}
+    </p>
+    <p class="mt-0.5 text-xs">
+      <span class="text-moss">↑ {{ resumen()?.hoy?.entra ?? 0 | cop }}</span>
+      <span class="text-clay">&nbsp;&nbsp;↓ {{ resumen()?.hoy?.sale ?? 0 | cop }}</span>
+    </p>
+  </div>
+
+  <!--
+    La posición neta es la única que mezcla lo que hay con lo que se debe, y
+    por eso va de última: es la conclusión, no un dato más.
+  -->
+  <div class="rounded-xl border border-sand bg-white p-4">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Posición neta</p>
+    <p class="tabular mt-1 text-2xl font-semibold text-ink">
+      {{ resumen()?.posicionNeta ?? 0 | cop }}
+    </p>
+    <p class="mt-0.5 text-xs text-ink/45">disponible + cobrar − pagar</p>
+  </div>
+</div>
+
+<!-- ── Antigüedad, en los dos sentidos ─────────────────────────────────── -->
+<div class="mt-4 grid gap-3 lg:grid-cols-2">
+  @for (lado of [
+    { id: 'porCobrar', titulo: 'Antigüedad · por cobrar', pie: 'Saldo de clientes según vencimiento' },
+    { id: 'porPagar',  titulo: 'Antigüedad · por pagar',  pie: 'Saldo a proveedores' }
+  ]; track lado.id) {
+    <div class="rounded-xl border border-sand bg-white p-4">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+        {{ lado.titulo }}
+      </p>
+      <p class="mb-3 text-xs text-ink/45">{{ lado.pie }}</p>
+
+      <div class="divide-y divide-sand">
+        @for (t of TRAMOS; track t.id) {
+          @let monto = montoDelTramo($any(lado.id), t.id);
+          <div class="py-2">
+            <div class="flex items-baseline justify-between gap-3">
+              <!--
+                El tramo vencido se nombra en rojo aunque esté en cero: si el
+                color dependiera del monto, «+30 días» se vería igual que «Al
+                día» cuando está vacío, y no se sabría cuál es el que preocupa.
+              -->
+              <span class="text-sm" [class]="t.id === 'al_dia' ? 'text-ink' : 'text-clay'">
+                {{ t.etiqueta }}
+              </span>
+              <span class="tabular text-sm font-medium text-ink">{{ monto | cop }}</span>
+            </div>
+
+            <div class="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-cream">
+              <div
+                class="h-full rounded-full transition-[width] duration-500"
+                [class]="t.id === 'al_dia' ? 'bg-moss' : 'bg-clay'"
+                [style.width]="anchoBarra($any(lado.id), t.id)"
+              ></div>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  }
+</div>
+
+<!-- ── Proyección de caja ──────────────────────────────────────────────── -->
+<div class="mt-4 rounded-xl border border-sand bg-white p-4">
+  <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+    Proyección de caja · próximos 30 días
+  </p>
+  <p class="mb-3 text-xs text-ink/45">
+    Entradas y salidas según vencimientos, partiendo del disponible de hoy. Supone que todos
+    pagan el día que dijeron.
+  </p>
+
+  <div class="overflow-x-auto">
+    <table class="w-full min-w-[560px] text-sm">
+      <thead>
+        <tr class="border-b border-sand text-[11px] uppercase tracking-wider text-ink-muted">
+          <th class="py-2 pr-3 text-left font-medium">Corte</th>
+          <th class="py-2 px-3 text-right font-medium">Entra</th>
+          <th class="py-2 px-3 text-right font-medium">Sale</th>
+          <th class="py-2 px-3 text-right font-medium">Neto</th>
+          <th class="py-2 pl-3 text-right font-medium">Caja proyectada</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-sand">
+        @for (c of proyeccion()?.cortes ?? []; track c.dias) {
+          <tr>
+            <td class="py-2.5 pr-3 text-ink">{{ c.dias }} días</td>
+            <td class="tabular py-2.5 px-3 text-right text-moss">{{ c.entra | cop }}</td>
+            <td class="tabular py-2.5 px-3 text-right text-clay">{{ c.sale | cop }}</td>
+            <td
+              class="tabular py-2.5 px-3 text-right"
+              [class]="c.neto < 0 ? 'text-clay' : 'text-ink'"
+            >
+              {{ c.neto | cop }}
+            </td>
+            <td
+              class="tabular py-2.5 pl-3 text-right font-semibold"
+              [class]="c.proyectada < 0 ? 'text-clay' : 'text-ink'"
+            >
+              {{ c.proyectada | cop }}
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="5" class="py-6 text-center text-sm text-ink/50">Cargando proyección…</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── El cajón hoy, y por dónde entró la plata ────────────────────────── -->
+<div class="mt-4 grid gap-3 lg:grid-cols-[1fr_1.3fr]">
+  <div class="rounded-xl border border-sand bg-white p-4">
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+          Cierre de caja · hoy
+        </p>
+        @if (turno(); as t) {
+          <p class="text-xs text-ink/45">{{ t.referencia }} · {{ t.cajeroNombre }}</p>
+        } @else {
+          <p class="text-xs text-ink/45">No hay turno abierto</p>
+        }
+      </div>
+    </div>
+
+    @if (turno(); as t) {
+      <dl class="mt-3 divide-y divide-sand text-sm">
+        <div class="flex justify-between py-2">
+          <dt class="text-ink/60">Fondo de apertura</dt>
+          <dd class="tabular text-ink">{{ t.fondoApertura | cop }}</dd>
+        </div>
+        <div class="flex justify-between py-2">
+          <dt class="text-ink/60">Entró en el turno</dt>
+          <dd class="tabular text-moss">{{ t.entra | cop }}</dd>
+        </div>
+        <div class="flex justify-between py-2">
+          <dt class="text-ink/60">Salió en el turno</dt>
+          <dd class="tabular text-clay">−{{ t.sale | cop }}</dd>
+        </div>
+        <div class="flex justify-between py-2.5">
+          <dt class="font-semibold text-ink">Efectivo esperado</dt>
+          <dd class="tabular font-semibold text-ink">{{ t.esperado | cop }}</dd>
+        </div>
+      </dl>
+    } @else {
+      <p class="mt-4 text-sm text-ink/55">
+        Abre un turno desde la pestaña «Cierre de caja» para llevar el arqueo del cajón.
+      </p>
+    }
+  </div>
+
+  <div class="rounded-xl border border-sand bg-white p-4">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Cobros de hoy</p>
+    <p class="mb-2 text-xs text-ink/45">Dónde entró la plata</p>
+
+    <ul class="divide-y divide-sand">
+      @for (c of cobrosDeHoy(); track c.id) {
+        <li class="flex items-center gap-3 py-2">
+          <span class="tabular w-11 shrink-0 text-xs text-ink/40">{{ hora(c.fecha) }}</span>
+          <span class="min-w-0 flex-1 truncate text-sm text-ink">
+            {{ c.tercero || c.concepto }}
+          </span>
+          <span class="shrink-0 text-xs text-ink/45">{{ c.cuentaNombre }}</span>
+          <span class="tabular w-24 shrink-0 text-right text-sm font-medium text-moss">
+            {{ c.entra | cop }}
+          </span>
+        </li>
+      } @empty {
+        <li class="py-6 text-center text-sm text-ink/50">Todavía no ha entrado plata hoy.</li>
+      }
+    </ul>
+  </div>
+</div>

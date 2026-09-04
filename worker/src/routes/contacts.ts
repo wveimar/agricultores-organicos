@@ -286,7 +286,9 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
             c.creado_en     AS creadoEn,
             (SELECT COUNT(*)            FROM provider_purchases p WHERE p.contact_id = c.id) AS compras,
             (SELECT COALESCE(SUM(p.total_pago), 0) FROM provider_purchases p WHERE p.contact_id = c.id) AS compradoTotal,
-            (SELECT COALESCE(SUM(p.total_pago), 0) FROM provider_purchases p
+            -- Lo que FALTA por girarle, no lo que costó: una compra a medio
+            -- abonar (migración 0036) ya no debe su total.
+            (SELECT COALESCE(SUM(p.total_pago - p.monto_pagado), 0) FROM provider_purchases p
               WHERE p.contact_id = c.id AND p.estado = 'pendiente')                          AS porPagar,
             (SELECT COUNT(*)            FROM orders o WHERE o.contact_id = c.id AND o.estado <> 'cancelado') AS pedidos,
             (SELECT COALESCE(SUM(o.subtotal), 0) FROM orders o

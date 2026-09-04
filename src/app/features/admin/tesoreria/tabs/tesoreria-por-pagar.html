@@ -1,0 +1,129 @@
+<div class="mb-3 rounded-xl border border-sand bg-white p-4">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+        Total por pagar
+      </p>
+      <p class="tabular mt-1 text-3xl font-semibold text-ink">{{ total() | cop }}</p>
+    </div>
+
+    <div class="flex gap-6">
+      <div class="text-right">
+        <p class="text-[11px] uppercase tracking-wider text-ink-muted">Cuentas</p>
+        <p class="tabular text-sm font-medium text-ink">{{ visibles().length }}</p>
+      </div>
+      <!--
+        La pregunta real de quien va a girar: ¿me alcanza? Se responde aquí,
+        junto al total, en vez de obligarlo a comparar con los saldos de arriba.
+      -->
+      <div class="text-right">
+        <p class="text-[11px] uppercase tracking-wider text-ink-muted">Cubierto por caja</p>
+        @if (cubiertoPorCaja()) {
+          <p class="text-sm font-medium text-moss">Sí, alcanza</p>
+        } @else {
+          <p class="tabular text-sm font-medium text-clay">faltan {{ faltante() | cop }}</p>
+        }
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-3">
+    <label for="pagar-buscar" class="sr-only">Buscar finca</label>
+    <input
+      id="pagar-buscar"
+      type="search"
+      [value]="busqueda()"
+      (input)="busqueda.set($any($event.target).value)"
+      placeholder="Nombre de la finca o el proveedor…"
+      class="block w-full rounded-lg border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+    />
+  </div>
+</div>
+
+@if (error(); as mensaje) {
+  <p class="mb-3 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">{{ mensaje }}</p>
+}
+@if (hecho(); as mensaje) {
+  <p class="mb-3 rounded-lg bg-sage-light px-3 py-2 text-sm text-moss">{{ mensaje }}</p>
+}
+
+<div class="overflow-hidden rounded-xl border border-sand bg-white">
+  <ul class="divide-y divide-sand">
+    @for (c of visibles(); track c.id) {
+      <li class="flex flex-wrap items-center gap-3 p-4">
+        <span
+          class="flex size-9 shrink-0 items-center justify-center rounded-full bg-cream text-xs font-semibold text-ink/60"
+          aria-hidden="true"
+        >
+          {{ iniciales(c.origen) }}
+        </span>
+
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-baseline gap-2">
+            <p class="truncate text-sm font-semibold text-ink">{{ c.origen }}</p>
+            <span class="rounded-full bg-cream px-2 py-0.5 text-[11px] text-ink/55">
+              comprado {{ fechaCorta(c.creadoEn) }}
+            </span>
+          </div>
+          <p class="mt-0.5 text-xs text-ink/45">
+            {{ c.items.length }} producto{{ c.items.length === 1 ? '' : 's' }}
+            @if (c.proveedorBanco) {
+              · {{ c.proveedorBanco }}
+              @if (c.proveedorNumeroCuenta) {
+                {{ c.proveedorNumeroCuenta }}
+              }
+            }
+          </p>
+        </div>
+
+        <div class="shrink-0 text-right">
+          <p class="tabular text-lg font-semibold text-ink">{{ c.saldo | cop }}</p>
+          @if (c.montoPagado > 0) {
+            <!-- Con abonos de por medio hay que decir de cuánto: «faltan 4.000»
+                 sin decir «de 10.000» parece una compra distinta a la de ayer. -->
+            <p class="tabular text-xs text-moss">girado {{ c.montoPagado | cop }} de {{ c.totalPago | cop }}</p>
+          } @else {
+            <p class="text-xs text-ink/40">pendiente</p>
+          }
+        </div>
+
+        <button
+          type="button"
+          (click)="abrirPago(c)"
+          class="shrink-0 rounded-lg bg-moss-deep px-4 py-2 text-sm font-medium text-white transition hover:bg-moss"
+        >
+          Pagar
+        </button>
+      </li>
+    } @empty {
+      <li class="px-4 py-12 text-center text-sm text-ink/50">
+        @if (busqueda().trim() !== '') {
+          Nada coincide con «{{ busqueda() }}».
+        } @else {
+          No le debemos nada a ninguna finca.
+        }
+      </li>
+    }
+  </ul>
+</div>
+
+<p class="mt-2 text-xs text-ink/45">
+  «Pagar» abre la ventana para escribir cuánto se le gira hoy: puede ser todo o un abono, y
+  el método decide de qué cuenta sale. Mientras la compra está pendiente no toca ninguna
+  cuenta: todavía no ha salido plata.
+</p>
+
+@if (pagandoCompra(); as c) {
+  <app-registrar-pago-modal
+    titulo="Registrar giro"
+    [tercero]="c.origen"
+    [referencia]="c.items.length + (c.items.length === 1 ? ' producto' : ' productos')"
+    [saldo]="c.saldo"
+    [abonado]="c.montoPagado"
+    [esSalida]="true"
+    [trabajando]="pagando() === c.id"
+    [error]="errorModal()"
+    (confirmar)="confirmarPago($event)"
+    (cancelar)="cerrarPago()"
+  />
+}

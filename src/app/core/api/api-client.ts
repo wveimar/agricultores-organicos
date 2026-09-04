@@ -703,6 +703,12 @@ export interface ApiExpense {
   readonly descripcion: string;
   readonly monto: number;
   readonly categoria: ExpenseCategory;
+  /**
+   * De qué cuenta salió la plata (migración 0035). Antes de esa columna un
+   * gasto bajaba la ganancia pero no bajaba ningún saldo, y el arqueo cuadraba
+   * de más: el cajero tenía menos billetes de los que el sistema decía.
+   */
+  readonly cuentaId: string;
   readonly creadoEn: string;
   readonly creadoPor: string | null;
   readonly closingId: string | null;
@@ -770,6 +776,144 @@ export interface ApiMermaReporte {
     readonly venta: number;
   }[];
   readonly total: { readonly actas: number; readonly costo: number; readonly venta: number };
+}
+
+// ─────────────────────────── Tesorería (0035) ───────────────────────────
+
+/** Dónde está la plata. `efectivo` es el cajón; `banco`, todo lo demás. */
+export interface ApiCuentaTesoreria {
+  readonly id: string;
+  readonly nombre: string;
+  readonly tipo: 'efectivo' | 'banco';
+  readonly descripcion: string | null;
+  readonly saldoInicial: number;
+  readonly orden: number;
+  /**
+   * Calculado por el Worker sumando cobros, gastos, giros y movimientos.
+   * Puede venir NEGATIVO: un gasto se registra aunque deje la cuenta en rojo,
+   * porque es el registro de algo que ya pasó. Ese rojo es la alarma de que
+   * falta anotar de dónde entró plata, y la interfaz tiene que mostrarlo.
+   */
+  readonly saldo: number;
+  readonly entraHoy: number;
+  readonly saleHoy: number;
+}
+
+/** Qué clase de movimiento es. Un traslado se ve dos veces, una por cuenta. */
+export type TipoMovimiento =
+  | 'cobro'
+  | 'gasto'
+  | 'pago_proveedor'
+  | 'devolucion'
+  | 'ingreso'
+  | 'egreso'
+  | 'traslado_salida'
+  | 'traslado_entrada';
+
+export interface ApiMovimientoTesoreria {
+  readonly id: string;
+  readonly fecha: string;
+  readonly cuentaId: string;
+  readonly cuentaNombre: string | null;
+  readonly cuentaTipo: 'efectivo' | 'banco' | null;
+  readonly tipo: TipoMovimiento;
+  readonly concepto: string;
+  readonly tercero: string | null;
+  readonly referencia: string | null;
+  readonly entra: number;
+  readonly sale: number;
+}
+
+export interface ApiResumenTesoreria {
+  readonly cuentas: readonly ApiCuentaTesoreria[];
+  readonly disponible: number;
+  readonly porCobrar: { readonly total: number; readonly vencido: number; readonly clientes: number };
+  readonly porPagar: { readonly total: number; readonly cuentas: number };
+  /** Notas crédito con plata todavía sin devolver (migración 0037). */
+  readonly porDevolver: { readonly total: number; readonly notas: number };
+  readonly hoy: { readonly entra: number; readonly sale: number; readonly neto: number };
+  /** Disponible + por cobrar − por pagar − por devolver: la foto real del negocio. */
+  readonly posicionNeta: number;
+}
+
+/**
+ * Una nota crédito con plata todavía sin devolver.
+ *
+ * `facturaNumero`/`facturaId` son la factura que la nota corrige — la
+ * trazabilidad que pidió el negocio: desde aquí se ve a cuál factura
+ * corresponde el descuento, y cada devolución que se le registre queda
+ * atada a ESTA nota, no a la factura en general.
+ */
+export interface ApiDevolucionPendiente {
+  readonly id: string;
+  readonly numero: string;
+  readonly total: number;
+  readonly montoDevuelto: number;
+  readonly saldo: number;
+  readonly emitidaEn: string;
+  readonly motivo: string | null;
+  readonly contactId: string | null;
+  readonly clienteNombre: string;
+  readonly clienteTelefono: string | null;
+  readonly facturaId: string;
+  readonly facturaNumero: string;
+}
+
+/** Los cuatro tramos de vencimiento, iguales para lo que entra y lo que sale. */
+export type TramoAntiguedad = 'al_dia' | 'd1_7' | 'd8_30' | 'd30_mas';
+
+export interface ApiAntiguedad {
+  readonly porCobrar: readonly {
+    readonly tramo: TramoAntiguedad;
+    readonly total: number;
+    readonly cuantos: number;
+  }[];
+  readonly porPagar: readonly {
+    readonly tramo: TramoAntiguedad;
+    readonly total: number;
+    readonly cuantos: number;
+  }[];
+}
+
+export interface ApiProyeccionCaja {
+  readonly disponible: number;
+  readonly cortes: readonly {
+    readonly dias: number;
+    readonly entra: number;
+    readonly sale: number;
+    readonly neto: number;
+    readonly proyectada: number;
+  }[];
+}
+
+/** El turno abierto con su arqueo al vuelo, o `null` si no hay ninguno. */
+export interface ApiTurnoCaja {
+  readonly id: string;
+  readonly referencia: string;
+  readonly cuentaId: string;
+  readonly cajeroNombre: string;
+  readonly abiertoEn: string;
+  readonly fondoApertura: number;
+  /** Fondo + lo que entró − lo que salió desde que abrió. */
+  readonly esperado: number;
+  readonly entra: number;
+  readonly sale: number;
+  readonly cobros: number;
+}
+
+export interface ApiTurnoCerrado {
+  readonly id: string;
+  readonly referencia: string;
+  readonly cajeroNombre: string;
+  readonly abiertoEn: string;
+  readonly cerradoEn: string;
+  readonly fondoApertura: number;
+  readonly efectivoContado: number;
+  readonly efectivoEsperado: number;
+  /** Contado − esperado. Negativa es faltante. */
+  readonly diferencia: number;
+  readonly notas: string | null;
+  readonly recibidoPor: string | null;
 }
 
 /** Cómo se le gira a un proveedor. `null` = se le paga en efectivo. */
@@ -876,6 +1020,10 @@ export interface ApiPurchase {
   readonly proveedorTitular: string | null;
   /** Suma del detalle, calculada por el servidor. */
   readonly totalPago: number;
+  /** Lo ya girado, sumando abonos (migración 0036). */
+  readonly montoPagado: number;
+  /** Lo que falta por girarle: `totalPago − montoPagado`. */
+  readonly saldo: number;
   /** 'pendiente' = la mercancía entró pero al agricultor no se le ha girado. */
   readonly estado: 'pendiente' | 'pagado';
   readonly notas: string | null;
@@ -2059,6 +2207,7 @@ export class ApiClient {
     descripcion: string;
     monto: number;
     categoria: ExpenseCategory;
+    cuentaId?: string;
   }): Observable<ApiExpense> {
     return this.http
       .post<{ gasto: ApiExpense }>('/api/admin/expenses', gasto)
@@ -2107,6 +2256,130 @@ export class ApiClient {
     return this.http
       .delete<{ ok: true }>(`/api/admin/mermas/${id}`)
       .pipe(map(() => undefined), catchError(handleError));
+  }
+
+  // ───────────────────────── Tesorería ─────────────────────────
+
+  tesoreriaResumen(): Observable<ApiResumenTesoreria> {
+    return this.http
+      .get<ApiResumenTesoreria>('/api/admin/tesoreria/resumen')
+      .pipe(catchError(handleError));
+  }
+
+  tesoreriaCuentas(): Observable<readonly ApiCuentaTesoreria[]> {
+    return this.http
+      .get<{ cuentas: ApiCuentaTesoreria[] }>('/api/admin/tesoreria/cuentas')
+      .pipe(map((res) => res.cuentas), catchError(handleError));
+  }
+
+  tesoreriaMovimientos(
+    filtro: { cuenta?: string; tipo?: string; q?: string } = {},
+  ): Observable<{
+    movimientos: readonly ApiMovimientoTesoreria[];
+    totales: { entra: number; sale: number };
+  }> {
+    const params = new URLSearchParams();
+    if (filtro.cuenta) params.set('cuenta', filtro.cuenta);
+    if (filtro.tipo) params.set('tipo', filtro.tipo);
+    if (filtro.q) params.set('q', filtro.q);
+    const query = params.toString();
+
+    return this.http
+      .get<{
+        movimientos: ApiMovimientoTesoreria[];
+        totales: { entra: number; sale: number };
+      }>(`/api/admin/tesoreria/movimientos${query ? `?${query}` : ''}`)
+      .pipe(catchError(handleError));
+  }
+
+  /**
+   * Ingreso, egreso o traslado.
+   *
+   * El Worker rechaza un TRASLADO sin fondos (no se puede mover lo que no
+   * está) pero acepta un egreso aunque deje la cuenta en rojo, porque eso ya
+   * pasó y negarse a anotarlo solo haría que los libros mientan.
+   */
+  crearMovimientoTesoreria(input: {
+    tipo: 'ingreso' | 'egreso' | 'traslado';
+    cuentaId: string;
+    cuentaDestinoId?: string;
+    monto: number;
+    concepto: string;
+    tercero?: string;
+    referencia?: string;
+  }): Observable<{ id: string }> {
+    return this.http
+      .post<{ movimiento: { id: string } }>('/api/admin/tesoreria/movimientos', input)
+      .pipe(map((res) => res.movimiento), catchError(handleError));
+  }
+
+  tesoreriaAntiguedad(): Observable<ApiAntiguedad> {
+    return this.http
+      .get<ApiAntiguedad>('/api/admin/tesoreria/antiguedad')
+      .pipe(catchError(handleError));
+  }
+
+  tesoreriaProyeccion(): Observable<ApiProyeccionCaja> {
+    return this.http
+      .get<ApiProyeccionCaja>('/api/admin/tesoreria/proyeccion')
+      .pipe(catchError(handleError));
+  }
+
+  tesoreriaDevoluciones(): Observable<{ devoluciones: readonly ApiDevolucionPendiente[] }> {
+    return this.http
+      .get<{ devoluciones: ApiDevolucionPendiente[] }>('/api/admin/tesoreria/devoluciones')
+      .pipe(catchError(handleError));
+  }
+
+  /**
+   * Registra una devolución de dinero sobre una nota crédito. Sin `monto` se
+   * devuelve todo lo que falta — igual que `markPurchasePaid()` sin monto gira
+   * el saldo entero de una compra.
+   */
+  registrarDevolucion(
+    notaId: string,
+    input: { monto?: number; metodo?: 'efectivo' | 'transferencia'; observaciones?: string },
+  ): Observable<{ id: string; numero: string; total: number; montoDevuelto: number; saldo: number }> {
+    return this.http
+      .post<{
+        nota: { id: string; numero: string; total: number; montoDevuelto: number; saldo: number };
+      }>(`/api/admin/tesoreria/devoluciones/${notaId}`, input)
+      .pipe(map((res) => res.nota), catchError(handleError));
+  }
+
+  tesoreriaTurno(
+    cuenta = 'caja-efectivo',
+  ): Observable<{ turno: ApiTurnoCaja | null; historial: readonly ApiTurnoCerrado[] }> {
+    return this.http
+      .get<{ turno: ApiTurnoCaja | null; historial: ApiTurnoCerrado[] }>(
+        `/api/admin/tesoreria/turno?cuenta=${encodeURIComponent(cuenta)}`,
+      )
+      .pipe(catchError(handleError));
+  }
+
+  abrirTurno(input: { cuentaId?: string; fondoApertura: number }): Observable<ApiTurnoCaja> {
+    return this.http
+      .post<{ turno: ApiTurnoCaja }>('/api/admin/tesoreria/turno/abrir', input)
+      .pipe(map((res) => res.turno), catchError(handleError));
+  }
+
+  /**
+   * El arqueo. Quien recibe el turno confirma con su usuario y su clave: es lo
+   * que convierte la entrega en algo que dos personas firmaron.
+   */
+  cerrarTurno(input: {
+    cuentaId?: string;
+    efectivoContado: number;
+    vouchersContados?: number;
+    notas?: string;
+    recibeUsuario: string;
+    recibeClave: string;
+  }): Observable<{ referencia: string; esperado: number; contado: number; diferencia: number }> {
+    return this.http
+      .post<{
+        turno: { referencia: string; esperado: number; contado: number; diferencia: number };
+      }>('/api/admin/tesoreria/turno/cerrar', input)
+      .pipe(map((res) => res.turno), catchError(handleError));
   }
 
   mermaReporte(rango: { desde?: string; hasta?: string } = {}): Observable<ApiMermaReporte> {
@@ -2211,9 +2484,18 @@ export class ApiClient {
   }
 
   /** Se le giró al agricultor. Solo cambia el estado: el stock ya entró. */
-  markPurchasePaid(id: string): Observable<ApiPurchase> {
+  /**
+   * Gira a la finca. Sin `monto` gira todo lo que falta.
+   *
+   * El cuerpo vacío sigue funcionando igual que antes de que hubiera abonos,
+   * que es lo que usa el botón «Pagar» de la pantalla de Compras.
+   */
+  markPurchasePaid(
+    id: string,
+    abono: { monto?: number; metodo?: 'efectivo' | 'transferencia'; nota?: string } = {},
+  ): Observable<ApiPurchase> {
     return this.http
-      .post<{ compra: ApiPurchase }>(`/api/admin/providers/purchases/${id}/pagar`, {})
+      .post<{ compra: ApiPurchase }>(`/api/admin/providers/purchases/${id}/pagar`, abono)
       .pipe(map((res) => res.compra), catchError(handleError));
   }
 }

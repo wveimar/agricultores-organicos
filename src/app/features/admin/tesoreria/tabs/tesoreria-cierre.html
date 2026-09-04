@@ -1,0 +1,326 @@
+<!--
+  Las dos cuentas, una junto a la otra y no detrás de un selector: la caja
+  física y la cuenta bancaria corren cada una su propio turno del día, y saber
+  si las dos cuadran no debería costar ir y volver entre pestañas.
+-->
+
+<!-- ── Abrir turno del día: un solo botón para lo que falte ────────────────
+     Al efectivo se le pide contarlo a mano — es lo único que no se sabe sin
+     mirar el cajón. A la cuenta bancaria no se le pide nada: su saldo ya lo
+     tiene el sistema, así que abre directo con ese número. -->
+@if (cuentasSinTurno().length > 0) {
+  <div class="mb-4 rounded-xl border border-sand bg-white p-4">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+      Abrir turno del día
+    </p>
+    <p class="mb-3 text-xs text-ink/50">
+      El efectivo se cuenta a mano. La cuenta bancaria abre sola, con el saldo que ya tiene
+      registrado — ahí no hay nada que contar.
+    </p>
+
+    @if (errorAbrirTodo(); as mensaje) {
+      <p class="mb-3 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">
+        {{ mensaje }}
+      </p>
+    }
+
+    <div class="flex flex-wrap items-end gap-4">
+      @for (c of cuentasSinTurno(); track c.id) {
+        @if (c.tipo === 'efectivo') {
+          <div class="w-40">
+            <label [for]="'fondo-compartido-' + c.id" class="mb-1 block text-xs font-medium text-ink">
+              Fondo de apertura · {{ c.nombre }}
+            </label>
+            <input
+              [id]="'fondo-compartido-' + c.id"
+              type="number"
+              min="0"
+              [value]="estadoDe(c.id).fondoApertura || ''"
+              (input)="setFondoApertura(c.id, +$any($event.target).value || 0)"
+              placeholder="0"
+              class="tabular block w-full rounded-lg border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+            />
+          </div>
+        } @else {
+          <p class="text-xs text-ink/55">
+            {{ c.nombre }} abre con su saldo actual:
+            <strong class="tabular text-ink">{{ c.saldo | cop }}</strong>
+          </p>
+        }
+      }
+
+      <button
+        type="button"
+        (click)="abrirTodo()"
+        [disabled]="abriendoTodo()"
+        class="rounded-lg bg-moss px-5 py-2.5 text-sm font-medium text-white transition hover:bg-moss/90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {{
+          abriendoTodo()
+            ? 'Abriendo…'
+            : cuentasSinTurno().length === 1
+              ? 'Abrir turno'
+              : 'Abrir turno del día'
+        }}
+      </button>
+    </div>
+  </div>
+}
+
+<!-- ── Cerrar turno del día: un solo botón, una sola firma ─────────────────
+     Al efectivo se le pide contarlo, porque es lo único que puede dar
+     distinto de lo que el sistema calculó. A la cuenta bancaria no se le pide
+     nada: cierra con su propio `esperado`, porque un saldo digital no puede
+     "dar distinto" de la suma de sus movimientos. -->
+@if (cuentasAbiertas().length > 0) {
+  <div class="mb-4 rounded-xl border border-sand bg-white p-4">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+      Cerrar turno del día
+    </p>
+    <p class="mb-3 text-xs text-ink/50">
+      El efectivo se cuenta a mano. La cuenta bancaria cierra sola, con lo que ya calculó —
+      ahí tampoco hay nada que contar.
+    </p>
+
+    @if (errorCerrarTodo(); as mensaje) {
+      <p class="mb-3 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">
+        {{ mensaje }}
+      </p>
+    }
+
+    <div class="grid gap-3 sm:grid-cols-2">
+      @for (c of cuentasAbiertas(); track c.id) {
+        @if (c.tipo === 'efectivo') {
+          <div>
+            <label [for]="'cierre-efectivo-' + c.id" class="mb-1 block text-xs font-medium text-ink">
+              Efectivo contado · {{ c.nombre }}
+            </label>
+            <input
+              [id]="'cierre-efectivo-' + c.id"
+              type="number"
+              min="0"
+              [value]="estadoDe(c.id).efectivoContado ?? ''"
+              (input)="setEfectivoContado(c.id, $any($event.target).value === '' ? null : +$any($event.target).value)"
+              [placeholder]="estadoDe(c.id).turno?.esperado ?? 0"
+              class="tabular block w-full rounded-lg border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label [for]="'cierre-vouchers-' + c.id" class="mb-1 block text-xs font-medium text-ink">
+              Vouchers (tarjeta/transferencia)
+            </label>
+            <input
+              [id]="'cierre-vouchers-' + c.id"
+              type="number"
+              min="0"
+              [value]="estadoDe(c.id).vouchers || ''"
+              (input)="setVouchers(c.id, +$any($event.target).value || 0)"
+              placeholder="0"
+              class="tabular block w-full rounded-lg border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+            />
+          </div>
+        } @else {
+          <p class="text-xs text-ink/55 sm:col-span-2">
+            {{ c.nombre }} cierra con lo que ya calculó:
+            <strong class="tabular text-ink">{{ (estadoDe(c.id).turno?.esperado ?? 0) | cop }}</strong>
+          </p>
+        }
+      }
+    </div>
+
+    <div class="mt-3">
+      <label for="cierre-notas" class="mb-1 block text-xs font-medium text-ink">Notas</label>
+      <input
+        id="cierre-notas"
+        type="text"
+        [value]="cerrarNotas()"
+        (input)="cerrarNotas.set($any($event.target).value)"
+        placeholder="Si hubo faltante o sobrante, ¿por qué?"
+        class="block w-full rounded-lg border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+      />
+    </div>
+
+    <!-- ── La entrega, firmada por quien recibe ────────────────────────── -->
+    <div class="mt-3 rounded-lg border border-sand bg-cream/40 p-2.5">
+      <p class="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+        Quién recibe el turno
+      </p>
+      <p class="mb-1.5 text-xs text-ink/50">
+        Una sola firma cierra {{ cuentasAbiertas().length === 1 ? 'esta cuenta' : 'las dos cuentas' }}:
+        es la misma persona la que se hace responsable de las dos.
+      </p>
+
+      <div class="grid gap-2 sm:grid-cols-2">
+        <div>
+          <label for="cierre-recibe-usuario" class="sr-only">Correo de quien recibe</label>
+          <input
+            id="cierre-recibe-usuario"
+            type="email"
+            autocomplete="off"
+            [value]="cerrarRecibeUsuario()"
+            (input)="cerrarRecibeUsuario.set($any($event.target).value)"
+            placeholder="correo@agricultores.co"
+            class="block w-full rounded-lg border border-sand bg-white px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+          />
+        </div>
+        <div>
+          <label for="cierre-recibe-clave" class="sr-only">Clave de quien recibe</label>
+          <input
+            id="cierre-recibe-clave"
+            type="password"
+            autocomplete="new-password"
+            [value]="cerrarRecibeClave()"
+            (input)="cerrarRecibeClave.set($any($event.target).value)"
+            placeholder="Su clave"
+            class="block w-full rounded-lg border border-sand bg-white px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+          />
+        </div>
+      </div>
+    </div>
+
+    <button
+      type="button"
+      (click)="cerrarTodo()"
+      [disabled]="!puedeCerrarTodo()"
+      class="mt-3 w-full rounded-lg bg-moss px-4 py-2.5 text-sm font-medium text-white transition hover:bg-moss/90 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {{
+        cerrandoTodo()
+          ? 'Cerrando…'
+          : cuentasAbiertas().length === 1
+            ? 'Confirmar cierre del turno'
+            : 'Confirmar cierre del día'
+      }}
+    </button>
+  </div>
+}
+
+<div class="grid gap-4 lg:grid-cols-2">
+  @for (c of admin.cuentasTesoreria(); track c.id) {
+    <div class="rounded-xl border border-sand bg-white p-4">
+      <div class="mb-3 flex items-center justify-between gap-2">
+        <div>
+          <p class="text-sm font-semibold text-ink">{{ c.nombre }}</p>
+          <p class="text-xs text-ink/45">{{ c.descripcion }}</p>
+        </div>
+        <span
+          class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+          [class]="c.tipo === 'efectivo' ? 'bg-cream text-ink/60' : 'bg-sage-light text-moss'"
+        >
+          {{ c.tipo === 'efectivo' ? 'Efectivo' : 'Banco' }}
+        </span>
+      </div>
+
+      @if (estadoDe(c.id); as estado) {
+        @if (estado.error; as mensaje) {
+          <p class="mb-3 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">
+            {{ mensaje }}
+          </p>
+        }
+        @if (estado.hecho; as mensaje) {
+          <p class="mb-3 rounded-lg bg-sage-light px-3 py-2 text-sm text-moss">{{ mensaje }}</p>
+        }
+
+        @if (estado.turno; as t) {
+          <!-- ── Turno abierto ────────────────────────────────────────── -->
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-cream/50 px-3 py-2">
+            <p class="text-sm text-ink">
+              <strong>{{ t.referencia }}</strong>
+              <span class="text-ink/50"> · cajero {{ t.cajeroNombre }}</span>
+            </p>
+            <p class="text-xs text-ink/45">Abierto {{ fechaHora(t.abiertoEn) }}</p>
+          </div>
+
+          <div class="mb-3 grid grid-cols-2 gap-2">
+            <div class="rounded-lg border border-sand p-3">
+              <p class="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+                Fondo de apertura
+              </p>
+              <p class="tabular mt-0.5 text-lg font-semibold text-ink">{{ t.fondoApertura | cop }}</p>
+            </div>
+            <div class="rounded-lg border border-sand p-3">
+              <p class="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+                Esperado
+              </p>
+              <p class="tabular mt-0.5 text-lg font-semibold text-ink">{{ t.esperado | cop }}</p>
+            </div>
+            <div class="rounded-lg border border-sand p-3">
+              <p class="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+                Entró
+              </p>
+              <p class="tabular mt-0.5 text-lg font-semibold text-moss">{{ t.entra | cop }}</p>
+            </div>
+            <div class="rounded-lg border border-sand p-3">
+              <p class="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+                Movimientos
+              </p>
+              <p class="tabular mt-0.5 text-lg font-semibold text-ink">{{ t.cobros }}</p>
+            </div>
+          </div>
+
+          <!--
+            El arqueo (contar, firmar, cerrar) vive en el bloque compartido de
+            arriba — «Cerrar turno del día». Aquí solo queda, para la cuenta
+            de efectivo, el aviso en vivo de si lo que se está escribiendo
+            allá arriba cuadra con lo esperado de ESTA cuenta.
+          -->
+          @if (diferencia(c.id) !== null) {
+            <!--
+              `!== null` explícito y no `@if (diferencia(c.id); as d)`: cuando
+              cuadra exacto la diferencia es 0, y Angular trata 0 como falsy —
+              ese aviso, que es el bueno, desaparecería justo cuando el cajero
+              más necesita verlo.
+            -->
+            @let d = diferencia(c.id) ?? 0;
+            <p
+              class="rounded-lg px-3 py-1.5 text-sm"
+              [class]="d === 0 ? 'bg-sage-light text-moss' : 'bg-clay/10 text-clay'"
+            >
+              @if (d === 0) {
+                Cuadra exacto.
+              } @else if (d < 0) {
+                Faltan <strong>{{ -d | cop }}</strong>.
+              } @else {
+                Sobran <strong>{{ d | cop }}</strong>.
+              }
+            </p>
+          }
+        } @else {
+          <!--
+            Sin turno: nada que hacer aquí. Abrirlo es el botón compartido de
+            arriba — repetirlo por cuenta era justo lo que obligaba a tratar
+            el banco como si también hubiera que contarlo.
+          -->
+          <div class="rounded-lg border border-dashed border-sand p-3">
+            <p class="text-xs text-ink/55">Sin turno abierto todavía.</p>
+          </div>
+        }
+
+        <!-- ── Turnos ya cerrados, de esta cuenta ─────────────────────── -->
+        @if (estado.historial.length > 0) {
+          <div class="mt-3 overflow-hidden rounded-lg border border-sand">
+            <p class="border-b border-sand bg-cream/40 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+              Cerrados
+            </p>
+            <ul class="max-h-40 divide-y divide-sand overflow-y-auto">
+              @for (t of estado.historial; track t.id) {
+                <li class="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
+                  <div class="min-w-0">
+                    <p class="truncate text-ink">{{ t.referencia }}</p>
+                    <p class="truncate text-ink/40">{{ fechaHora(t.cerradoEn) }} · {{ t.cajeroNombre }}</p>
+                  </div>
+                  <span class="tabular shrink-0 font-medium" [class]="t.diferencia === 0 ? 'text-moss' : 'text-clay'">
+                    {{ t.diferencia | cop }}
+                  </span>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+      }
+    </div>
+  } @empty {
+    <p class="col-span-full px-4 py-12 text-center text-sm text-ink/50">Cargando las cuentas…</p>
+  }
+</div>

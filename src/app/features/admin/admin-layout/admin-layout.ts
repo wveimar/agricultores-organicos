@@ -92,18 +92,20 @@ export class AdminLayout {
       roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'],
     },
     { path: '/admin/reportes', label: 'Reportes', icon: 'reportes', roles: ['GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'] },
-    // Facturación antes que Cartera, en el orden en que ocurren: primero se
+    // Facturación antes que Tesorería, en el orden en que ocurren: primero se
     // emite el documento, después se persigue el cobro.
     { path: '/admin/facturacion', label: 'Facturación', icon: 'facturacion', roles: ['GESTOR_PEDIDOS'] },
-    // Cobros va justo después de Facturación: se emite, se cobra, y lo que
-    // queda sin cobrar es lo que mira Cartera.
-    { path: '/admin/cobros', label: 'Cobros', icon: 'cobros', roles: ['GESTOR_PEDIDOS'] },
-    // Junto a Reportes: las dos hablan de dinero, y de la cartera se sale a
-    // mirar la caja para ver qué falta por entrar.
-    { path: '/admin/cartera', label: 'Cartera', icon: 'cartera', roles: ['GESTOR_PEDIDOS'] },
-    // El bloque de plata que SALE, después del de la que entra: gastos se
-    // registra durante la jornada y pagos a fincas se resuelve tras cerrarla.
-    { path: '/admin/gastos', label: 'Gastos', icon: 'gastos', roles: ['GESTOR_PEDIDOS'] },
+    // Tesorería se comió cuatro entradas del menú —Cartera, Gastos, Cobros y
+    // el cierre que vivía en Reportes— porque las cuatro responden a la misma
+    // pregunta desde ángulos distintos: dónde está la plata. Tenerlas
+    // separadas obligaba a ir y volver entre menús para cuadrar un solo día.
+    //
+    // La pantalla de Cobros sigue viva en /admin/cobros y es la única que
+    // permite repartir un cobro entre varias facturas o corregir uno ya
+    // registrado. Lo que se quitó es la entrada del menú: el cobro del día a
+    // día se hace desde «Por cobrar», factura por factura, que es como llega
+    // el cliente al mostrador.
+    { path: '/admin/tesoreria', label: 'Tesorería', icon: 'cartera', roles: ['GESTOR_PEDIDOS'] },
     {
       path: '/admin/compras',
       label: 'Compras',

@@ -23,11 +23,11 @@ DELETE FROM categories;
 DELETE FROM admin_groups;
 
 -- ─────────────────────────── Usuarios ───────────────────────────
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-01', 'inventario@agricultores.co', 'Sara Villamil', 'pbkdf2$100000$8ZefZQhOy3fwkH25mDqmcg$rrBGPLzeLyT4XnFYdgfB1GP_fZVRIwuSDAw6OgmliwE');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-01', 'inventario@agricultores.co', 'Sara Villamil', 'pbkdf2$100000$3ljGXSJr_vEJj6Niyl3Z8g$cupCtbqqBWid531HCXhMEHrqIOZzQXYW7rFDp_kpBZ4');
 INSERT INTO user_roles (user_id, role) VALUES ('u-01', 'ADMIN_INVENTARIO');
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-02', 'pedidos@agricultores.co', 'Diana Cardona', 'pbkdf2$100000$ZVm62Idue3pPTly_TYmtkA$cyicdpHMheePze0mMuIHaL3mwGLn8tNE0sifkCpCTUo');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-02', 'pedidos@agricultores.co', 'Diana Cardona', 'pbkdf2$100000$L9pGMSTN_JvNAWWZTxGVyw$poMw7CtsxVJlOCVczF9zPL1CqPNFs4MrCMJCfyBP3iY');
 INSERT INTO user_roles (user_id, role) VALUES ('u-02', 'GESTOR_PEDIDOS');
-INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-03', 'admin@agricultores.co', 'Nicolás Ruiz', 'pbkdf2$100000$tfy3S-xiFQir_xkdudyzTw$bNJwtwjVqYG3HlUjRFvY0EAJ2811IQgOFMoUjPElHhU');
+INSERT INTO users (id, email, nombre, password_hash) VALUES ('u-03', 'admin@agricultores.co', 'Nicolás Ruiz', 'pbkdf2$100000$3xAZ1eC6WfeUXn1543k4rA$kputVBj9EKSZcqlGrpy4izpN8upslVWcSjINrzKDqsc');
 INSERT INTO user_roles (user_id, role) VALUES ('u-03', 'SUPER_ADMIN');
 
 -- ────────────────────── Grupos del panel de compras ──────────────────────
@@ -128,3 +128,8 @@ INSERT INTO invoice_items (invoice_id, product_id, descripcion, cantidad, precio
 INSERT INTO orders (id, referencia, contact_id, cliente_nombre, cliente_cedula, cliente_telefono, cliente_direccion, estado, stock_reservado, subtotal, envio, total, aprobado_por, aprobado_en, creado_en) VALUES ('o-06', 'ORD-1044', 'cli-6', 'Camilo Vargas', '1079904423', '317 990 4423', 'Calle 36 # 27-15, Bucaramanga', 'pendiente', 0, 56200, 0, 56200, NULL, NULL, '2026-08-09T11:12:00.000Z');
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-06', 'p-15', 'Ensalada Arcoíris', 16900, 9300, 2);
 INSERT INTO order_items (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad) VALUES ('o-06', 'p-18', 'Smoothie de Fresa y Chía', 11200, 6200, 2);
+
+-- ─────────────────────────── Tesorería ───────────────────────────
+INSERT INTO treasury_movements (id, tipo, cuenta_id, cuenta_destino_id, monto, concepto, tercero, referencia, creado_por, creado_en) VALUES ('mov-base-caja', 'ingreso', 'caja-efectivo', NULL, 400000, 'Base para dar vueltas', 'Nicolás Ruiz', 'BASE-001', 'u-03', datetime('now', '-2 days'));
+INSERT INTO treasury_movements (id, tipo, cuenta_id, cuenta_destino_id, monto, concepto, tercero, referencia, creado_por, creado_en) VALUES ('mov-consignacion', 'traslado', 'caja-efectivo', 'cuenta-bancaria', 150000, 'Consignación del cierre de ayer', NULL, 'CONS-014', 'u-03', datetime('now', '-1 days'));
+INSERT INTO treasury_movements (id, tipo, cuenta_id, cuenta_destino_id, monto, concepto, tercero, referencia, creado_por, creado_en) VALUES ('mov-arriendo', 'egreso', 'cuenta-bancaria', NULL, 90000, 'Arriendo del local', 'Inmobiliaria del Centro', 'ARR-09', 'u-03', datetime('now', '-1 days'));

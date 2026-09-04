@@ -1,4 +1,4 @@
-import { ApiError, json, readJson, requireInt, requireString } from '../http';
+import { ApiError, json, optionalString, readJson, requireInt, requireString } from '../http';
 import { Env, JwtPayload } from '../types';
 import { requireRole } from '../auth/middleware';
 
@@ -196,6 +196,11 @@ async function cargarDestinos(
 const SELECT_COMPRA = `
   SELECT c.id, c.contact_id AS contactId, c.origen,
          c.total_pago AS totalPago, c.estado, c.notas,
+         c.monto_pagado AS montoPagado,
+         -- El saldo se calcula aquí y no en la pantalla: es la cifra sobre la
+         -- que se decide cuánto abonar, y dos sitios calculándola es un sitio
+         -- de más donde puede quedar desfasada.
+         (c.total_pago - c.monto_pagado) AS saldo,
          c.creado_en AS creadoEn, c.pagado_en AS pagadoEn,
          autor.nombre AS creadoPor, pagador.nombre AS pagadoPor,
          prov.nombre        AS proveedorNombre,
@@ -467,18 +472,24 @@ export async function remove(env: Env, user: JwtPayload, purchaseId: string): Pr
   requireRole(user, 'GESTOR_PEDIDOS', 'ADMIN_INVENTARIO');
 
   const actual = await env.DB.prepare(
-    `SELECT id, estado FROM provider_purchases WHERE id = ?1`,
+    `SELECT id, estado, monto_pagado AS montoPagado FROM provider_purchases WHERE id = ?1`,
   )
     .bind(purchaseId)
-    .first<{ id: string; estado: string }>();
+    .first<{ id: string; estado: string; montoPagado: number }>();
 
   if (!actual) {
     throw ApiError.notFound('Esa compra no existe.');
   }
-  if (actual.estado === 'pagado') {
+  // No basta con mirar el estado desde que hay abonos (migración 0036): una
+  // compra a medio girar sigue en 'pendiente' y borrarla se llevaría por
+  // CASCADE los abonos ya hechos, dejando plata que salió de una cuenta sin
+  // nada que la explique.
+  if (actual.estado === 'pagado' || actual.montoPagado > 0) {
     throw ApiError.conflict(
       'compra-pagada',
-      'Esta compra ya está pagada y no se puede borrar: es el respaldo de un giro que sí ocurrió.',
+      actual.estado === 'pagado'
+        ? 'Esta compra ya está pagada y no se puede borrar: es el respaldo de un giro que sí ocurrió.'
+        : 'Esta compra ya tiene abonos girados y no se puede borrar. Si la mercancía se devolvió, registra una compra de ajuste.',
     );
   }
 
@@ -508,31 +519,124 @@ export async function remove(env: Env, user: JwtPayload, purchaseId: string): Pr
  * aquí. La guardia va dentro del UPDATE, como en el resto del proyecto, para
  * que dos clics simultáneos no registren dos pagos.
  */
-export async function markPaid(env: Env, user: JwtPayload, purchaseId: string): Promise<Response> {
+export async function markPaid(
+  request: Request,
+  env: Env,
+  user: JwtPayload,
+  purchaseId: string,
+): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS');
 
-  const result = await env.DB.prepare(
-    `UPDATE provider_purchases
-        SET estado = 'pagado', pagado_por = ?2, pagado_en = datetime('now')
-      WHERE id = ?1 AND estado = 'pendiente'`,
+  const body = await readJson<{ monto?: unknown; metodo?: unknown; nota?: unknown }>(
+    request,
+  ).catch(() => ({}) as { monto?: unknown; metodo?: unknown; nota?: unknown });
+
+  const compra = await env.DB.prepare(
+    `SELECT id, origen, total_pago AS totalPago, monto_pagado AS montoPagado, estado
+       FROM provider_purchases WHERE id = ?1`,
   )
-    .bind(purchaseId, user.sub)
-    .run();
+    .bind(purchaseId)
+    .first<{
+      id: string;
+      origen: string;
+      totalPago: number;
+      montoPagado: number;
+      estado: string;
+    }>();
 
-  if (result.meta.changes === 0) {
-    const existe = await env.DB.prepare(
-      `SELECT estado FROM provider_purchases WHERE id = ?1`,
-    )
-      .bind(purchaseId)
-      .first<{ estado: string }>();
+  if (!compra) {
+    throw ApiError.notFound('Esa compra no existe.');
+  }
 
-    if (!existe) {
-      throw ApiError.notFound('Esa compra no existe.');
-    }
-    throw ApiError.conflict('ya-pagada', 'Esta compra ya estaba marcada como pagada.');
+  const saldo = compra.totalPago - compra.montoPagado;
+  if (compra.estado === 'pagado' || saldo <= 0) {
+    throw ApiError.conflict('ya-pagada', 'Esta compra ya está girada por completo.');
+  }
+
+  // Sin monto se gira todo lo que falta: es lo que hacía el botón «Pagar» de
+  // Compras antes de que hubiera abonos, y hay que seguir sirviéndolo.
+  const monto = body.monto === undefined || body.monto === null
+    ? saldo
+    : requireInt(body.monto, 'monto', 1);
+
+  if (monto > saldo) {
+    throw ApiError.badRequest(
+      'abono-mayor-al-saldo',
+      `A ${compra.origen} solo le faltan ${saldo} por girar; no se puede abonar ${monto}.`,
+    );
+  }
+
+  const metodo = leerMetodoGiro(body.metodo);
+  const nota = optionalString(body.nota, 'nota', 200);
+
+  // De qué cuenta sale, deducido del método igual que en los cobros: en
+  // efectivo sale del cajón, por transferencia del banco. No se pide aparte
+  // porque preguntar dos veces lo mismo es la manera de que un día no
+  // coincidan.
+  const cuentaId = metodo === 'efectivo' ? 'caja-efectivo' : 'cuenta-bancaria';
+
+  const abonoId = `ppay-${crypto.randomUUID()}`;
+
+  // El orden importa: primero el HECHO (la fila del abono), después la caché.
+  //
+  // El INSERT lleva su propia guardia dentro del SELECT, así que dos clics a
+  // la vez no pueden girar de más: el segundo no inserta nada. Y el UPDATE no
+  // suma, RECALCULA desde la tabla de abonos — así la caché no puede quedar
+  // diciendo algo distinto de lo que suman las filas.
+  const [insertado] = await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO provider_payments (id, purchase_id, monto, metodo, cuenta_id, nota, pagado_por)
+       SELECT ?1, c.id, ?3, ?4, ?5, ?6, ?7
+         FROM provider_purchases c
+        WHERE c.id = ?2
+          AND c.estado = 'pendiente'
+          AND c.monto_pagado + ?3 <= c.total_pago`,
+    ).bind(abonoId, purchaseId, monto, metodo, cuentaId, nota, user.sub),
+
+    env.DB.prepare(
+      `UPDATE provider_purchases
+          SET monto_pagado = (SELECT COALESCE(SUM(monto), 0)
+                                FROM provider_payments WHERE purchase_id = ?1),
+              estado = CASE
+                WHEN (SELECT COALESCE(SUM(monto), 0)
+                        FROM provider_payments WHERE purchase_id = ?1) >= total_pago
+                THEN 'pagado' ELSE 'pendiente' END,
+              -- Sin acentos graves en este comentario: va DENTRO de una
+              -- plantilla de JS y un acento grave la cortaría en seco.
+              -- pagado_en marca el giro COMPLETO, no cada abono: la fecha de
+              -- cada abono vive en su propia fila.
+              pagado_por = CASE
+                WHEN (SELECT COALESCE(SUM(monto), 0)
+                        FROM provider_payments WHERE purchase_id = ?1) >= total_pago
+                THEN ?2 ELSE pagado_por END,
+              pagado_en = CASE
+                WHEN (SELECT COALESCE(SUM(monto), 0)
+                        FROM provider_payments WHERE purchase_id = ?1) >= total_pago
+                THEN datetime('now') ELSE pagado_en END,
+              cuenta_id = COALESCE(cuenta_id, ?3)
+        WHERE id = ?1`,
+    ).bind(purchaseId, user.sub, cuentaId),
+  ]);
+
+  if (insertado.meta.changes === 0) {
+    throw ApiError.conflict(
+      'abono-rechazado',
+      'Ese abono ya no cabe en la compra. Vuelve a abrirla para ver cuánto falta.',
+    );
   }
 
   return json({ compra: await cargarUna(env, purchaseId) });
+}
+
+/**
+ * Por dónde salió el giro.
+ *
+ * Solo dos, y a propósito: lo que de verdad tiene que saber el sistema es de
+ * qué cuenta salió la plata, y para eso «efectivo» y «transferencia» bastan.
+ * Nequi o Daviplata caen en transferencia porque van al mismo bolsillo.
+ */
+function leerMetodoGiro(valor: unknown): 'efectivo' | 'transferencia' {
+  return valor === 'efectivo' ? 'efectivo' : 'transferencia';
 }
 
 /** Las líneas de una compra, con lo justo para devolver inventario. */

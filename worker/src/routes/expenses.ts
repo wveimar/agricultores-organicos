@@ -53,7 +53,7 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
   const statement = closingId
     ? env.DB.prepare(
         `SELECT e.id, e.descripcion, e.monto, e.categoria, e.creado_en AS creadoEn,
-                e.closing_id AS closingId, u.nombre AS creadoPor
+                e.closing_id AS closingId, e.cuenta_id AS cuentaId, u.nombre AS creadoPor
            FROM expenses e
            LEFT JOIN users u ON u.id = e.creado_por
           WHERE e.closing_id = ?1
@@ -61,7 +61,7 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
       ).bind(closingId)
     : env.DB.prepare(
         `SELECT e.id, e.descripcion, e.monto, e.categoria, e.creado_en AS creadoEn,
-                e.closing_id AS closingId, u.nombre AS creadoPor
+                e.closing_id AS closingId, e.cuenta_id AS cuentaId, u.nombre AS creadoPor
            FROM expenses e
            LEFT JOIN users u ON u.id = e.creado_por
           WHERE e.closing_id IS NULL
@@ -81,27 +81,39 @@ export async function create(
 ): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS');
 
-  const body = await readJson<{ descripcion?: unknown; monto?: unknown; categoria?: unknown }>(
-    request,
-  );
+  const body = await readJson<{
+    descripcion?: unknown;
+    monto?: unknown;
+    categoria?: unknown;
+    cuentaId?: unknown;
+  }>(request);
   const descripcion = requireString(body.descripcion, 'descripcion', 200);
   // Mínimo 1: el CHECK de la tabla exige > 0 y es mejor decirlo aquí, donde
   // el mensaje puede explicar por qué, que dejar que D1 devuelva un 500 opaco.
   const monto = requireInt(body.monto, 'monto', 1);
   const categoria = requireCategoria(body.categoria);
 
+  // De qué cuenta salió (migración 0035). Por defecto el cajón, que es de
+  // donde sale un gasto de tienda salvo aviso. Sin esta columna el gasto
+  // bajaba la ganancia pero no bajaba ningún saldo, y el arqueo cuadraba de
+  // más — el cajero tenía menos billetes de los que el sistema decía.
+  const cuentaId =
+    body.cuentaId === undefined || body.cuentaId === null || body.cuentaId === ''
+      ? 'caja-efectivo'
+      : requireString(body.cuentaId, 'cuentaId', 64);
+
   const id = crypto.randomUUID();
 
   await env.DB.prepare(
-    `INSERT INTO expenses (id, descripcion, monto, categoria, creado_por)
-     VALUES (?1, ?2, ?3, ?4, ?5)`,
+    `INSERT INTO expenses (id, descripcion, monto, categoria, creado_por, cuenta_id)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
   )
-    .bind(id, descripcion, monto, categoria, user.sub)
+    .bind(id, descripcion, monto, categoria, user.sub, cuentaId)
     .run();
 
   const gasto = await env.DB.prepare(
     `SELECT e.id, e.descripcion, e.monto, e.categoria, e.creado_en AS creadoEn,
-            e.closing_id AS closingId, u.nombre AS creadoPor
+            e.closing_id AS closingId, e.cuenta_id AS cuentaId, u.nombre AS creadoPor
        FROM expenses e
        LEFT JOIN users u ON u.id = e.creado_por
       WHERE e.id = ?1`,

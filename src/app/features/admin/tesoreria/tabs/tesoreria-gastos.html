@@ -1,0 +1,224 @@
+<!-- ── Filtro por categoría + acción ───────────────────────────────────── -->
+<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+  <div class="flex flex-wrap gap-1.5" role="tablist" aria-label="Filtrar gastos por categoría">
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="filtro() === 'todos'"
+      (click)="filtro.set('todos')"
+      class="rounded-full border px-3.5 py-1.5 text-sm transition"
+      [class]="
+        filtro() === 'todos'
+          ? 'border-moss bg-moss font-medium text-white'
+          : 'border-sand bg-white text-ink/60 hover:border-moss hover:text-moss'
+      "
+    >
+      Todos
+    </button>
+
+    @for (c of CATEGORIAS; track c.id) {
+      <button
+        type="button"
+        role="tab"
+        [attr.aria-selected]="filtro() === c.id"
+        (click)="filtro.set(c.id)"
+        class="rounded-full border px-3.5 py-1.5 text-sm transition"
+        [class]="
+          filtro() === c.id
+            ? 'border-moss bg-moss font-medium text-white'
+            : 'border-sand bg-white text-ink/60 hover:border-moss hover:text-moss'
+        "
+      >
+        {{ c.texto }}
+      </button>
+    }
+  </div>
+
+  <button
+    type="button"
+    (click)="abrir()"
+    class="shrink-0 rounded-lg bg-clay px-4 py-2 text-sm font-medium text-white transition hover:bg-clay-deep"
+  >
+    Nuevo gasto
+  </button>
+</div>
+
+<!-- ── Indicadores de lo que se está viendo ────────────────────────────── -->
+<div class="mb-3 grid gap-3 sm:grid-cols-3">
+  <div class="rounded-xl border border-sand bg-white p-4">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+      Total gastos {{ filtro() === 'todos' ? '' : '(' + etiqueta(filtro()) + ')' }}
+    </p>
+    <p class="tabular mt-1 text-2xl font-semibold text-ink">{{ totalFiltrado() | cop }}</p>
+  </div>
+
+  <div class="rounded-xl border border-sand bg-white p-4">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+      La que más pesa
+    </p>
+    @if (mayorCategoria(); as m) {
+      <p class="mt-1 text-2xl font-semibold text-ink">{{ etiqueta(m.id) }}</p>
+      <p class="tabular text-xs text-ink/45">{{ m.total | cop }}</p>
+    } @else {
+      <p class="mt-1 text-2xl font-semibold text-ink/40">—</p>
+    }
+  </div>
+
+  <div class="rounded-xl border border-sand bg-white p-4">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+      Cantidad de gastos
+    </p>
+    <p class="tabular mt-1 text-2xl font-semibold text-ink">{{ visibles().length }}</p>
+  </div>
+</div>
+
+@if (error(); as mensaje) {
+  <p class="mb-3 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">{{ mensaje }}</p>
+}
+
+<!-- ── Alta de gasto ───────────────────────────────────────────────────── -->
+@if (abierto()) {
+  <div class="mb-3 rounded-xl border border-moss/30 bg-moss/5 p-4">
+    <p class="mb-3 text-sm font-semibold text-ink">Nuevo gasto</p>
+
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="sm:col-span-2">
+        <label for="gasto-desc" class="mb-1 block text-xs font-medium text-ink">Concepto</label>
+        <input
+          id="gasto-desc"
+          type="text"
+          [value]="descripcion()"
+          (input)="descripcion.set($any($event.target).value)"
+          placeholder="Ej.: acarreo de la remesa"
+          class="block w-full rounded-lg border border-sand bg-white px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+        />
+      </div>
+
+      <div>
+        <label for="gasto-monto" class="mb-1 block text-xs font-medium text-ink">Monto</label>
+        <input
+          id="gasto-monto"
+          type="number"
+          min="1"
+          [value]="monto() || ''"
+          (input)="monto.set(+$any($event.target).value || 0)"
+          class="tabular block w-full rounded-lg border border-sand bg-white px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+        />
+      </div>
+
+      <div>
+        <label for="gasto-cat" class="mb-1 block text-xs font-medium text-ink">Categoría</label>
+        <select
+          id="gasto-cat"
+          (change)="categoria.set($any($event.target).value)"
+          class="block w-full rounded-lg border border-sand bg-white px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+        >
+          @for (c of CATEGORIAS; track c.id) {
+            <option [value]="c.id" [selected]="categoria() === c.id">{{ c.texto }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="sm:col-span-2">
+        <label for="gasto-cuenta" class="mb-1 block text-xs font-medium text-ink">
+          ¿De dónde sale?
+        </label>
+        <select
+          id="gasto-cuenta"
+          (change)="cuentaId.set($any($event.target).value)"
+          class="block w-full rounded-lg border border-sand bg-white px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+        >
+          @for (c of admin.cuentasTesoreria(); track c.id) {
+            <option [value]="c.id" [selected]="cuentaId() === c.id">{{ c.nombre }}</option>
+          }
+        </select>
+      </div>
+    </div>
+
+    <div class="mt-3 flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        (click)="guardar()"
+        [disabled]="!puedeGuardar()"
+        class="rounded-lg bg-moss px-4 py-2 text-sm font-medium text-white transition hover:bg-moss/90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {{ guardando() ? 'Guardando…' : 'Registrar gasto' }}
+      </button>
+      <button
+        type="button"
+        (click)="cancelar()"
+        class="rounded-lg border border-sand bg-white px-4 py-2 text-sm text-ink transition hover:border-moss"
+      >
+        Cancelar
+      </button>
+    </div>
+  </div>
+}
+
+<!-- ── La lista ────────────────────────────────────────────────────────── -->
+<div class="overflow-hidden rounded-xl border border-sand bg-white">
+  <div class="overflow-x-auto">
+    <table class="w-full min-w-[720px] text-sm">
+      <thead>
+        <tr class="border-b border-sand bg-cream/40 text-[11px] uppercase tracking-wider text-ink-muted">
+          <th class="px-4 py-2.5 text-left font-medium">Categoría</th>
+          <th class="px-3 py-2.5 text-left font-medium">Concepto</th>
+          <th class="px-3 py-2.5 text-left font-medium">Salió de</th>
+          <th class="px-3 py-2.5 text-right font-medium">Monto</th>
+          <th class="px-3 py-2.5 text-left font-medium">Fecha</th>
+          <th class="px-4 py-2.5 text-right font-medium">
+            <span class="sr-only">Acciones</span>
+          </th>
+        </tr>
+      </thead>
+
+      <tbody class="divide-y divide-sand">
+        @for (g of visibles(); track g.id) {
+          <tr class="transition-colors hover:bg-cream/30">
+            <td class="px-4 py-2.5">
+              <span class="whitespace-nowrap rounded-full bg-cream px-2 py-0.5 text-[11px] text-ink/60">
+                {{ etiqueta(g.categoria) }}
+              </span>
+            </td>
+            <td class="max-w-[280px] truncate px-3 py-2.5 text-ink">{{ g.descripcion }}</td>
+            <td class="whitespace-nowrap px-3 py-2.5 text-ink/60">
+              {{ nombreCuenta(g.cuentaId) }}
+            </td>
+            <td class="tabular whitespace-nowrap px-3 py-2.5 text-right font-medium text-clay">
+              {{ g.monto | cop }}
+            </td>
+            <td class="whitespace-nowrap px-3 py-2.5 text-ink/50">{{ fechaCorta(g.creadoEn) }}</td>
+            <td class="px-4 py-2.5 text-right">
+              <!--
+                Solo se puede borrar mientras la jornada siga abierta. Con
+                cierre encima, el gasto ya está restado de una ganancia
+                congelada: borrarlo dejaría la contabilidad diciendo otra cosa.
+              -->
+              @if (!g.closingId) {
+                <button
+                  type="button"
+                  (click)="borrar(g.id)"
+                  [disabled]="borrando() === g.id"
+                  [attr.aria-label]="'Borrar ' + g.descripcion"
+                  class="rounded px-2 py-1 text-xs text-clay transition hover:bg-clay/10 disabled:opacity-50"
+                >
+                  {{ borrando() === g.id ? '…' : 'Borrar' }}
+                </button>
+              } @else {
+                <span class="rounded-full bg-sand px-2 py-0.5 text-[11px] text-ink/55">
+                  En cierre
+                </span>
+              }
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="6" class="px-4 py-12 text-center text-sm text-ink/50">
+              No hay gastos registrados en esta jornada.
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>

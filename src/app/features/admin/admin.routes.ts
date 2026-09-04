@@ -130,22 +130,29 @@ export const ADMIN_ROUTES: Routes = [
           import('./payments/payments-manager').then((m) => m.PaymentsManager),
       },
       {
-        path: 'cartera',
-        // Quien cobra es quien gestiona pedidos: registrar un pago cambia lo
-        // que entra al cierre de caja, no el inventario.
+        path: 'tesoreria',
+        // Quien maneja la plata es quien gestiona pedidos: cobrar, pagar y
+        // cuadrar cambian lo que entra al cierre, no el inventario. El Worker
+        // aplica la misma regla.
         canActivate: [roleGuard('GESTOR_PEDIDOS')],
-        title: 'Cartera · Panel',
-        loadComponent: () => import('./portfolio/portfolio').then((m) => m.Portfolio),
+        title: 'Tesorería · Panel',
+        loadComponent: () => import('./tesoreria/tesoreria').then((m) => m.Tesoreria),
       },
       {
+        // «Cartera» y «Gastos» dejaron de ser entradas propias del menú: ahora
+        // son pestañas dentro de Tesorería. Las rutas viejas se redirigen en
+        // vez de borrarse, porque hay enlaces guardados y gente que las tiene
+        // en favoritos — un 404 sería un castigo por conocerse el sistema.
+        path: 'cartera',
+        redirectTo: 'tesoreria',
+        pathMatch: 'full',
+      },
+      {
+        // Gastos también vive dentro de Tesorería. Se redirige por lo mismo
+        // que «cartera»: los enlaces viejos siguen llevando a alguna parte.
         path: 'gastos',
-        // Un gasto se resta de la ganancia del cierre: lo maneja quien
-        // responde por la caja, no quien maneja catálogo. El servidor aplica
-        // la misma regla.
-        canActivate: [roleGuard('GESTOR_PEDIDOS')],
-        title: 'Gastos · Panel',
-        loadComponent: () =>
-          import('./expenses/expenses-manager').then((m) => m.ExpensesManager),
+        redirectTo: 'tesoreria',
+        pathMatch: 'full',
       },
       {
         path: 'mermas',

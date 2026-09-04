@@ -1,0 +1,136 @@
+<div
+  class="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="titulo-pago"
+>
+  <div class="max-h-full w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6">
+    <h2 id="titulo-pago" class="font-serif text-xl text-ink">{{ titulo() }}</h2>
+
+    <p class="mt-1 text-sm text-ink/60">
+      {{ tercero() }}
+      @if (referencia(); as ref) {
+        <span class="text-ink/40">· {{ ref }}</span>
+      }
+    </p>
+
+    <!-- El saldo, grande: es la cifra contra la que se decide cuánto abonar. -->
+    <div class="mt-4 rounded-xl bg-cream/60 px-4 py-3">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+        {{ esSalida() ? 'Falta por girar' : 'Debe' }}
+      </p>
+      <p class="tabular mt-0.5 text-2xl font-semibold text-ink">{{ saldo() | cop }}</p>
+      @if (abonado() > 0) {
+        <p class="tabular text-xs text-moss">ya {{ esSalida() ? 'girado' : 'abonado' }} {{ abonado() | cop }}</p>
+      }
+    </div>
+
+    @if (error(); as mensaje) {
+      <p class="mt-3 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">
+        {{ mensaje }}
+      </p>
+    }
+
+    <!-- ── Cuánto ──────────────────────────────────────────────────────── -->
+    <div class="mt-4">
+      <div class="mb-1 flex items-baseline justify-between">
+        <label for="pago-monto" class="block text-xs font-medium text-ink">
+          {{ esSalida() ? 'Monto a girar' : 'Monto a pagar' }}
+        </label>
+        <button
+          type="button"
+          (click)="todo()"
+          class="text-xs text-moss underline-offset-2 hover:underline"
+        >
+          Todo el saldo
+        </button>
+      </div>
+
+      <input
+        id="pago-monto"
+        type="number"
+        min="1"
+        [max]="saldo()"
+        [value]="monto() || ''"
+        (input)="onMonto($any($event.target).value)"
+        class="tabular block w-full rounded-lg border border-sand bg-bone px-3 py-2.5 text-lg text-ink focus:border-moss focus:outline-none"
+      />
+
+      @if (excede()) {
+        <p class="mt-1 text-xs text-clay">
+          No se puede {{ esSalida() ? 'girar' : 'cobrar' }} más de lo que se debe.
+        </p>
+      } @else if (esAbonoParcial()) {
+        <!--
+          Se dice qué queda debiendo, no solo que el abono es parcial: es la
+          cifra que el cliente pregunta en el mostrador justo después de pagar.
+        -->
+        <p class="mt-1 text-xs text-ink/55">
+          Es un abono. Quedarían debiendo <strong class="tabular">{{ restante() | cop }}</strong>.
+        </p>
+      }
+    </div>
+
+    <!-- ── Por dónde ───────────────────────────────────────────────────── -->
+    <fieldset class="mt-4">
+      <legend class="mb-1 block text-xs font-medium text-ink">Método de pago</legend>
+
+      <div class="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          (click)="metodo.set('efectivo')"
+          [attr.aria-pressed]="metodo() === 'efectivo'"
+          class="rounded-lg border px-3 py-2.5 text-sm transition"
+          [class]="
+            metodo() === 'efectivo'
+              ? 'border-moss bg-moss font-medium text-white'
+              : 'border-sand bg-white text-ink/60 hover:border-moss'
+          "
+        >
+          Efectivo
+        </button>
+
+        <button
+          type="button"
+          (click)="metodo.set('transferencia')"
+          [attr.aria-pressed]="metodo() === 'transferencia'"
+          class="rounded-lg border px-3 py-2.5 text-sm transition"
+          [class]="
+            metodo() === 'transferencia'
+              ? 'border-moss bg-moss font-medium text-white'
+              : 'border-sand bg-white text-ink/60 hover:border-moss'
+          "
+        >
+          Transferencia
+        </button>
+      </div>
+
+      <!--
+        Se dice a qué cuenta cae, no solo el nombre del medio. De aquí sale el
+        saldo contra el que cuadra el arqueo del turno: si el cajero elige mal,
+        al cerrar le van a faltar billetes sin que nadie sepa por qué.
+      -->
+      <p class="mt-1.5 text-xs text-ink/50">
+        {{ esSalida() ? 'Sale de' : 'Entra a' }}: <strong>{{ cuenta() }}</strong>
+      </p>
+    </fieldset>
+
+    <div class="mt-5 flex justify-end gap-2">
+      <button
+        type="button"
+        (click)="cancelar.emit()"
+        class="rounded-lg border border-sand bg-white px-4 py-2 text-sm text-ink transition hover:border-moss"
+      >
+        Cancelar
+      </button>
+      <button
+        type="button"
+        (click)="enviar()"
+        [disabled]="!puedeConfirmar()"
+        class="rounded-lg bg-moss px-4 py-2 text-sm font-medium text-white transition hover:bg-moss/90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {{ trabajando() ? 'Registrando…' : titulo() }}
+      </button>
+    </div>
+  </div>
+</div>

@@ -168,15 +168,20 @@ export function cobrarPedidoStatements(
     // El cliente sale de la propia factura del pedido, no de lo que mande
     // quien llama: es la única fuente correcta de a quién se le cobró.
     env.DB.prepare(
+      // `cuenta_id` sale del método y no de quien llama (migración 0035): el
+      // efectivo va al cajón y lo demás al banco. Deducirlo aquí, en el único
+      // sitio por donde pasan todos los cobros de pedido, evita que cada
+      // camino que cobra —POS, domiciliario, cartera— tenga que acordarse.
       `INSERT INTO payments (
          id, referencia, contact_id, cliente_nombre, monto, metodo,
-         recibido_en, recibido_por, recibido_por_nombre, liquidado, canal
+         recibido_en, recibido_por, recibido_por_nombre, liquidado, canal, cuenta_id
        )
        SELECT ?1,
               'ABONO-' || printf('%06d', (SELECT IFNULL(MAX(CAST(substr(referencia, 7) AS INTEGER)), 0) + 1 FROM payments)),
               i.contact_id, i.cliente_nombre,
               CASE WHEN ?7 IS NULL THEN i.saldo ELSE MIN(i.saldo, ?7) END,
-              ?4, datetime('now'), ?3, ?5, ?6, ?8
+              ?4, datetime('now'), ?3, ?5, ?6, ?8,
+              CASE WHEN ?4 = 'efectivo' THEN 'caja-efectivo' ELSE 'cuenta-bancaria' END
          FROM invoices i
         WHERE i.order_id = ?2 AND i.estado <> 'anulada' AND i.saldo > 0`,
     ).bind(
@@ -530,13 +535,15 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
 
   await env.DB.batch([
     env.DB.prepare(
+      // `cuenta_id` deducido del método, igual que en `cobrarPedidoStatements`.
       `INSERT INTO payments (
          id, referencia, contact_id, cliente_nombre, monto, metodo,
-         recibido_en, recibido_por, recibido_por_nombre, liquidado, nota
+         recibido_en, recibido_por, recibido_por_nombre, liquidado, nota, cuenta_id
        ) VALUES (
          ?1,
          'ABONO-' || printf('%06d', (SELECT IFNULL(MAX(CAST(substr(referencia, 7) AS INTEGER)), 0) + 1 FROM payments)),
-         ?2, ?3, ?4, ?5, datetime('now'), ?6, ?7, ?9, ?8
+         ?2, ?3, ?4, ?5, datetime('now'), ?6, ?7, ?9, ?8,
+         CASE WHEN ?5 = 'efectivo' THEN 'caja-efectivo' ELSE 'cuenta-bancaria' END
        )`,
     ).bind(
       id,

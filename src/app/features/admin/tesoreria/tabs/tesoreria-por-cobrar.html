@@ -1,0 +1,133 @@
+<!-- ── Total, con lo vencido a la derecha ──────────────────────────────── -->
+<div class="mb-3 rounded-xl border border-sand bg-white p-4">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+        Total por cobrar
+      </p>
+      <p class="tabular mt-1 text-3xl font-semibold text-ink">{{ total() | cop }}</p>
+    </div>
+
+    <div class="flex gap-6">
+      <div class="text-right">
+        <p class="text-[11px] uppercase tracking-wider text-ink-muted">Vencido</p>
+        <p class="tabular text-sm font-medium" [class]="vencido() > 0 ? 'text-clay' : 'text-ink/50'">
+          {{ vencido() | cop }}
+        </p>
+      </div>
+      <div class="text-right">
+        <p class="text-[11px] uppercase tracking-wider text-ink-muted">Clientes</p>
+        <p class="tabular text-sm font-medium text-ink">{{ clientes() }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-3">
+    <label for="cobrar-buscar" class="sr-only">Buscar cliente o factura</label>
+    <input
+      id="cobrar-buscar"
+      type="search"
+      [value]="busqueda()"
+      (input)="busqueda.set($any($event.target).value)"
+      placeholder="Cliente, número de factura o teléfono…"
+      class="block w-full rounded-lg border border-sand bg-bone px-3 py-2 text-sm text-ink focus:border-moss focus:outline-none"
+    />
+  </div>
+</div>
+
+@if (error(); as mensaje) {
+  <p class="mb-3 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">{{ mensaje }}</p>
+}
+@if (hecho(); as mensaje) {
+  <p class="mb-3 rounded-lg bg-sage-light px-3 py-2 text-sm text-moss">{{ mensaje }}</p>
+}
+
+<!-- ── Una fila por factura con saldo ──────────────────────────────────── -->
+<div class="overflow-hidden rounded-xl border border-sand bg-white">
+  <ul class="divide-y divide-sand">
+    @for (f of visibles(); track f.id) {
+      <li class="flex flex-wrap items-center gap-3 p-4">
+        <span
+          class="flex size-9 shrink-0 items-center justify-center rounded-full bg-cream text-xs font-semibold text-ink/60"
+          aria-hidden="true"
+        >
+          {{ iniciales(f.clienteNombre) }}
+        </span>
+
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-baseline gap-2">
+            <p class="truncate text-sm font-semibold text-ink">{{ f.clienteNombre }}</p>
+            <span class="text-xs text-ink/40">{{ f.numero }}</span>
+
+            @if (f.venceEn) {
+              <span
+                class="rounded-full px-2 py-0.5 text-[11px]"
+                [class]="estaVencida(f) ? 'bg-clay/12 text-clay' : 'bg-cream text-ink/55'"
+              >
+                {{ estaVencida(f) ? 'vencida' : 'vence' }} {{ fechaCorta(f.venceEn) }}
+              </span>
+            }
+
+            @if (abonado(f) > 0) {
+              <span class="rounded-full bg-sage-light px-2 py-0.5 text-[11px] text-moss">
+                abonado {{ abonado(f) | cop }}
+              </span>
+            }
+          </div>
+
+          @if (f.clienteTelefono) {
+            <p class="mt-0.5 text-xs text-ink/45">{{ f.clienteTelefono }}</p>
+          }
+
+          <!-- Lo verde es lo que ya entró; el resto, lo que falta. -->
+          <div class="mt-2 h-1 w-full max-w-sm overflow-hidden rounded-full bg-cream">
+            <div
+              class="h-full rounded-full bg-moss transition-[width] duration-500"
+              [style.width]="avance(f)"
+            ></div>
+          </div>
+        </div>
+
+        <div class="shrink-0 text-right">
+          <p class="tabular text-lg font-semibold text-ink">{{ f.saldo | cop }}</p>
+          <p class="tabular text-xs text-ink/40">de {{ f.total | cop }}</p>
+        </div>
+
+        <button
+          type="button"
+          (click)="abrirCobro(f)"
+          class="shrink-0 rounded-lg bg-moss px-4 py-2 text-sm font-medium text-white transition hover:bg-moss/90"
+        >
+          Registrar cobro
+        </button>
+      </li>
+    } @empty {
+      <li class="px-4 py-12 text-center text-sm text-ink/50">
+        @if (busqueda().trim() !== '') {
+          Nada coincide con «{{ busqueda() }}».
+        } @else {
+          No hay nada por cobrar. Todo el mundo está al día.
+        }
+      </li>
+    }
+  </ul>
+</div>
+
+<p class="mt-2 text-xs text-ink/45">
+  «Registrar cobro» abre la ventana para escribir cuánto pagó el cliente: puede ser todo el
+  saldo o un abono. El método —efectivo o transferencia— decide a qué cuenta entra la plata.
+</p>
+
+@if (cobrandoFactura(); as f) {
+  <app-registrar-pago-modal
+    titulo="Registrar cobro"
+    [tercero]="f.clienteNombre"
+    [referencia]="f.numero"
+    [saldo]="f.saldo"
+    [abonado]="abonado(f)"
+    [trabajando]="cobrando() === f.id"
+    [error]="errorModal()"
+    (confirmar)="confirmarCobro($event)"
+    (cancelar)="cerrarCobro()"
+  />
+}
