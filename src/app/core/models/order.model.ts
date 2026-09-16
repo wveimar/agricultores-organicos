@@ -305,6 +305,12 @@ export interface OrderLine {
    * navegador.
    */
   readonly contains?: readonly ProductComponent[];
+  /**
+   * Qué sesión reservó esta línea, solo en un producto 'servicio'. Copiada
+   * del carrito al confirmar, igual que el resto de la línea: la pantalla de
+   * éxito no vuelve a preguntarle nada al servidor.
+   */
+  readonly session?: { readonly start: string; readonly location?: string };
 }
 
 export interface Order {

@@ -16,10 +16,17 @@
       </p>
       <h1 class="mt-4 text-h1 text-ink">Recibimos tu pedido</h1>
       <p class="mt-4 text-ink-soft">
-        Reservamos
-        <span class="tabular font-medium text-ink">{{ units() }}</span>
-        {{ units() === 1 ? 'unidad' : 'unidades' }} a tu nombre. Falta que verifiquemos
-        la transferencia en el banco.
+        @if (isService()) {
+          Apartamos
+          <span class="tabular font-medium text-ink">{{ units() }}</span>
+          {{ units() === 1 ? 'cupo' : 'cupos' }} a tu nombre. Falta que verifiquemos
+          la transferencia en el banco.
+        } @else {
+          Reservamos
+          <span class="tabular font-medium text-ink">{{ units() }}</span>
+          {{ units() === 1 ? 'unidad' : 'unidades' }} a tu nombre. Falta que verifiquemos
+          la transferencia en el banco.
+        }
       </p>
     </div>
 
@@ -69,6 +76,14 @@
                 {{ line.unitPrice * line.quantity | cop }}
               </p>
             </div>
+
+            <!-- Fecha y lugar reservados, si es un servicio -->
+            @if (line.session; as sesion) {
+              <p class="mt-1 text-xs text-ink-soft">
+                {{ fechaSesion(sesion.start) }}
+                @if (sesion.location) { · {{ sesion.location }} }
+              </p>
+            }
 
             <!-- Qué lleva dentro, si es una canasta -->
             @if (line.contains; as contenido) {
@@ -128,7 +143,8 @@
 
     <div class="mt-8 text-center">
       <a
-        href="/#tienda"
+        [routerLink]="shopPath()"
+        fragment="tienda"
         class="text-sm text-ink-soft underline underline-offset-4 transition-colors duration-200 hover:text-ink"
         (click)="startAnother()"
       >

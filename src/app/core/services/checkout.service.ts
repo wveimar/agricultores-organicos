@@ -2,6 +2,7 @@ import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { Observable, map } from 'rxjs';
 import { CartService } from './cart.service';
 import { KV_KEYS, KvStore } from './kv-store.service';
+import { SiteConfigService } from './site-config.service';
 import { ApiClient } from '../api/api-client';
 import { FREE_SHIPPING_THRESHOLD, SHIPPING_COST } from '../models/cart.model';
 import {
@@ -12,24 +13,6 @@ import {
   WebPaymentMethod,
 } from '../models/order.model';
 
-/**
- * Número de la cooperativa en formato internacional, sin `+` ni espacios.
- *
- * `wa.me` exige el indicativo del país pegado al número y sin símbolos: con
- * `+57 301 606 6121` el enlace abre WhatsApp sin destinatario, y el cliente
- * cree que envió el mensaje.
- */
-export const WHATSAPP_NUMBER = '573016066121';
-
-/** Datos para la consignación manual. No hay pasarela de pago. */
-export const BANK_DETAILS = {
-  bank: 'Bancolombia',
-  accountType: 'Cuenta de ahorros',
-  accountNumber: '64715834837',
-  holder: 'wveimar Mamian Ramirez',
-  cc: 'cc 70-907-972',
-} as const;
-
 export type CheckoutStep = 'formulario' | 'exito';
 
 @Injectable({ providedIn: 'root' })
@@ -37,6 +20,16 @@ export class CheckoutService {
   private readonly cart = inject(CartService);
   private readonly api = inject(ApiClient);
   private readonly kv = inject(KvStore);
+  private readonly siteConfig = inject(SiteConfigService);
+
+  /**
+   * Número de WhatsApp y datos bancarios: antes constantes compiladas aquí
+   * mismo, ahora la marca del sitio (`GET /api/config` vía
+   * `SiteConfigService`) — ver el porqué en ese servicio. `wa.me` exige el
+   * indicativo del país pegado al número y sin símbolos, de ahí el formato.
+   */
+  readonly whatsappNumber = this.siteConfig.whatsappNumber;
+  readonly bank = this.siteConfig.bank;
 
   /** Pedido recién creado. Se rehidrata para que sobreviva a un F5. */
   readonly placedOrder = signal<Order | null>(this.hydrateLastOrder());
@@ -57,9 +50,12 @@ export class CheckoutService {
 
   readonly subtotal = this.cart.subtotal;
 
+  /** Un servicio no tiene envío: no hay nada que llevar a ninguna parte. */
+  readonly isServiceOnly = computed(() => this.cart.cartType() === 'servicio');
+
   readonly shipping = computed(() => {
     const metodo = this.metodoPago();
-    if (metodo === 'entrega_en_tienda') return 0;
+    if (this.isServiceOnly() || metodo === 'entrega_en_tienda') return 0;
     if (this.cart.isEmpty() || this.subtotal() >= FREE_SHIPPING_THRESHOLD) return 0;
     return SHIPPING_COST;
   });
@@ -103,6 +99,7 @@ export class CheckoutService {
   placeOrder(customer: {
     name: string;
     phone: string;
+    /** Vacía cuando el carrito es solo de servicios: no hay nada que enviar. */
     address: string;
     /** La cédula. Obligatoria: es la llave con la que se reencuentra al
      *  cliente entre compras y el dato que va en la factura. */
@@ -123,6 +120,9 @@ export class CheckoutService {
       unitCost: line.product.costPrice,
       quantity: line.quantity,
       contains: line.product.contains,
+      ...(line.session
+        ? { session: { start: line.session.start, location: line.session.location } }
+        : {}),
     }));
 
     return this.api
@@ -132,7 +132,11 @@ export class CheckoutService {
         clienteDireccion: customer.address,
         clienteCedula: customer.cedula,
         envio: totals.shipping,
-        items: cartLines.map((line) => ({ productId: line.product.id, cantidad: line.quantity })),
+        items: cartLines.map((line) => ({
+          productId: line.product.id,
+          cantidad: line.quantity,
+          ...(line.session ? { sessionId: line.session.id } : {}),
+        })),
         metodoPago: customer.metodoPago,
         ...(proof ? { comprobanteNombre: proof.fileName, comprobanteUrl: proof.dataUrl } : {}),
       })
@@ -202,7 +206,7 @@ export class CheckoutService {
       .filter((part) => part !== '')
       .join('\n');
 
-    return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+    return `https://wa.me/${this.whatsappNumber()}?text=${encodeURIComponent(message)}`;
   }
 
   private hydrateLastOrder(): Order | null {

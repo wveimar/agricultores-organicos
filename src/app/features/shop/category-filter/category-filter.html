@@ -27,8 +27,13 @@
 
     Solo aparecen si hay más de un grupo con producto. Con «Todo» a secas la
     banda sería una barra decorativa que no filtra nada.
+
+    Tampoco aparecen con la vitrina bloqueada a un workspace (0040,
+    `/mercado` o `/turismo`): esas rutas YA son un solo grupo, así que la
+    solapa "Todo" sería un enlace de vuelta a un catálogo mixto que ya no
+    existe como tal.
   -->
-  @if (catalog.visibleGroups().length > 1) {
+  @if (!catalog.workspaceLocked() && catalog.visibleGroups().length > 1) {
     <div class="relative bg-sand pt-2">
       <div
         #solapas

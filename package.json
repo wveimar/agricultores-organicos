@@ -101,7 +101,14 @@
     "qa:delivery": "node worker/tests/qa-delivery.mjs",
     "db:migrate:notas": "wrangler d1 execute DB --local --file=worker/migrations/0030_notas_credito_debito.sql",
     "db:migrate:notas:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0030_notas_credito_debito.sql",
-    "qa:notas": "node worker/tests/qa-notas.mjs"
+    "qa:notas": "node worker/tests/qa-notas.mjs",
+    "db:migrate:servicios": "wrangler d1 execute DB --local --file=worker/migrations/0038_productos_servicio.sql",
+    "db:migrate:servicios:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0038_productos_servicio.sql",
+    "qa:servicios": "node worker/tests/qa-servicios.mjs",
+    "db:migrate:temas-fotos": "wrangler d1 execute DB --local --file=worker/migrations/0039_temas_y_fotos.sql",
+    "db:migrate:temas-fotos:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0039_temas_y_fotos.sql",
+    "db:migrate:workspace": "wrangler d1 execute DB --local --file=worker/migrations/0040_workspace_usuarios.sql",
+    "db:migrate:workspace:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0040_workspace_usuarios.sql"
   },
   "private": true,
   "packageManager": "npm@11.12.1",

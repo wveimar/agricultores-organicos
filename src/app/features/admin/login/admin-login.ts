@@ -3,6 +3,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiClient, ApiErrorBody } from '../../../core/api/api-client';
 import { isWholesaleRole } from '../../../core/models/user.model';
+import { SiteConfigService } from '../../../core/services/site-config.service';
 import { Turnstile } from '../../../shared/turnstile/turnstile';
 import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 
@@ -25,9 +26,11 @@ export class AdminLogin {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly api = inject(ApiClient);
+  protected readonly brand = inject(SiteConfigService);
 
   /**
-   * Sitekey pública de Turnstile, servida por `GET /api/config`.
+   * Sitekey pública de Turnstile, servida por `GET /api/config` y cacheada en
+   * `SiteConfigService` —así esta pantalla no dispara su propia petición—.
    *
    * Vacía → el widget entra en modo demo, que es lo que ocurre mientras no se
    * configure `TURNSTILE_SITE_KEY` en el Worker. Viene del servidor y no
@@ -35,7 +38,7 @@ export class AdminLogin {
    * La clave **secreta** nunca llega al navegador: solo la usa el Worker
    * contra `siteverify`.
    */
-  protected readonly turnstileSiteKey = signal('');
+  protected readonly turnstileSiteKey = this.brand.turnstileSiteKey;
 
   protected readonly form = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
@@ -45,15 +48,6 @@ export class AdminLogin {
   protected readonly turnstileToken = signal<string | null>(null);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly submitting = signal(false);
-
-  constructor() {
-    // Si la petición falla se queda en modo demo: un problema de red no debe
-    // dejar la pantalla de entrada inservible.
-    this.api.config().subscribe({
-      next: ({ turnstileSiteKey }) => this.turnstileSiteKey.set(turnstileSiteKey),
-      error: () => this.turnstileSiteKey.set(''),
-    });
-  }
 
   protected onVerified(token: string): void {
     // Un token vacío llega cuando Turnstile expira: hay que volver a verificar.
@@ -87,13 +81,15 @@ export class AdminLogin {
 
         // Una cuenta de mayorista no tiene nada que hacer en el panel: sus
         // roles no abren ninguna sección, así que aterrizaría en una portada
-        // vacía sin entender por qué. Se le manda a la tienda, que es donde su
-        // sesión sí significa algo — los precios ya con su tarifa.
+        // vacía sin entender por qué. Se le manda a Mercado, que es donde su
+        // sesión sí significa algo —los precios ya con su tarifa— y no a la
+        // portada neutra: la tarifa de mayorista (0040) es un concepto de
+        // Mercado, Turismo no tiene niveles de mayorista.
         const soloMayorista =
           session.user.roles.length > 0 && session.user.roles.every(isWholesaleRole);
 
         if (soloMayorista) {
-          void this.router.navigateByUrl('/');
+          void this.router.navigateByUrl('/mercado');
           return;
         }
 

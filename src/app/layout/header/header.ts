@@ -4,6 +4,7 @@ import {
   HostListener,
   computed,
   inject,
+  input,
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -11,8 +12,25 @@ import { NavigationEnd, Router } from '@angular/router';
 import { filter } from 'rxjs';
 import { CartService } from '../../core/services/cart.service';
 import { CatalogService } from '../../core/services/catalog.service';
+import { SiteConfigService } from '../../core/services/site-config.service';
 import { TokenStore } from '../../core/api/token-store';
 import { ROLE_LABELS } from '../../core/models/user.model';
+import { PublicWorkspace } from '../../core/models/product.model';
+
+/** Navegación propia de cada vitrina — no comparten ni un enlace: son "2 proyectos distintos". */
+const LINKS_MERCADO = [
+  { label: 'Tienda', href: '#tienda' },
+  { label: 'Canastas', href: '#tienda' },
+  { label: 'Nuestras fincas', href: '#historia' },
+  { label: 'Cómo funciona', href: '#historia' },
+];
+
+const LINKS_TURISMO = [
+  { label: 'Tours', href: '#tienda' },
+  { label: 'Actividades', href: '#tienda' },
+  { label: 'Alojamiento', href: '#tienda' },
+  { label: 'Cómo funciona', href: '#historia' },
+];
 
 /** Píxeles de scroll a partir de los cuales el header se vuelve sólido. */
 const SOLID_THRESHOLD = 24;
@@ -23,10 +41,17 @@ const SOLID_THRESHOLD = 24;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class Header {
+  /** Qué vitrina es esta — la fija la ruta. Ver `PublicShell`. */
+  readonly workspace = input.required<PublicWorkspace>();
+
   protected readonly cart = inject(CartService);
   protected readonly tokens = inject(TokenStore);
+  protected readonly brand = inject(SiteConfigService);
   private readonly catalog = inject(CatalogService);
   private readonly router = inject(Router);
+
+  /** Marca de esta vitrina, no la del panel: ver `SiteConfigService.brandPartsFor`. */
+  protected readonly brandParts = computed(() => this.brand.brandPartsFor(this.workspace()));
 
   /**
    * Sello del nivel de mayorista. `null` para el cliente normal, que es el
@@ -82,12 +107,9 @@ export class Header {
     this.overHero.set(route.data['transparentHeader'] === true);
   }
 
-  protected readonly links = [
-    { label: 'Tienda', href: '#tienda' },
-    { label: 'Canastas', href: '#tienda' },
-    { label: 'Nuestras fincas', href: '#historia' },
-    { label: 'Cómo funciona', href: '#historia' },
-  ];
+  protected readonly links = computed(() =>
+    this.workspace() === 'turismo' ? LINKS_TURISMO : LINKS_MERCADO,
+  );
 
   @HostListener('window:scroll')
   protected onScroll(): void {

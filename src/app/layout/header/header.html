@@ -21,13 +21,15 @@
         class="font-display text-xl tracking-[-0.02em] text-bone lg:text-2xl"
         (click)="closeMenu()"
       >
-        Agricultores
-        <span class="text-sage">Orgánicos</span>
+        {{ brandParts().first }}
+        @if (brandParts().rest; as rest) {
+          <span class="text-sage">{{ rest }}</span>
+        }
       </a>
 
       <!-- Navegación de escritorio -->
       <nav class="hidden items-center gap-9 lg:flex" aria-label="Principal">
-        @for (link of links; track link.label) {
+        @for (link of links(); track link.label) {
           <a
             [href]="link.href"
             class="group relative text-sm text-bone/85 transition-colors duration-200 hover:text-bone"
@@ -124,7 +126,7 @@
       aria-label="Principal (móvil)"
     >
       <div class="container-shell flex flex-col py-3">
-        @for (link of links; track link.label) {
+        @for (link of links(); track link.label) {
           <a
             [href]="link.href"
             class="border-b border-bone/8 py-4 text-bone/85 transition-colors duration-200 last:border-0 hover:text-bone"

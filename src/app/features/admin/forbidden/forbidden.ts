@@ -30,7 +30,7 @@ import { TokenStore } from '../../../core/api/token-store';
           routerLink="/"
           class="rounded-full border border-sand px-6 py-3 text-sm text-ink-soft transition-colors duration-200 hover:border-stone hover:text-ink"
         >
-          Volver a la tienda
+          Ir a la portada
         </a>
       </div>
     </div>

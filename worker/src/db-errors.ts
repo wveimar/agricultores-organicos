@@ -25,6 +25,17 @@ export function translateConstraint(error: unknown): ApiError {
     );
   }
 
+  // Misma defensa que stock_actual, para el cupo de una sesión (0038): si dos
+  // reservas concurrentes pasaron la validación de la aplicación a la vez, el
+  // CHECK cupo_reservado <= cupo_total es lo que impide que la segunda deje el
+  // cupo en negativo.
+  if (message.includes('CHECK constraint failed') && message.includes('cupo_reservado')) {
+    return ApiError.badRequest(
+      'cupo-insuficiente',
+      'Otra reserva se llevó esos cupos mientras procesábamos el pedido. No se aplicó ningún cambio.',
+    );
+  }
+
   if (message.includes('UNIQUE constraint failed')) {
     return ApiError.conflict('duplicado', 'Ese registro ya existe.');
   }

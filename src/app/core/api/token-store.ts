@@ -1,6 +1,6 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { KV_KEYS, KvStore } from '../services/kv-store.service';
-import { ROLE_LABELS, UserRole } from '../models/user.model';
+import { ROLE_LABELS, UserRole, Workspace } from '../models/user.model';
 
 export interface ApiSession {
   readonly token: string;
@@ -10,6 +10,7 @@ export interface ApiSession {
     readonly email: string;
     readonly nombre: string;
     readonly roles: readonly UserRole[];
+    readonly workspace: Workspace;
   };
 }
 
@@ -34,6 +35,9 @@ export class TokenStore {
   readonly isAuthenticated = computed(() => this.session() !== null);
 
   readonly roles = computed<readonly UserRole[]>(() => this.user()?.roles ?? []);
+
+  /** 'ambos' cuando no hay sesión: no oculta nada mientras se decide si hay hueco. */
+  readonly workspace = computed<Workspace>(() => this.user()?.workspace ?? 'ambos');
 
   readonly roleLabel = computed(() => this.roles().map((role) => ROLE_LABELS[role]).join(' · '));
 
@@ -77,6 +81,12 @@ export class TokenStore {
       return true;
     }
     return allowed.some((role) => roles.includes(role));
+  }
+
+  /** `true` si la cuenta puede ver una sección marcada para `target` — 'ambos' abre cualquier puerta. */
+  canWorkspace(target: Workspace): boolean {
+    const workspace = this.workspace();
+    return workspace === 'ambos' || workspace === target;
   }
 
   /** Descarta la sesión guardada si ya expiró, sin esperar a un 401. */

@@ -1,5 +1,5 @@
 import { ApiError, json, readJson, requireString } from '../http';
-import { Env, JwtPayload, UserRole } from '../types';
+import { Env, JwtPayload, UserRole, Workspace } from '../types';
 import { DECOY_HASH, signJwt, verifyPassword } from '../auth/crypto';
 import {
   assertLoginAllowed,
@@ -21,6 +21,7 @@ interface UserRow {
   nombre: string;
   password_hash: string;
   roles: string | null;
+  workspace: Workspace;
 }
 
 /**
@@ -45,7 +46,7 @@ export async function login(request: Request, env: Env): Promise<Response> {
 
   // group_concat evita una segunda consulta para los roles.
   const user = await env.DB.prepare(
-    `SELECT u.id, u.email, u.nombre, u.password_hash,
+    `SELECT u.id, u.email, u.nombre, u.password_hash, u.workspace,
             (SELECT group_concat(r.role) FROM user_roles r WHERE r.user_id = u.id) AS roles
        FROM users u
       WHERE u.email = ?1 AND u.activo = 1`,
@@ -74,21 +75,27 @@ export async function login(request: Request, env: Env): Promise<Response> {
 
   const roles = (user.roles?.split(',') ?? []) as UserRole[];
   const { token, expiresAt } = await signJwt(
-    { sub: user.id, email: user.email, nombre: user.nombre, roles },
+    { sub: user.id, email: user.email, nombre: user.nombre, roles, workspace: user.workspace },
     env.JWT_SECRET,
   );
 
   return json({
     token,
     expiresAt,
-    user: { id: user.id, email: user.email, nombre: user.nombre, roles },
+    user: { id: user.id, email: user.email, nombre: user.nombre, roles, workspace: user.workspace },
   });
 }
 
 /** GET /api/auth/me — confirma que el token sigue vivo y devuelve el perfil. */
 export function me(user: JwtPayload): Response {
   return json({
-    user: { id: user.sub, email: user.email, nombre: user.nombre, roles: user.roles },
+    user: {
+      id: user.sub,
+      email: user.email,
+      nombre: user.nombre,
+      roles: user.roles,
+      workspace: user.workspace,
+    },
     expiresAt: user.exp * 1000,
   });
 }

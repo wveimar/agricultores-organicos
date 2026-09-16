@@ -10,6 +10,22 @@ export type WholesaleRole = 'MAYORISTA_N1' | 'MAYORISTA_N2' | 'MAYORISTA_N3';
 
 export type UserRole = StaffRole | WholesaleRole;
 
+/**
+ * Qué mitad del panel ve una cuenta (0040) — el split QualityMarketShop /
+ * QualityTourShop. Fijo por cuenta, asignado por un SUPER_ADMIN desde
+ * Usuarios: no hay selector al iniciar sesión. 'ambos' es el valor con el
+ * que nace toda cuenta nueva.
+ */
+export type Workspace = 'mercado' | 'turismo' | 'ambos';
+
+export const WORKSPACE_LABELS: Readonly<Record<Workspace, string>> = {
+  mercado: 'Mercado',
+  turismo: 'Turismo',
+  ambos: 'Ambos',
+};
+
+export const ALL_WORKSPACES: readonly Workspace[] = ['mercado', 'turismo', 'ambos'];
+
 export const WHOLESALE_ROLES: readonly WholesaleRole[] = [
   'MAYORISTA_N1',
   'MAYORISTA_N2',

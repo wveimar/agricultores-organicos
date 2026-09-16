@@ -1,0 +1,120 @@
+<div class="space-y-5 rounded-md border border-sand/50 bg-linen/30 p-5">
+  <div>
+    <p class="text-sm font-semibold text-ink">Sesiones (fecha y cupo)</p>
+    <p class="mt-1 text-sm text-ink-soft">
+      Cada salida o cita que se puede reservar. Un servicio no tiene stock: lo
+      que decide si se puede vender es que alguna sesión de abajo tenga cupo.
+    </p>
+  </div>
+
+  @if (error(); as msg) {
+    <p class="rounded-md border border-berry/30 bg-berry/5 px-4 py-3 text-sm text-berry" role="alert">
+      {{ msg }}
+    </p>
+  }
+
+  @if (loading()) {
+    <p class="text-sm text-ink-muted">Cargando…</p>
+  } @else {
+    @if (sessions().length === 0) {
+      <p class="rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink-soft">
+        Todavía no tiene ninguna sesión. Sin al menos una activa con cupo, la
+        tienda no puede ofrecer este servicio.
+      </p>
+    } @else {
+      <ul class="flex flex-col gap-2">
+        @for (session of sessions(); track session.id) {
+          <li
+            class="flex flex-wrap items-center gap-3 rounded-md border bg-bone px-4 py-3"
+            [class]="session.activo === 1 ? 'border-sand' : 'border-sand opacity-60'"
+          >
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-semibold text-ink">{{ fechaSesion(session.inicio) }}</p>
+              <p class="tabular mt-0.5 text-xs text-ink-muted">
+                @if (session.ubicacion) { {{ session.ubicacion }} · }
+                cupo {{ cupoDisponible(session) }} / {{ session.cupoTotal }}
+                @if (session.cupoReservado > 0) {
+                  · {{ session.cupoReservado }} reservado{{ session.cupoReservado === 1 ? '' : 's' }}
+                }
+                @if (session.activo === 0) { · inactiva }
+              </p>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="rounded-full border border-sand px-3 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss disabled:opacity-50"
+                [disabled]="busyId() === session.id"
+                (click)="toggleActivo(session)"
+              >
+                {{ session.activo === 1 ? 'Desactivar' : 'Activar' }}
+              </button>
+
+              <button
+                type="button"
+                class="rounded-full border border-sand px-3 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-berry hover:text-berry disabled:opacity-50"
+                [disabled]="busyId() === session.id || session.cupoReservado > 0"
+                [title]="session.cupoReservado > 0 ? 'Ya tiene reservas: desactívala en vez de borrarla.' : ''"
+                (click)="remove(session)"
+              >
+                Quitar
+              </button>
+            </div>
+          </li>
+        }
+      </ul>
+    }
+
+    <!-- Añadir sesión -->
+    <div class="flex flex-wrap items-end gap-3 border-t border-sand/60 pt-4">
+      <div class="min-w-48">
+        <label for="nueva-sesion-inicio" class="block text-xs font-semibold text-ink">
+          Fecha y hora
+        </label>
+        <input
+          id="nueva-sesion-inicio"
+          type="datetime-local"
+          [value]="nuevoInicio()"
+          (input)="nuevoInicio.set($any($event.target).value)"
+          class="mt-1.5 w-full rounded-md border border-sand bg-transparent px-3 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+        />
+      </div>
+
+      <div class="min-w-40 flex-1">
+        <label for="nueva-sesion-ubicacion" class="block text-xs font-semibold text-ink">
+          Lugar <span class="font-normal text-ink-muted">(opcional)</span>
+        </label>
+        <input
+          id="nueva-sesion-ubicacion"
+          type="text"
+          [value]="nuevaUbicacion()"
+          (input)="nuevaUbicacion.set($any($event.target).value)"
+          placeholder="Punto de encuentro"
+          class="mt-1.5 w-full rounded-md border border-sand bg-transparent px-3 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+        />
+      </div>
+
+      <div class="w-24">
+        <label for="nueva-sesion-cupo" class="block text-xs font-semibold text-ink">Cupo</label>
+        <input
+          id="nueva-sesion-cupo"
+          type="number"
+          min="1"
+          step="1"
+          [value]="nuevoCupo()"
+          (input)="onCupoChange($event)"
+          class="tabular mt-1.5 w-full rounded-md border border-sand bg-transparent px-3 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+        />
+      </div>
+
+      <button
+        type="button"
+        class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:opacity-50"
+        [disabled]="adding() || !nuevoInicio()"
+        (click)="add()"
+      >
+        {{ adding() ? 'Añadiendo…' : 'Añadir' }}
+      </button>
+    </div>
+  }
+</div>

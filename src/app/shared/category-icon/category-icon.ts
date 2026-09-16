@@ -48,6 +48,13 @@ export const CATEGORY_ICONS = [
   { value: 'croissant', label: 'Croissant' },
   { value: 'queso', label: 'Queso' },
   { value: 'tazon', label: 'Tazón' },
+  // Genéricos, sin ningún producto agrícola detrás — para que un catálogo de
+  // ropa, de servicios o de tours tenga algo propio que elegir en vez de
+  // resignarse a una hoja o una canasta que no significan nada en su rubro.
+  { value: 'calendario', label: 'Calendario' },
+  { value: 'etiqueta', label: 'Etiqueta' },
+  { value: 'camiseta', label: 'Camiseta' },
+  { value: 'mapa', label: 'Punto en el mapa' },
 ] as const;
 
 export type CategoryIconName = (typeof CATEGORY_ICONS)[number]['value'];

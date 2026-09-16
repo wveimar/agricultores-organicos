@@ -6,11 +6,14 @@ import { ApiErrorBody, ApiUser } from '../../../core/api/api-client';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 import {
+  ALL_WORKSPACES,
   ROLE_HINTS,
   ROLE_LABELS,
   STAFF_ROLES,
   UserRole,
   WHOLESALE_ROLES,
+  WORKSPACE_LABELS,
+  Workspace,
   isWholesaleOnly,
   isWholesaleRole,
 } from '../../../core/models/user.model';
@@ -68,6 +71,8 @@ export class UsersManager {
   protected readonly roleHints = ROLE_HINTS;
   protected readonly filters = USER_FILTERS;
   protected readonly minPassword = MIN_PASSWORD;
+  protected readonly workspaces = ALL_WORKSPACES;
+  protected readonly workspaceLabels = WORKSPACE_LABELS;
 
   /** Id de la sesión actual: marca "tú" y bloquea acciones sobre uno mismo. */
   protected readonly currentUserId = computed(() => this.tokens.user()?.id ?? null);
@@ -152,12 +157,13 @@ export class UsersManager {
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(MIN_PASSWORD)]],
     roles: this.fb.nonNullable.control<UserRole[]>([], [Validators.required]),
+    workspace: this.fb.nonNullable.control<Workspace>('ambos'),
   });
 
   protected toggleCreate(): void {
     this.showCreate.update((open) => !open);
     this.createError.set(null);
-    this.createForm.reset({ nombre: '', email: '', password: '', roles: [] });
+    this.createForm.reset({ nombre: '', email: '', password: '', roles: [], workspace: 'ambos' });
   }
 
   protected toggleRole(role: UserRole): void {
@@ -196,14 +202,14 @@ export class UsersManager {
 
     this.createError.set(null);
     this.creating.set(true);
-    const { nombre, email, password, roles } = this.createForm.getRawValue();
+    const { nombre, email, password, roles, workspace } = this.createForm.getRawValue();
 
-    this.adminApi.createUser({ nombre, email, password, roles }).subscribe({
+    this.adminApi.createUser({ nombre, email, password, roles, workspace }).subscribe({
       next: (creado) => {
         this.creating.set(false);
         this.showCreate.set(false);
         this.createdName.set(creado.nombre);
-        this.createForm.reset({ nombre: '', email: '', password: '', roles: [] });
+        this.createForm.reset({ nombre: '', email: '', password: '', roles: [], workspace: 'ambos' });
         setTimeout(() => this.createdName.set(null), 5000);
       },
       error: (error: ApiErrorBody) => {
@@ -244,6 +250,7 @@ export class UsersManager {
     // '' = sin enlazar. Sin validadores: es un campo opcional para todo el
     // mundo salvo para quien de verdad se le va a fiar.
     contactId: [''],
+    workspace: this.fb.nonNullable.control<Workspace>('ambos'),
   });
 
   protected startEdit(user: ApiUser): void {
@@ -256,6 +263,7 @@ export class UsersManager {
       email: user.email,
       roles: [...user.roles],
       contactId: user.contactId ?? '',
+      workspace: user.workspace,
     });
   }
 
@@ -313,7 +321,7 @@ export class UsersManager {
 
     this.resetError.set(null);
     this.savingId.set(user.id);
-    const { nombre, email, roles, contactId } = this.editForm.getRawValue();
+    const { nombre, email, roles, contactId, workspace } = this.editForm.getRawValue();
 
     // Solo se envía lo que cambió: así el servidor no rehace trabajo, y un
     // guardado sin cambios devuelve "sin-cambios" en vez de tocar la fila.
@@ -322,11 +330,13 @@ export class UsersManager {
       email?: string;
       roles?: UserRole[];
       contactId?: string | null;
+      workspace?: Workspace;
     } = {};
     if (nombre.trim() !== user.nombre) patch.nombre = nombre.trim();
     if (email.trim().toLowerCase() !== user.email) patch.email = email.trim().toLowerCase();
     if (roles.join() !== [...user.roles].join()) patch.roles = roles;
     if ((contactId || null) !== user.contactId) patch.contactId = contactId || null;
+    if (workspace !== user.workspace) patch.workspace = workspace;
 
     if (Object.keys(patch).length === 0) {
       this.savingId.set(null);

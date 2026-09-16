@@ -49,6 +49,8 @@ const PATHS: Readonly<Record<string, string>> = {
   mayoristas: 'M3 8l9-4 9 4v8l-9 4-9-4V8Zm9-4v16m9-12-9 4-9-4',
   // Dos personas.
   usuarios: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-6 8c0-2.8 2.7-5 6-5s6 2.2 6 5m2-13a3 3 0 0 1 0 6m4 7c0-2.2-1.4-4-3.5-4.6',
+  // Controles deslizantes: tres barras, cada una con su perilla en un punto distinto.
+  ajustes: 'M4 6h16M8 4v4M4 12h16M14 10v4M4 18h16M10 16v4',
 };
 
 /** Un círculo, para una sección sin silueta propia todavía. */

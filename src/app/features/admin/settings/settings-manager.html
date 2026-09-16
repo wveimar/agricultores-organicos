@@ -1,0 +1,87 @@
+<div class="min-h-screen bg-linen py-12 px-5">
+  <div class="mx-auto max-w-3xl">
+    <div class="mb-8">
+      <h1 class="text-h2 text-ink">Ajustes</h1>
+      <p class="mt-2 text-sm text-ink-soft">
+        Cambia la marca del sitio y qué módulos ve el panel. Se aplica al instante
+        para todo el mundo, sin desplegar nada.
+      </p>
+    </div>
+
+    @if (errorMensaje(); as msg) {
+      <div class="mb-6 rounded-md border border-berry/30 bg-berry/5 px-5 py-4">
+        <p class="text-sm font-semibold text-berry">Error</p>
+        <p class="mt-1 text-sm text-ink-soft">{{ msg }}</p>
+      </div>
+    }
+
+    <div class="space-y-8">
+      @for (seccion of secciones; track seccion.titulo) {
+        <section class="rounded-lg border border-sand bg-bone p-6 sm:p-8">
+          <h2 class="text-h3 text-ink">{{ seccion.titulo }}</h2>
+          <p class="mt-1 text-sm text-ink-soft">{{ seccion.ayuda }}</p>
+
+          <div class="mt-6 divide-y divide-sand">
+            @for (clave of seccion.claves; track clave) {
+              @let dato = ajuste(clave);
+
+              <div class="flex flex-col gap-3 py-5 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+                <div class="min-w-0 sm:max-w-xs">
+                  <p class="text-sm font-semibold text-ink">{{ etiqueta(clave) }}</p>
+                  @if (dato?.descripcion) {
+                    <p class="mt-1 text-xs text-ink-muted">{{ dato!.descripcion }}</p>
+                  }
+                  @if (errorClave() === clave && errorMensaje()) {
+                    <p class="mt-1 text-xs font-medium text-berry">{{ errorMensaje() }}</p>
+                  }
+                </div>
+
+                <div class="flex shrink-0 items-center gap-2 sm:w-72">
+                  @if (dato?.tipo === 'booleano') {
+                    <!-- Interruptor Sí/No -->
+                    <button
+                      type="button"
+                      role="switch"
+                      [attr.aria-checked]="valorActual(clave) !== '0'"
+                      [attr.aria-label]="etiqueta(clave)"
+                      class="relative h-7 w-12 shrink-0 rounded-full transition-colors duration-200 disabled:opacity-50"
+                      [class]="valorActual(clave) !== '0' ? 'bg-moss' : 'bg-stone'"
+                      [disabled]="busyClave() === clave"
+                      (click)="alternar(clave)"
+                    >
+                      <span
+                        class="absolute top-1 size-5 rounded-full bg-bone shadow transition-transform duration-200"
+                        [class]="valorActual(clave) !== '0' ? 'translate-x-6' : 'translate-x-1'"
+                      ></span>
+                    </button>
+                    <span class="text-sm text-ink-soft">
+                      {{ valorActual(clave) !== '0' ? 'Activado' : 'Desactivado' }}
+                    </span>
+                  } @else {
+                    <!-- Campo de texto -->
+                    <input
+                      type="text"
+                      [value]="valorActual(clave)"
+                      (input)="onTexto(clave, $event)"
+                      (keydown.enter)="guardarTexto(clave)"
+                      [disabled]="busyClave() === clave"
+                      class="w-full rounded-md border border-sand bg-transparent px-3 py-2 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss disabled:opacity-50"
+                    />
+                    <button
+                      type="button"
+                      class="shrink-0 rounded-full border border-sand px-3 py-2 text-xs font-semibold text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:opacity-50"
+                      [disabled]="busyClave() === clave || !tieneCambioSinGuardar(clave)"
+                      (click)="guardarTexto(clave)"
+                    >
+                      {{ busyClave() === clave ? 'Guardando…' : guardadoClave() === clave ? 'Guardado ✓' : 'Guardar' }}
+                    </button>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        </section>
+      }
+    </div>
+  </div>
+</div>

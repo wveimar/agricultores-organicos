@@ -17,6 +17,8 @@ import * as contacts from './routes/contacts';
 import * as users from './routes/users';
 import * as wholesale from './routes/wholesale';
 import * as components from './routes/components';
+import * as sessions from './routes/sessions';
+import * as productPhotos from './routes/product-photos';
 import * as passwordReset from './routes/password-reset';
 import * as pos from './routes/pos';
 import * as settings from './routes/settings';
@@ -66,9 +68,38 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
    * pero servirla desde aquí evita tener que recompilar el frontend para
    * activarla: se pone como `var` en wrangler.jsonc y el navegador la recoge.
    * La clave **secreta** nunca pasa por esta ruta.
+   *
+   * La marca (`leerMarca()`) viaja por el mismo sitio y por el mismo motivo:
+   * nombre del sitio, WhatsApp y datos bancarios eran constantes compiladas
+   * en el frontend — clonar el proyecto para un cliente nuevo exigía
+   * grepear el repo. Ahora son ajustes en `app_settings`, editables con
+   * `PUT /api/admin/settings` sin tocar código ni desplegar.
    */
   if (pathname === '/api/config' && method === 'GET') {
-    return json({ turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? '' });
+    const marca = await settings.leerMarca(env);
+    return json({
+      turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? '',
+      siteName: marca.site_nombre,
+      siteTagline: marca.site_tagline,
+      metaDescription: marca.site_meta_descripcion,
+      footerDescription: marca.site_footer_descripcion,
+      whatsappNumber: marca.contacto_whatsapp,
+      bank: {
+        bank: marca.banco_nombre,
+        accountType: marca.banco_tipo_cuenta,
+        accountNumber: marca.banco_numero_cuenta,
+        holder: marca.banco_titular,
+        holderDocument: marca.banco_titular_documento,
+      },
+      marketName: marca.site_nombre_mercado,
+      marketTagline: marca.site_tagline_mercado,
+      marketMetaDescription: marca.site_meta_descripcion_mercado,
+      marketFooterDescription: marca.site_footer_descripcion_mercado,
+      tourName: marca.site_nombre_turismo,
+      tourTagline: marca.site_tagline_turismo,
+      tourMetaDescription: marca.site_meta_descripcion_turismo,
+      tourFooterDescription: marca.site_footer_descripcion_turismo,
+    });
   }
 
   if (pathname === '/api/auth/login' && method === 'POST') {
@@ -157,6 +188,42 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     );
     if (componentMatch && method === 'DELETE') {
       return components.remove(env, user, componentMatch[1], componentMatch[2]);
+    }
+
+    // Sesiones de un producto-servicio (0038): las salidas/citas reservables.
+    const sessionsMatch = pathname.match(/^\/api\/admin\/products\/([\w-]+)\/sesiones$/);
+    if (sessionsMatch && method === 'GET') {
+      return sessions.list(env, user, sessionsMatch[1]);
+    }
+    if (sessionsMatch && method === 'POST') {
+      return sessions.create(request, env, user, sessionsMatch[1]);
+    }
+
+    const sessionMatch = pathname.match(
+      /^\/api\/admin\/products\/([\w-]+)\/sesiones\/([\w-]+)$/,
+    );
+    if (sessionMatch && method === 'PATCH') {
+      return sessions.update(request, env, user, sessionMatch[1], sessionMatch[2]);
+    }
+    if (sessionMatch && method === 'DELETE') {
+      return sessions.remove(env, user, sessionMatch[1], sessionMatch[2]);
+    }
+
+    // Galería de fotos de un producto (0039), para el carrusel de su ficha.
+    const photosMatch = pathname.match(/^\/api\/admin\/products\/([\w-]+)\/fotos$/);
+    if (photosMatch && method === 'GET') {
+      return productPhotos.list(env, user, photosMatch[1]);
+    }
+    if (photosMatch && method === 'POST') {
+      return productPhotos.create(request, env, user, photosMatch[1]);
+    }
+
+    const photoMatch = pathname.match(/^\/api\/admin\/products\/([\w-]+)\/fotos\/([\w-]+)$/);
+    if (photoMatch && method === 'PATCH') {
+      return productPhotos.update(request, env, user, photoMatch[1], photoMatch[2]);
+    }
+    if (photoMatch && method === 'DELETE') {
+      return productPhotos.remove(env, user, photoMatch[1], photoMatch[2]);
     }
 
     const productMatch = pathname.match(/^\/api\/admin\/products\/([\w-]+)$/);

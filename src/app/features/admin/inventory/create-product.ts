@@ -16,6 +16,7 @@ import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 import {
   ALL_UNITS,
+  ProductType,
   ProductUnit,
   UNIT_LABELS,
   unitPresentation,
@@ -37,6 +38,8 @@ export class CreateProduct {
     nombre: ['', [Validators.required, Validators.minLength(2)]],
     slug: [''],
     tagline: [''],
+    /** Párrafo largo para la ficha de detalle (0039) — sobre todo en un tour. */
+    descripcion: [''],
     categoriaId: ['', Validators.required],
     // 'frutas' es solo el valor inicial del formulario; el desplegable (ver el
     // HTML) sale de `adminApi.groupOptions()`, no de una lista fija — desde la
@@ -57,6 +60,14 @@ export class CreateProduct {
     /** Qué distinguirá a sus variantes, si esta ficha va a agrupar alguna. */
     varianteEtiqueta: [''],
   });
+
+  /** 'fisico' | 'servicio' (0038), fuera del formulario — ver el mismo criterio en EditProduct. */
+  protected readonly tipo = signal<ProductType>('fisico');
+  protected readonly esServicio = computed(() => this.tipo() === 'servicio');
+
+  protected onTipoChange(event: Event): void {
+    this.tipo.set((event.target as HTMLSelectElement).value === 'servicio' ? 'servicio' : 'fisico');
+  }
 
   // ─────────────────────────────── Variantes ───────────────────────────────
 
@@ -102,6 +113,16 @@ export class CreateProduct {
     }
 
     this.form.controls.parentId.setValue(this.parentParam);
+
+    // Unidad y origen solo significan algo en un producto físico — ver el
+    // mismo criterio en EditProduct.
+    effect(() => {
+      const validators = this.esServicio() ? [] : [Validators.required];
+      this.form.controls.unidad.setValidators(validators);
+      this.form.controls.origen.setValidators(validators);
+      this.form.controls.unidad.updateValueAndValidity({ emitEvent: false });
+      this.form.controls.origen.updateValueAndValidity({ emitEvent: false });
+    });
 
     // La precarga espera a que llegue el inventario, y se hace una sola vez:
     // a partir de ahí manda lo que escriba quien está creando el producto.
@@ -242,21 +263,23 @@ export class CreateProduct {
     this.createError = null;
     this.creatingProduct = true;
 
-    const { nombre, slug, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, vendidoPorPeso, origen, imagen, imagenHover, imagenAlt, parentId, varianteEtiqueta } = this.form.getRawValue();
+    const { nombre, slug, tagline, descripcion, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, vendidoPorPeso, origen, imagen, imagenHover, imagenAlt, parentId, varianteEtiqueta } = this.form.getRawValue();
 
     this.adminApi
       .createProduct({
         nombre,
         slug: slug || undefined,
         tagline,
+        descripcion,
+        tipo: this.tipo(),
         categoriaId,
         grupoAdmin,
         precio,
         precioCosto,
-        unidad,
+        unidad: this.esServicio() ? undefined : unidad,
         cantidadUnidad,
-        vendidoPorPeso: vendidoPorPeso ? 1 : 0,
-        origen,
+        vendidoPorPeso: this.esServicio() ? 0 : vendidoPorPeso ? 1 : 0,
+        origen: this.esServicio() ? undefined : origen,
         imagen,
         imagenHover: imagenHover || undefined,
         imagenAlt,
@@ -266,9 +289,15 @@ export class CreateProduct {
         varianteEtiqueta: parentId ? null : varianteEtiqueta.trim() || null,
       })
       .subscribe({
-        next: () => {
+        next: (created) => {
           this.creatingProduct = false;
-          void this.router.navigate(['/admin/inventario']);
+          // Un servicio nace sin ninguna sesión: se manda directo a editarlo
+          // para que quede con al menos una fecha antes de que alguien pueda
+          // reservarlo. Un producto físico sigue yendo al listado, como
+          // siempre.
+          void this.router.navigate(
+            this.esServicio() ? ['/admin/inventario/editar', created.id] : ['/admin/inventario'],
+          );
         },
         error: (error: ApiErrorBody) => {
           this.creatingProduct = false;

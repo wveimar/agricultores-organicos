@@ -1,4 +1,4 @@
-import { ApiError, json, readJson, requireInt, requireNumber, requireString } from '../http';
+import { ApiError, json, optionalString, readJson, requireInt, requireNumber, requireString } from '../http';
 import { translateConstraint } from '../db-errors';
 import { Env, JwtPayload } from '../types';
 import { optionalAuth, requireRole } from '../auth/middleware';
@@ -13,6 +13,7 @@ import {
   sentenciasDeInstantanea,
   stockDeCanastas,
 } from '../combos';
+import { loadSessions } from '../sessions';
 import * as invoices from './invoices';
 import * as payments from './payments';
 
@@ -31,6 +32,8 @@ const SHIPPING_COST = 5_000;
 export interface IncomingItem {
   productId?: unknown;
   cantidad?: unknown;
+  /** Solo para un producto 'servicio' (0038): qué salida/cita reservó. */
+  sessionId?: unknown;
 }
 
 interface CreateOrderBody {
@@ -76,6 +79,8 @@ export interface StockRow {
   tiene_variantes: number;
   /** 1 = se vende a granel; su `cantidad` puede llegar fraccionaria. */
   vendido_por_peso: number;
+  /** 'fisico' | 'servicio' (0038): decide qué pipeline de disponibilidad corre. */
+  tipo: string;
 }
 
 /** Faltante concreto, para que el cliente sepa qué ajustar. */
@@ -125,7 +130,7 @@ export function aggregate(items: readonly IncomingItem[]): Map<string, number> {
 export async function loadProducts(env: Env, ids: readonly string[]): Promise<Map<string, StockRow>> {
   const placeholders = ids.map((_, index) => `?${index + 1}`).join(', ');
   const { results } = await env.DB.prepare(
-    `SELECT p.id, p.nombre, p.precio, p.precio_costo, p.stock_actual, p.vendido_por_peso,
+    `SELECT p.id, p.nombre, p.precio, p.precio_costo, p.stock_actual, p.vendido_por_peso, p.tipo,
             EXISTS (SELECT 1 FROM products h WHERE h.parent_id = p.id) AS tiene_variantes
        FROM products p
       WHERE p.activo = 1 AND p.id IN (${placeholders})`,
@@ -188,6 +193,105 @@ export function rejectFractional(required: Map<string, number>, products: Map<st
 }
 
 /**
+ * Qué sesión reservó cada producto-servicio, leída del carrito.
+ *
+ * Igual que `aggregate()` para la cantidad: el mismo producto puede llegar
+ * repetido en el cuerpo si el cliente sumó participantes en dos líneas, y las
+ * dos tienen que apuntar a la MISMA sesión — reservar "Tour al Nevado" para
+ * el sábado y para el domingo en un mismo pedido no está soportado en esta
+ * versión (ver el comentario largo de `orders.metodo_pago` en schema.sql
+ * sobre por qué `order_items` tiene una sola fila por producto y pedido).
+ */
+function readSessionAssignments(items: readonly IncomingItem[]): Map<string, string | null> {
+  const sesiones = new Map<string, string | null>();
+
+  for (const item of items) {
+    const productId = requireString(item.productId, 'items[].productId', 64);
+    const sessionId = optionalString(item.sessionId, 'items[].sessionId', 64);
+    const previa = sesiones.get(productId);
+
+    if (previa !== undefined && previa !== sessionId) {
+      throw ApiError.badRequest(
+        'sesion-inconsistente',
+        `"${productId}" aparece con dos sesiones distintas en el mismo pedido. Haz un pedido aparte para la otra fecha.`,
+      );
+    }
+    sesiones.set(productId, sessionId);
+  }
+
+  return sesiones;
+}
+
+/**
+ * Reserva el cupo de cada línea de servicio contra su sesión.
+ *
+ * Mismo rol que `loadProducts()` + el bucle de `shortfalls` para el stock
+ * físico, pero contra `product_sessions` en vez de `products`: valida antes
+ * de escribir (para un 400 legible) y, aparte, deja las sentencias `UPDATE`
+ * que de verdad reservan el cupo — el CHECK `cupo_reservado <= cupo_total`
+ * en la base es la garantía real ante una reserva concurrente.
+ */
+async function reservarCupos(
+  env: Env,
+  required: ReadonlyMap<string, number>,
+  products: ReadonlyMap<string, StockRow>,
+  sessionByProduct: ReadonlyMap<string, string | null>,
+): Promise<D1PreparedStatement[]> {
+  const sessionIds = [...sessionByProduct.values()].filter((id): id is string => id !== null);
+  const sessions = await loadSessions(env, sessionIds);
+
+  const statements: D1PreparedStatement[] = [];
+  const shortfalls: Shortfall[] = [];
+
+  for (const [productId, cantidad] of required) {
+    const product = products.get(productId)!;
+    const sessionId = sessionByProduct.get(productId) ?? null;
+
+    if (!sessionId) {
+      throw ApiError.badRequest(
+        'sesion-requerida',
+        `Elige una fecha para "${product.nombre}".`,
+      );
+    }
+
+    const session = sessions.get(sessionId);
+    if (!session || session.product_id !== productId || !session.activo) {
+      throw ApiError.badRequest(
+        'sesion-invalida',
+        `La sesión elegida para "${product.nombre}" ya no está disponible.`,
+      );
+    }
+
+    const disponible = session.cupo_total - session.cupo_reservado;
+    if (disponible < cantidad) {
+      shortfalls.push({
+        productId,
+        productName: product.nombre,
+        requested: cantidad,
+        available: disponible,
+      });
+      continue;
+    }
+
+    statements.push(
+      env.DB.prepare(
+        `UPDATE product_sessions SET cupo_reservado = cupo_reservado + ?1 WHERE id = ?2`,
+      ).bind(cantidad, sessionId),
+    );
+  }
+
+  if (shortfalls.length > 0) {
+    throw ApiError.badRequest(
+      'cupo-insuficiente',
+      'No queda cupo suficiente para completar la reserva.',
+      { shortfalls },
+    );
+  }
+
+  return statements;
+}
+
+/**
  * POST /api/orders — cierra una compra desde la tienda.
  *
  * Reserva el inventario en el mismo paso: el cliente ya consignó, así que esas
@@ -218,7 +322,10 @@ export async function create(request: Request, env: Env): Promise<Response> {
 
   const clienteNombre = requireString(body.clienteNombre, 'clienteNombre', 120);
   const clienteTelefono = requireString(body.clienteTelefono, 'clienteTelefono', 40);
-  const clienteDireccion = requireString(body.clienteDireccion, 'clienteDireccion', 240);
+  // Se exige más abajo, condicionada al tipo de pedido: un servicio se
+  // reserva por fecha, no por dirección (ver `esServicio` unas líneas
+  // después, una vez se sabe qué tipo de producto trae el carrito).
+  const clienteDireccion = optionalString(body.clienteDireccion, 'clienteDireccion', 240) ?? '';
   // Obligatoria también en la tienda: es la llave con la que se reencuentra
   // al cliente entre una compra y otra, y el dato que se reporta al facturar.
   const clienteCedula = normalizarDocumento(requireString(body.clienteCedula, 'clienteCedula', 40));
@@ -236,38 +343,70 @@ export async function create(request: Request, env: Env): Promise<Response> {
   }
 
   const required = aggregate(body.items as IncomingItem[]);
+  const sessionByProduct = readSessionAssignments(body.items as IncomingItem[]);
   const products = await loadProducts(env, [...required.keys()]);
 
-  rejectParents(required.keys(), products);
-  rejectFractional(required, products);
-
-  // Validación amable: se responde con los faltantes exactos antes de intentar
-  // escribir. El CHECK de la base sigue siendo la garantía real ante carreras.
-  const shortfalls: Shortfall[] = [];
-  for (const [productId, cantidad] of required) {
-    const product = products.get(productId);
-    if (!product) {
+  // Producto inexistente o dado de baja: se corta aquí, antes de mirar tipo,
+  // stock o cupo — ninguno de esos chequeos significa nada sobre un producto
+  // que no existe.
+  for (const productId of required.keys()) {
+    if (!products.get(productId)) {
       throw ApiError.badRequest(
         'producto-invalido',
         `El producto ${productId} no existe o ya no está a la venta.`,
       );
     }
-    if (product.stock_actual < cantidad) {
-      shortfalls.push({
-        productId,
-        productName: product.nombre,
-        requested: cantidad,
-        available: product.stock_actual,
-      });
-    }
   }
 
-  if (shortfalls.length > 0) {
+  rejectParents(required.keys(), products);
+  rejectFractional(required, products);
+
+  /**
+   * Un pedido es o todo productos físicos (el flujo de siempre: stock,
+   * dirección, envío) o todo servicios (fecha, cupo, sin envío) — nunca los
+   * dos a la vez. Mezclarlos obligaría al checkout a decidir entre pedir
+   * dirección y pedir fecha para el mismo carrito. Si algún día hace falta
+   * mezclar, este es el corte que hay que tocar.
+   */
+  const tipos = new Set([...required.keys()].map((id) => products.get(id)!.tipo));
+  if (tipos.size > 1) {
     throw ApiError.badRequest(
-      'stock-insuficiente',
-      'No hay unidades suficientes para completar el pedido.',
-      { shortfalls },
+      'tipos-mezclados',
+      'Un pedido no puede combinar productos físicos y servicios. Haz un pedido aparte para cada uno.',
     );
+  }
+  const esServicio = tipos.has('servicio');
+
+  // La dirección solo hace falta para lo que se envía o se recoge. Un
+  // servicio se reserva por fecha, no por dirección.
+  if (!esServicio && clienteDireccion === '') {
+    throw ApiError.badRequest('campo-invalido', 'El campo "clienteDireccion" es obligatorio.');
+  }
+
+  // Validación amable de stock: se responde con los faltantes exactos antes
+  // de intentar escribir. El CHECK de la base sigue siendo la garantía real
+  // ante carreras. El equivalente para un servicio es `reservarCupos()`, más
+  // abajo, contra `product_sessions` en vez de `products`.
+  if (!esServicio) {
+    const shortfalls: Shortfall[] = [];
+    for (const [productId, cantidad] of required) {
+      const product = products.get(productId)!;
+      if (product.stock_actual < cantidad) {
+        shortfalls.push({
+          productId,
+          productName: product.nombre,
+          requested: cantidad,
+          available: product.stock_actual,
+        });
+      }
+    }
+    if (shortfalls.length > 0) {
+      throw ApiError.badRequest(
+        'stock-insuficiente',
+        'No hay unidades suficientes para completar el pedido.',
+        { shortfalls },
+      );
+    }
   }
 
   const orderId = crypto.randomUUID();
@@ -307,9 +446,10 @@ export async function create(request: Request, env: Env): Promise<Response> {
 
   // Sobre el subtotal ya descontado: es el importe que el cliente paga de
   // verdad, y es el que decide si alcanza el envío gratis. Excepto entrega en
-  // tienda, que siempre es envío 0 — no hay domicilio que cobrar.
+  // tienda, que siempre es envío 0 — no hay domicilio que cobrar. Un
+  // servicio tampoco tiene envío: no hay nada que llevar a ninguna parte.
   const envio =
-    metodoPago === 'entrega_en_tienda'
+    esServicio || metodoPago === 'entrega_en_tienda'
       ? 0
       : subtotal >= FREE_SHIPPING_THRESHOLD
         ? 0
@@ -386,8 +526,8 @@ export async function create(request: Request, env: Env): Promise<Response> {
     statements.push(
       env.DB.prepare(
         `INSERT INTO order_items
-           (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+           (order_id, product_id, producto_nombre, precio_unitario, costo_unitario, cantidad, session_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
       ).bind(
         orderId,
         productId,
@@ -399,32 +539,39 @@ export async function create(request: Request, env: Env): Promise<Response> {
         unitPrice(productId),
         product.precio_costo,
         cantidad,
+        sessionByProduct.get(productId) ?? null,
       ),
     );
   }
 
-  // La línea del pedido dice «1 Canasta Pequeña»; el inventario tiene que ver
-  // la papa, el tomate y el aguacate. `expandir` traduce lo uno en lo otro y
-  // **suma**: una canasta con 1 kg de papa más 2 kg sueltos son 3 kg en una
-  // sola resta, no dos que pasarían el CHECK por separado.
-  const recetas = await recetasActuales(env, [...required.keys()]);
-  const movimientos = expandir(required, recetas);
+  if (esServicio) {
+    // Reserva el cupo de cada línea contra su sesión. Sin canastas ni stock
+    // físico de por medio: un servicio no tiene receta que expandir.
+    statements.push(...(await reservarCupos(env, required, products, sessionByProduct)));
+  } else {
+    // La línea del pedido dice «1 Canasta Pequeña»; el inventario tiene que ver
+    // la papa, el tomate y el aguacate. `expandir` traduce lo uno en lo otro y
+    // **suma**: una canasta con 1 kg de papa más 2 kg sueltos son 3 kg en una
+    // sola resta, no dos que pasarían el CHECK por separado.
+    const recetas = await recetasActuales(env, [...required.keys()]);
+    const movimientos = expandir(required, recetas);
 
-  // Qué llevaba cada canasta hoy, congelado en el pedido: es lo que hará
-  // cuadrar la devolución si mañana cambia la receta.
-  statements.push(...sentenciasDeInstantanea(env, orderId, required, recetas));
+    // Qué llevaba cada canasta hoy, congelado en el pedido: es lo que hará
+    // cuadrar la devolución si mañana cambia la receta.
+    statements.push(...sentenciasDeInstantanea(env, orderId, required, recetas));
 
-  for (const [productId, cantidad] of movimientos) {
-    // Si entre la validación y este UPDATE otra petición se llevó las unidades,
-    // el CHECK (stock_actual >= 0) hace fallar la sentencia y D1 revierte
-    // **todo** el batch: no queda un pedido creado sin su descuento.
-    statements.push(
-      env.DB.prepare(
-        `UPDATE products
-            SET stock_actual = stock_actual - ?1, actualizado_en = datetime('now')
-          WHERE id = ?2`,
-      ).bind(cantidad, productId),
-    );
+    for (const [productId, cantidad] of movimientos) {
+      // Si entre la validación y este UPDATE otra petición se llevó las unidades,
+      // el CHECK (stock_actual >= 0) hace fallar la sentencia y D1 revierte
+      // **todo** el batch: no queda un pedido creado sin su descuento.
+      statements.push(
+        env.DB.prepare(
+          `UPDATE products
+              SET stock_actual = stock_actual - ?1, actualizado_en = datetime('now')
+            WHERE id = ?2`,
+        ).bind(cantidad, productId),
+      );
+    }
   }
 
   try {
@@ -1188,15 +1335,21 @@ export async function cancel(
   }
 
   const { results: items } = await env.DB.prepare(
-    `SELECT product_id, cantidad FROM order_items WHERE order_id = ?1`,
+    `SELECT product_id, cantidad, session_id FROM order_items WHERE order_id = ?1`,
   )
     .bind(orderId)
-    .all<{ product_id: string; cantidad: number }>();
+    .all<{ product_id: string; cantidad: number; session_id: string | null }>();
 
-  // Solo se devuelve stock si de verdad se descontó. Con stock_reservado = 0
-  // el pedido nunca tocó el inventario —lo habría descontado la aprobación,
-  // que no llegó a ocurrir— y sumarlo ahora inventaría unidades.
-  const devuelveStock = order.stock_reservado === 1 && items.length > 0;
+  // Un pedido es o todo productos físicos o todo servicios (ver create()):
+  // basta con mirar la primera línea para saber cuál de los dos es.
+  const esServicio = items.length > 0 && items[0].session_id !== null;
+
+  // Solo se devuelve stock/cupo si de verdad se reservó algo. Con
+  // stock_reservado = 0 el pedido nunca tocó el inventario ni una sesión
+  // —lo habría hecho la aprobación, que no llegó a ocurrir— y sumarlo ahora
+  // inventaría cupo o unidades que nadie soltó.
+  const devuelveStock = !esServicio && order.stock_reservado === 1 && items.length > 0;
+  const devuelveCupo = esServicio && order.stock_reservado === 1 && items.length > 0;
 
   const token = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -1241,6 +1394,23 @@ export async function cancel(
     }
   }
 
+  if (devuelveCupo) {
+    // Mismo patrón que la devolución de stock de arriba: guardado por el
+    // token, así que dos cancelaciones a la vez no se devuelven el cupo dos
+    // veces. No hay receta que expandir — cada línea reservó su propia sesión
+    // directamente, no hay canasta de servicios en v1.
+    for (const item of items) {
+      statements.push(
+        env.DB.prepare(
+          `UPDATE product_sessions
+              SET cupo_reservado = cupo_reservado - ?2
+            WHERE id = ?1
+              AND (SELECT cancelacion_token FROM orders WHERE id = ?3) = ?4`,
+        ).bind(item.session_id, item.cantidad, orderId, token),
+      );
+    }
+  }
+
   let batchResults: D1Result[];
   try {
     batchResults = await env.DB.batch(statements);
@@ -1249,14 +1419,14 @@ export async function cancel(
   }
 
   // Si el UPDATE no tocó ninguna fila, otra petición canceló primero. Gracias
-  // al token, sus devoluciones de stock tampoco se aplicaron.
+  // al token, sus devoluciones de stock o de cupo tampoco se aplicaron.
   if (batchResults[0].meta.changes === 0) {
     throw ApiError.conflict('estado-invalido', 'Otro usuario canceló este pedido primero.');
   }
 
   return json({
     order: await loadOrder(env, orderId),
-    unidadesDevueltas: devuelveStock
+    unidadesDevueltas: devuelveStock || devuelveCupo
       ? items.reduce((suma, item) => suma + item.cantidad, 0)
       : 0,
   });
@@ -1708,7 +1878,13 @@ export async function list(env: Env, user: JwtPayload, url: URL): Promise<Respon
             metodo_pago AS metodoPago, canal,
             efectivo_liquidado AS efectivoLiquidado, vence_en AS venceEn,
             closing_id AS closingId, creado_en AS creadoEn,
-            domiciliario_id AS domiciliarioId, domiciliario_nombre AS domiciliarioNombre
+            domiciliario_id AS domiciliarioId, domiciliario_nombre AS domiciliarioNombre,
+            -- Si es un pedido de servicios (0038/0040): sus líneas llevan
+            -- session_id. Un pedido nunca mezcla tipos (lo impide create()),
+            -- así que basta con que exista una para clasificar el pedido
+            -- entero -- el panel lo usa para separar Mercado de Turismo.
+            EXISTS (SELECT 1 FROM order_items oi
+                     WHERE oi.order_id = orders.id AND oi.session_id IS NOT NULL) AS esServicio
        FROM orders ${where}
       ORDER BY creado_en DESC
       LIMIT ?${bindings.length}`,

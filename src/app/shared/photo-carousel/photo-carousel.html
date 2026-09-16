@@ -1,0 +1,68 @@
+<div class="relative overflow-hidden rounded-lg bg-linen">
+  <div class="aspect-4/3 sm:aspect-16/10">
+    @if (current(); as photo) {
+      <img
+        [src]="photo.url"
+        [alt]="photo.alt"
+        class="size-full object-cover"
+        loading="eager"
+        decoding="async"
+      />
+    }
+  </div>
+
+  @if (hasMultiple()) {
+    <!-- Flechas -->
+    <button
+      type="button"
+      class="absolute left-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-bone/90 text-ink shadow-sm backdrop-blur-sm transition-colors duration-200 hover:bg-bone"
+      (click)="prev()"
+      aria-label="Foto anterior"
+    >
+      <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10 3 5 8l5 5" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="absolute right-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-bone/90 text-ink shadow-sm backdrop-blur-sm transition-colors duration-200 hover:bg-bone"
+      (click)="next()"
+      aria-label="Foto siguiente"
+    >
+      <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m6 3 5 5-5 5" />
+      </svg>
+    </button>
+
+    <!-- Puntos -->
+    <div class="absolute inset-x-0 bottom-3 flex items-center justify-center gap-1.5">
+      @for (photo of photos(); track photo.url; let i = $index) {
+        <button
+          type="button"
+          class="h-1.5 rounded-full transition-all duration-200"
+          [class]="i === index() ? 'w-5 bg-bone' : 'w-1.5 bg-bone/50 hover:bg-bone/75'"
+          (click)="go(i)"
+          [attr.aria-label]="'Ir a la foto ' + (i + 1)"
+          [attr.aria-current]="i === index()"
+        ></button>
+      }
+    </div>
+  }
+</div>
+
+@if (hasMultiple()) {
+  <!-- Miniaturas: solo desde sm, donde hay ancho de sobra -->
+  <div class="mt-3 hidden gap-2 sm:flex">
+    @for (photo of photos(); track photo.url; let i = $index) {
+      <button
+        type="button"
+        class="size-16 shrink-0 overflow-hidden rounded-md border-2 transition-colors duration-200"
+        [class]="i === index() ? 'border-moss' : 'border-transparent opacity-70 hover:opacity-100'"
+        (click)="go(i)"
+        [attr.aria-label]="'Ir a la foto ' + (i + 1)"
+      >
+        <img [src]="photo.url" [alt]="photo.alt" class="size-full object-cover" loading="lazy" decoding="async" />
+      </button>
+    }
+  </div>
+}

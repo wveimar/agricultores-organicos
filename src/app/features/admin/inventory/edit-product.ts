@@ -12,10 +12,13 @@ import { AdminApiService } from '../../../core/services/admin-api.service';
 import { ApiErrorBody, ApiProduct } from '../../../core/api/api-client';
 import { ImageField } from './image-field/image-field';
 import { RecipeEditor } from './recipe-editor/recipe-editor';
+import { SessionsEditor } from './sessions-editor/sessions-editor';
+import { PhotoGalleryEditor } from './photo-gallery-editor/photo-gallery-editor';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 import {
   ALL_UNITS,
+  ProductType,
   ProductUnit,
   UNIT_LABELS,
   unitPresentation,
@@ -23,7 +26,17 @@ import {
 
 @Component({
   selector: 'app-edit-product',
-  imports: [ReactiveFormsModule, RouterLink, ImageField, CopPipe, RecipeEditor, FieldErrorState, FieldError],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    ImageField,
+    CopPipe,
+    RecipeEditor,
+    SessionsEditor,
+    PhotoGalleryEditor,
+    FieldErrorState,
+    FieldError,
+  ],
   templateUrl: './edit-product.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -49,25 +62,39 @@ export class EditProduct {
     nombre: ['', [Validators.required, Validators.minLength(2)]],
     slug: [''],
     tagline: [''],
+    /** Párrafo largo para la ficha de detalle (0039) — sobre todo en un tour. */
+    descripcion: [''],
     categoriaId: ['', Validators.required],
     // 'frutas' es solo el valor inicial; el desplegable sale de
     // `adminApi.groupOptions()`, no de una lista fija (migración 0025).
     grupoAdmin: ['frutas', Validators.required],
     precio: [0, [Validators.required, Validators.min(1)]],
     precioCosto: [0, [Validators.required, Validators.min(1)]],
+    // Requeridos solo para 'fisico'; el efecto del constructor ajusta estos
+    // validadores en vivo según `tipo` (igual que el checkout con la
+    // dirección de envío para un carrito de servicios).
     unidad: ['unidad', Validators.required],
     cantidadUnidad: [1, [Validators.required, Validators.min(1)]],
-    /** 1 = se vende a granel: la caja pide un peso decimal, no un conteo. */
+    /** 1 = se vende a granel: la caja pide un peso decimal, no un conteo. Solo 'fisico'. */
     vendidoPorPeso: [false],
     origen: ['', Validators.required],
     imagenAlt: ['', Validators.required],
     imagen: ['', Validators.required],
     imagenHover: [''],
-    /** '' = se vende solo. Con un id, es variante de ese producto. */
+    /** '' = se vende solo. Con un id, es variante de ese producto. Solo 'fisico'. */
     parentId: [''],
     /** Qué distingue a sus variantes. Solo se usa si este producto es madre. */
     varianteEtiqueta: [''],
   });
+
+  /**
+   * 'fisico' | 'servicio' (0038), fuera del formulario reactivo a propósito
+   * —como `metodoPago` en el checkout—: decide qué secciones de la plantilla
+   * se muestran, y `computed()` solo reacciona a señales, no a los cambios de
+   * un `FormControl`.
+   */
+  protected readonly tipo = signal<ProductType>('fisico');
+  protected readonly esServicio = computed(() => this.tipo() === 'servicio');
 
   // ─────────────────────────────── Variantes ───────────────────────────────
 
@@ -165,6 +192,7 @@ export class EditProduct {
           nombre: prod.nombre,
           slug: prod.slug,
           tagline: prod.tagline,
+          descripcion: prod.descripcion ?? '',
           categoriaId: prod.categoriaId,
           grupoAdmin: prod.grupoAdmin,
           precio: prod.precio,
@@ -180,7 +208,22 @@ export class EditProduct {
           varianteEtiqueta: prod.varianteEtiqueta ?? '',
         });
         this.parentSeleccionado.set(prod.parentId ?? '');
+        this.tipo.set(prod.tipo === 'servicio' ? 'servicio' : 'fisico');
       }
+    });
+
+    /**
+     * Unidad y origen solo significan algo en un producto físico: un
+     * servicio no tiene presentación ni finca. Se ajustan los validadores en
+     * vivo en vez de dejarlos fijos, mismo criterio que la dirección de envío
+     * en el checkout cuando el carrito es solo de servicios.
+     */
+    effect(() => {
+      const validators = this.esServicio() ? [] : [Validators.required];
+      this.form.controls.unidad.setValidators(validators);
+      this.form.controls.origen.setValidators(validators);
+      this.form.controls.unidad.updateValueAndValidity({ emitEvent: false });
+      this.form.controls.origen.updateValueAndValidity({ emitEvent: false });
     });
 
     // El desplegable de categoría sale de la tabla: sin esto quedaría vacío al
@@ -197,6 +240,10 @@ export class EditProduct {
 
   protected onParentChange(event: Event): void {
     this.parentSeleccionado.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected onTipoChange(event: Event): void {
+    this.tipo.set((event.target as HTMLSelectElement).value === 'servicio' ? 'servicio' : 'fisico');
   }
 
   private loadProduct(): void {
@@ -221,21 +268,23 @@ export class EditProduct {
     this.updateError = null;
     this.updatingProduct = true;
 
-    const { nombre, slug, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, vendidoPorPeso, origen, imagen, imagenHover, imagenAlt, parentId, varianteEtiqueta } = this.form.getRawValue();
+    const { nombre, slug, tagline, descripcion, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, vendidoPorPeso, origen, imagen, imagenHover, imagenAlt, parentId, varianteEtiqueta } = this.form.getRawValue();
 
     this.adminApi
       .updateProductFull(this.productId, {
         nombre,
         slug: slug || undefined,
         tagline,
+        descripcion,
+        tipo: this.tipo(),
         categoriaId,
         grupoAdmin,
         precio,
         precioCosto,
-        unidad,
+        unidad: this.esServicio() ? undefined : unidad,
         cantidadUnidad,
-        vendidoPorPeso: vendidoPorPeso ? 1 : 0,
-        origen,
+        vendidoPorPeso: this.esServicio() ? 0 : vendidoPorPeso ? 1 : 0,
+        origen: this.esServicio() ? undefined : origen,
         imagen,
         imagenHover: imagenHover || undefined,
         imagenAlt,

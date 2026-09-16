@@ -64,12 +64,24 @@ export function isWholesaleRole(role: string): role is WholesaleRole {
   return (WHOLESALE_ROLES as readonly string[]).includes(role);
 }
 
+/**
+ * Qué mitad del panel ve una cuenta (0040) — el split QualityMarketShop /
+ * QualityTourShop. Fijo por cuenta, no elegible en cada sesión: un admin de
+ * tours no necesita ver Caja ni Compras a fincas, y viceversa. 'ambos' es
+ * SUPER_ADMIN y cualquier cuenta que de verdad necesite las dos vitrinas —
+ * es el valor con el que nace toda cuenta nueva.
+ */
+export type Workspace = 'mercado' | 'turismo' | 'ambos';
+
+export const ALL_WORKSPACES: readonly Workspace[] = ['mercado', 'turismo', 'ambos'];
+
 /** Contenido del JWT ya verificado. */
 export interface JwtPayload {
   readonly sub: string;
   readonly email: string;
   readonly nombre: string;
   readonly roles: readonly UserRole[];
+  readonly workspace: Workspace;
   readonly iat: number;
   readonly exp: number;
 }
@@ -86,3 +98,21 @@ export interface RequestContext {
 export type OrderStatus = 'verificacion' | 'pendiente' | 'aprobado' | 'enviado';
 export type AbcClass = 'A' | 'B' | 'C';
 export type AdminGroup = 'frutas' | 'verduras' | 'agroindustriales';
+
+/**
+ * 'fisico' = stock/peso, se envía o se recoge (todo el catálogo de siempre).
+ * 'servicio' = se reserva por fecha y cupo — ver `ProductSession` (0038).
+ */
+export type ProductType = 'fisico' | 'servicio';
+
+/** Una salida/cita concreta de un producto 'servicio': "sábado 14, cupo 20". */
+export interface ProductSession {
+  readonly id: string;
+  readonly productId: string;
+  readonly inicio: string;
+  readonly fin: string | null;
+  readonly ubicacion: string | null;
+  readonly cupoTotal: number;
+  readonly cupoReservado: number;
+  readonly activo: number;
+}

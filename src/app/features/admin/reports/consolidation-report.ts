@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { CategoryFilterService } from '../../../core/services/category-filter.service';
+import { SiteConfigService } from '../../../core/services/site-config.service';
 import {
   ApiConsolidationOrder,
   ApiConsolidationProduct,
@@ -42,6 +43,7 @@ function todayInColombia(): string {
 export class ConsolidationReport {
   protected readonly adminApi = inject(AdminApiService);
   protected readonly categoryFilter = inject(CategoryFilterService);
+  private readonly brand = inject(SiteConfigService);
 
   protected readonly today = todayInColombia();
 
@@ -430,7 +432,7 @@ export class ConsolidationReport {
 
     return [
       '📋 *INFORME DE COSECHA CONSOLIDADO*',
-      '🌾 *Agricultores Orgánicos*',
+      `🌾 *${this.brand.siteName()}*`,
       `📅 Fecha: ${fecha}`,
       `🗓️ ${periodo}`,
       '',

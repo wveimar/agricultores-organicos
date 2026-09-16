@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard, guestGuard, roleGuard } from '../../core/guards/admin.guards';
+import { authGuard, guestGuard, moduleGuard, roleGuard, workspaceGuard } from '../../core/guards/admin.guards';
 
 /**
  * Rutas del panel. Se cargan en diferido desde `app.routes.ts`, así que nada
@@ -86,13 +86,21 @@ export const ADMIN_ROUTES: Routes = [
         // fía: la venta de caja son esas mismas operaciones fusionadas en un
         // paso, así que no hace falta un rol nuevo. Devolver sí exige
         // SUPER_ADMIN, y eso lo comprueba el Worker.
-        canActivate: [roleGuard('GESTOR_PEDIDOS')],
+        canActivate: [
+          roleGuard('GESTOR_PEDIDOS'),
+          moduleGuard((a) => a.moduloPos),
+          workspaceGuard('mercado'),
+        ],
         title: 'Caja · Panel',
         loadComponent: () => import('./pos/pos-sell').then((m) => m.PosSell),
       },
       {
         path: 'caja/historial',
-        canActivate: [roleGuard('GESTOR_PEDIDOS')],
+        canActivate: [
+          roleGuard('GESTOR_PEDIDOS'),
+          moduleGuard((a) => a.moduloPos),
+          workspaceGuard('mercado'),
+        ],
         title: 'Historial de caja · Panel',
         loadComponent: () => import('./pos/pos-history').then((m) => m.PosHistory),
       },
@@ -159,7 +167,11 @@ export const ADMIN_ROUTES: Routes = [
         // Quien maneja el inventario es quien hace la inspección al cierre de
         // jornada. El servidor aplica la misma regla — y SUPER_ADMIN, como
         // siempre, entra por encima de cualquier rol.
-        canActivate: [roleGuard('ADMIN_INVENTARIO')],
+        canActivate: [
+          roleGuard('ADMIN_INVENTARIO'),
+          moduleGuard((a) => a.moduloMermas),
+          workspaceGuard('mercado'),
+        ],
         title: 'Bajas por merma · Panel',
         loadComponent: () => import('./mermas/mermas-manager').then((m) => m.MermasManager),
       },
@@ -177,7 +189,11 @@ export const ADMIN_ROUTES: Routes = [
         // Los dos roles: una compra mueve inventario (ADMIN_INVENTARIO) y
         // genera una deuda con el agricultor (GESTOR_PEDIDOS). El servidor
         // aplica la misma regla; marcar el pago sí es solo de pedidos.
-        canActivate: [roleGuard('GESTOR_PEDIDOS', 'ADMIN_INVENTARIO')],
+        canActivate: [
+          roleGuard('GESTOR_PEDIDOS', 'ADMIN_INVENTARIO'),
+          moduleGuard((a) => a.moduloCompras),
+          workspaceGuard('mercado'),
+        ],
         title: 'Compras a fincas · Panel',
         loadComponent: () =>
           import('./purchases/provider-purchases-manager').then(
@@ -186,7 +202,11 @@ export const ADMIN_ROUTES: Routes = [
       },
       {
         path: 'entregas',
-        canActivate: [roleGuard('DOMICILIARIO')],
+        canActivate: [
+          roleGuard('DOMICILIARIO'),
+          moduleGuard((a) => a.moduloDomicilios),
+          workspaceGuard('mercado'),
+        ],
         title: 'Entregas · Panel',
         loadComponent: () =>
           import('./deliveries/delivery-orders').then((m) => m.DeliveryOrders),
@@ -195,7 +215,11 @@ export const ADMIN_ROUTES: Routes = [
         path: 'mayoristas',
         // Solo SUPER_ADMIN: a quién se le cobra menos y cuánto es una decisión
         // comercial, no de inventario. El servidor aplica la misma regla.
-        canActivate: [roleGuard('SUPER_ADMIN')],
+        canActivate: [
+          roleGuard('SUPER_ADMIN'),
+          moduleGuard((a) => a.moduloMayoristas),
+          workspaceGuard('mercado'),
+        ],
         title: 'Tarifas de mayorista · Panel',
         loadComponent: () =>
           import('./wholesale/wholesale-tariffs').then((m) => m.WholesaleTariffs),
@@ -207,6 +231,15 @@ export const ADMIN_ROUTES: Routes = [
         canActivate: [roleGuard('SUPER_ADMIN')],
         title: 'Usuarios · Panel',
         loadComponent: () => import('./users/users-manager').then((m) => m.UsersManager),
+      },
+      {
+        path: 'ajustes',
+        // Marca del sitio y módulos activables: cambia lo que ve todo el
+        // mundo, no una preferencia personal. Mismo rol que exige el Worker
+        // en `PUT /api/admin/settings`.
+        canActivate: [roleGuard('SUPER_ADMIN')],
+        title: 'Ajustes · Panel',
+        loadComponent: () => import('./settings/settings-manager').then((m) => m.SettingsManager),
       },
       {
         path: 'sin-acceso',

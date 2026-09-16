@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiClient, ApiErrorBody } from '../../../core/api/api-client';
+import { SiteConfigService } from '../../../core/services/site-config.service';
 import { FieldError, FieldErrorState } from '../../../shared/field-error/field-error';
 
 const MIN_PASSWORD = 8;
@@ -27,6 +28,7 @@ export class RecoverPassword {
   private readonly api = inject(ApiClient);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  protected readonly brand = inject(SiteConfigService);
 
   protected readonly minPassword = MIN_PASSWORD;
 

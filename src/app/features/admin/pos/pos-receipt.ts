@@ -1,6 +1,7 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { ApiPosVenta } from '../../../core/api/api-client';
+import { SiteConfigService } from '../../../core/services/site-config.service';
 
 /**
  * El recibo de una venta de mostrador.
@@ -23,7 +24,7 @@ import { ApiPosVenta } from '../../../core/api/api-client';
   template: `
     <div class="recibo rounded-xl border border-sand bg-white p-5 text-ink">
       <header class="border-b border-dashed border-sand pb-3 text-center">
-        <p class="text-base font-semibold">Agricultores Orgánicos</p>
+        <p class="text-base font-semibold">{{ brand.siteName() }}</p>
         <p class="text-xs text-ink/60">Venta de mostrador</p>
       </header>
 
@@ -113,5 +114,6 @@ import { ApiPosVenta } from '../../../core/api/api-client';
   `,
 })
 export class PosReceipt {
+  protected readonly brand = inject(SiteConfigService);
   readonly venta = input.required<ApiPosVenta>();
 }

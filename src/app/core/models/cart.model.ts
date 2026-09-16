@@ -1,8 +1,14 @@
-import { Product } from './product.model';
+import { Product, ProductSession } from './product.model';
 
 export interface CartItem {
   readonly product: Product;
   readonly quantity: number;
+  /**
+   * Qué sesión reservó esta línea, solo cuando `product.type === 'servicio'`.
+   * Se guarda la sesión completa (no solo el id) porque el carrito la pinta
+   * —fecha, cupo— sin volver a consultar el catálogo.
+   */
+  readonly session?: ProductSession;
 }
 
 /** Umbral (COP) a partir del cual el envío deja de cobrarse. */

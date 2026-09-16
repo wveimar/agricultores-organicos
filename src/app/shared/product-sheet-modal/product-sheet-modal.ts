@@ -15,7 +15,9 @@ import { CatalogService } from '../../core/services/catalog.service';
 import { ProductSheet } from '../../core/services/product-sheet.service';
 import {
   Product,
+  ProductSession,
   componentPortion,
+  formatSessionDate,
   isInStock,
   unitPresentation,
 } from '../../core/models/product.model';
@@ -96,16 +98,62 @@ export class ProductSheetModal {
    * llegara a tener las dos cosas, sin elegir variante no hay nada concreto
    * que añadir, así que esa decisión va primero.
    */
-  protected readonly mode = computed<'variantes' | 'canasta' | null>(() => {
+  protected readonly mode = computed<'variantes' | 'canasta' | 'servicio' | null>(() => {
     const product = this.sheet.product();
     if (!product) {
       return null;
+    }
+    if (product.type === 'servicio') {
+      return 'servicio';
     }
     if (this.catalog.getProductVariants(product.id).length > 0) {
       return 'variantes';
     }
     return (product.contains?.length ?? 0) > 0 ? 'canasta' : null;
   });
+
+  // ─────────────────────────── Modo servicio (0038) ───────────────────────────
+
+  protected readonly sessionChoices = computed<readonly ProductSession[]>(
+    () => this.sheet.product()?.sessions ?? [],
+  );
+
+  protected readonly selectedSessionId = signal<string | null>(null);
+
+  protected readonly selectedSession = computed<ProductSession | null>(() => {
+    const id = this.selectedSessionId();
+    return this.sessionChoices().find((s) => s.id === id) ?? null;
+  });
+
+  protected readonly participants = signal(1);
+
+  protected readonly fechaSesion = formatSessionDate;
+
+  /**
+   * Cupo real del selector: lo que queda en el servidor más lo que ESTA
+   * misma línea del carrito ya tenía apartado. Sin sumar lo propio, el tope
+   * nunca llegaría al cupo total — mismo cálculo que `CartService.capSession()`.
+   */
+  protected readonly maxParticipants = computed(() => {
+    const session = this.selectedSession();
+    const product = this.sheet.product();
+    if (!session || !product) {
+      return 0;
+    }
+    const yaEnCarrito = this.cart
+      .items()
+      .find((line) => line.product.id === product.id && line.session?.id === session.id)?.quantity ?? 0;
+    return session.capacityAvailable + yaEnCarrito;
+  });
+
+  protected selectSession(sessionId: string): void {
+    this.selectedSessionId.set(sessionId);
+    this.participants.set(1);
+  }
+
+  protected setParticipants(value: number): void {
+    this.participants.set(Math.min(Math.max(1, Math.round(value) || 1), this.maxParticipants()));
+  }
 
   /** Lo que lleva dentro, en modo canasta. */
   protected readonly contenido = computed(() => this.sheet.product()?.contains ?? []);
@@ -166,6 +214,10 @@ export class ProductSheetModal {
    * «falta algo de lo que lleva dentro».
    */
   protected readonly soldOut = computed(() => {
+    if (this.mode() === 'servicio') {
+      const sesiones = this.sessionChoices();
+      return sesiones.length === 0 || sesiones.every((s) => s.capacityAvailable <= 0);
+    }
     if (this.mode() === 'canasta') {
       const product = this.sheet.product();
       return product !== null && !isInStock(product);
@@ -174,7 +226,29 @@ export class ProductSheetModal {
     return opciones.length > 0 && opciones.every((choice) => !choice.available);
   });
 
+  /**
+   * `false` cuando el carrito ya tiene algo del otro tipo (un físico con un
+   * servicio abierto, o viceversa): un pedido no puede combinar los dos —
+   * ver `CartService.canAdd()` y el mismo corte en `POST /api/orders`.
+   */
+  protected readonly cartTypeMismatch = computed(() => {
+    const product = this.sheet.product();
+    return product !== null && !this.cart.canAdd(product);
+  });
+
   protected readonly canAdd = computed(() => {
+    if (this.cartTypeMismatch()) {
+      return false;
+    }
+    if (this.mode() === 'servicio') {
+      const session = this.selectedSession();
+      return (
+        session !== null &&
+        this.maxParticipants() > 0 &&
+        this.participants() >= 1 &&
+        this.participants() <= this.maxParticipants()
+      );
+    }
     if (this.mode() === 'canasta') {
       const product = this.sheet.product();
       return product !== null && isInStock(product) && !this.cart.atStockLimit(product.id);
@@ -213,6 +287,17 @@ export class ProductSheetModal {
         const opciones = this.choices();
         const primera = opciones.find((choice) => choice.available && !choice.atLimit);
         this.selectedId.set((primera ?? opciones[0])?.product.id ?? null);
+
+        // Preselecciona la primera sesión con cupo. Si el carrito ya tenía
+        // una reserva de este producto, se retoma esa sesión y esa cantidad
+        // en vez de empezar de cero — reabrir la hoja no debe perder lo ya
+        // elegido.
+        const sesiones = this.sessionChoices();
+        const lineaExistente = this.cart.items().find((l) => l.product.id === product.id);
+        const conCupo = sesiones.find((s) => s.capacityAvailable > 0);
+        const elegida = lineaExistente?.session ?? conCupo ?? sesiones[0];
+        this.selectedSessionId.set(elegida?.id ?? null);
+        this.participants.set(lineaExistente?.session ? lineaExistente.quantity : 1);
       });
 
       // El modal se monta en este mismo tick; el foco se mueve en el siguiente.
@@ -240,6 +325,17 @@ export class ProductSheetModal {
    */
   protected confirm(): void {
     if (!this.canAdd()) {
+      return;
+    }
+
+    if (this.mode() === 'servicio') {
+      const producto = this.sheet.product();
+      const session = this.selectedSession();
+      if (!producto || !session) {
+        return;
+      }
+      this.cart.addService(producto, session, this.participants());
+      this.sheet.close();
       return;
     }
 

@@ -5,8 +5,8 @@
 -->
 <section id="top" class="relative flex min-h-[34rem] items-end overflow-hidden lg:min-h-[60vh]">
   <img
-    [src]="image"
-    alt="Puesto de mercado rebosante de frutas y verduras recién cosechadas"
+    [src]="image()"
+    [alt]="isTurismo() ? 'Paisaje de un tour disponible para reservar' : 'Puesto de mercado rebosante de frutas y verduras recién cosechadas'"
     class="absolute inset-0 size-full object-cover"
     fetchpriority="high"
     decoding="async"
@@ -22,22 +22,27 @@
         class="animate-rise-in text-overline font-semibold uppercase text-sage-light"
         style="animation-delay: 60ms"
       >
-        {{ semanaDehoy() }}
+        {{ isTurismo() ? 'Experiencias con cupo disponible' : semanaDehoy() }}
       </p>
 
       <h1
         class="animate-rise-in mt-5 text-display text-bone"
         style="animation-delay: 140ms"
       >
-        Del surco a tu cocina, sin escalas
+        {{ isTurismo() ? 'Vive la experiencia, resérvala en minutos' : 'Del surco a tu cocina, sin escalas' }}
       </h1>
 
       <p
         class="animate-rise-in mt-5 max-w-lg text-lg text-bone/80"
         style="animation-delay: 220ms"
       >
-        Trabajamos con familias campesinas que cosechan el fin de semana solo lo
-        que ya está pedido. Sin bodegas, sin intermediarios, sin cámaras de maduración.
+        @if (isTurismo()) {
+          Tours, actividades y alojamiento con fecha y cupo confirmados al momento.
+          Elige el plan, reserva tu fecha y listo.
+        } @else {
+          Trabajamos con familias campesinas que cosechan el fin de semana solo lo
+          que ya está pedido. Sin bodegas, sin intermediarios, sin cámaras de maduración.
+        }
       </p>
 
       <div class="animate-rise-in mt-9 flex flex-wrap items-center gap-x-7 gap-y-4" style="animation-delay: 300ms">
@@ -45,13 +50,15 @@
           href="#tienda"
           class="inline-flex items-center gap-2.5 rounded-full bg-clay px-8 py-4 text-sm font-semibold text-bone transition-all duration-300 ease-out hover:bg-clay-deep hover:gap-4"
         >
-          Ver la cosecha de hoy
+          {{ isTurismo() ? 'Ver experiencias disponibles' : 'Ver la cosecha de hoy' }}
           <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
             <path d="M2 8h11M9 4l4 4-4 4" />
           </svg>
         </a>
 
-        <p class="text-sm text-bone/70">Envío gratis desde $ 70.000</p>
+        @if (!isTurismo()) {
+          <p class="text-sm text-bone/70">Envío gratis desde $ 70.000</p>
+        }
       </div>
     </div>
   </div>

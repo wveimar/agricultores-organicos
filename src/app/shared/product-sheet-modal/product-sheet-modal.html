@@ -47,6 +47,8 @@
           <p id="ayuda-hoja" class="mt-1 text-sm text-ink-soft">
             @if (mode() === 'canasta') {
               Esto es lo que lleva dentro.
+            } @else if (mode() === 'servicio') {
+              Elige la fecha y cuántas personas van.
             } @else {
               <!--
                 «tu» y no «la/el»: `what()` viene de la base de datos y puede
@@ -76,8 +78,16 @@
         </button>
       </header>
 
-      <!-- Cuerpo: la receta de la canasta, o las opciones a elegir -->
+      <!-- Cuerpo: la receta de la canasta, la sesión a reservar, o las opciones a elegir -->
       <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:px-6 sm:py-4">
+        @if (cartTypeMismatch()) {
+          <p class="mb-3 rounded-lg border border-clay/30 bg-clay/5 px-4 py-3 text-sm text-clay-deep" role="alert">
+            Tu carrito ya tiene {{ mode() === 'servicio' ? 'productos físicos' : 'un servicio reservado' }}.
+            Termina o vacía ese pedido antes de agregar
+            {{ mode() === 'servicio' ? 'una reserva' : 'un producto' }} distinto.
+          </p>
+        }
+
         @if (soldOut()) {
           <p class="mb-3 rounded-lg border border-dashed border-sand px-4 py-6 text-center text-sm text-ink-soft">
             @if (mode() === 'canasta') {
@@ -88,6 +98,9 @@
               -->
               Esta semana falta algo de lo que lleva esta canasta. Vuelve el
               lunes: el catálogo cambia con lo que esté en su punto.
+            } @else if (mode() === 'servicio') {
+              No quedan sesiones con cupo para {{ parent.name }}. Vuelve pronto:
+              se abren fechas nuevas seguido.
             } @else {
               Esta semana no quedó nada disponible de {{ parent.name }}. Vuelve el
               lunes: el catálogo cambia con lo que esté en su punto.
@@ -95,7 +108,73 @@
           </p>
         }
 
-        @if (mode() === 'canasta') {
+        @if (mode() === 'servicio') {
+          <fieldset class="flex flex-col gap-2 sm:gap-2.5">
+            <legend class="sr-only">Elige la fecha de {{ parent.name }}</legend>
+
+            @for (session of sessionChoices(); track session.id) {
+              <label
+                class="group flex cursor-pointer items-center gap-3 rounded-xl border border-sand bg-bone px-3.5 py-3 transition-colors duration-200 hover:border-sage has-[:checked]:border-moss has-[:checked]:bg-sage-light/45 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-clay has-[:disabled]:cursor-not-allowed has-[:disabled]:border-sand has-[:disabled]:bg-linen/60 has-[:disabled]:opacity-70 sm:gap-3.5 sm:px-4 sm:py-3.5"
+              >
+                <input
+                  type="radio"
+                  name="sesion"
+                  class="peer sr-only"
+                  [value]="session.id"
+                  [checked]="selectedSessionId() === session.id"
+                  [disabled]="session.capacityAvailable <= 0 && selectedSessionId() !== session.id"
+                  (change)="selectSession(session.id)"
+                />
+                <span
+                  class="flex size-5 shrink-0 items-center justify-center rounded-full border border-stone transition-colors duration-200 peer-checked:border-moss peer-checked:bg-moss"
+                  aria-hidden="true"
+                >
+                  <span class="size-1.5 rounded-full bg-bone opacity-0 transition-opacity duration-200 group-has-[:checked]:opacity-100"></span>
+                </span>
+
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate font-semibold text-ink">{{ fechaSesion(session.start) }}</span>
+                  <span class="mt-0.5 block text-sm text-ink-muted">
+                    @if (session.location) { {{ session.location }} · }
+                    @if (session.capacityAvailable > 0) {
+                      Quedan {{ session.capacityAvailable }} cupos
+                    } @else {
+                      <span class="font-semibold text-berry">Sin cupo</span>
+                    }
+                  </span>
+                </span>
+              </label>
+            }
+          </fieldset>
+
+          @if (selectedSession(); as session) {
+            <!-- Participantes: el stepper reemplaza al de cantidad de un producto físico. -->
+            <div class="mt-4 flex items-center justify-between gap-3 rounded-xl border border-sand bg-bone px-4 py-3">
+              <span class="text-sm font-medium text-ink">Participantes</span>
+              <div class="flex items-center gap-3">
+                <button
+                  type="button"
+                  class="flex size-9 items-center justify-center rounded-full border border-sand text-ink transition-colors duration-200 hover:border-moss disabled:cursor-not-allowed disabled:opacity-40"
+                  [disabled]="participants() <= 1"
+                  (click)="setParticipants(participants() - 1)"
+                  aria-label="Menos participantes"
+                >
+                  −
+                </button>
+                <span class="tabular w-6 text-center text-sm font-semibold text-ink">{{ participants() }}</span>
+                <button
+                  type="button"
+                  class="flex size-9 items-center justify-center rounded-full border border-sand text-ink transition-colors duration-200 hover:border-moss disabled:cursor-not-allowed disabled:opacity-40"
+                  [disabled]="participants() >= maxParticipants()"
+                  (click)="setParticipants(participants() + 1)"
+                  aria-label="Más participantes"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          }
+        } @else if (mode() === 'canasta') {
           <!--
             Solo lectura: aquí no se elige nada, se mira. Los nombres van sin
             `truncate` a propósito —al revés que en la tarjeta—: poder leerlos
@@ -202,7 +281,19 @@
       <!-- Pie: lo que se va a añadir, y el botón que lo hace -->
       <footer class="flex items-center gap-3 border-t border-sand px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
         <div class="min-w-0 flex-1">
-          @if (mode() === 'canasta') {
+          @if (mode() === 'servicio') {
+            <div class="flex items-baseline gap-1.5 sm:flex-col sm:items-start sm:gap-0">
+              @if (selectedSession(); as session) {
+                <p class="min-w-0 truncate text-sm text-ink-soft">
+                  {{ participants() }} × {{ fechaSesion(session.start) }}
+                </p>
+                <span class="shrink-0 text-ink-muted sm:hidden" aria-hidden="true">·</span>
+              }
+              <p class="tabular shrink-0 text-base font-semibold text-ink sm:text-lg">
+                {{ parent.price * participants() | cop }}
+              </p>
+            </div>
+          } @else if (mode() === 'canasta') {
             <div class="flex items-baseline gap-1.5 sm:flex-col sm:items-start sm:gap-0">
               <p class="tabular shrink-0 text-base font-semibold text-ink sm:text-lg">
                 {{ parent.price | cop }}
@@ -244,7 +335,7 @@
           [disabled]="!canAdd()"
           (click)="confirm()"
         >
-          {{ mode() === 'canasta' ? 'Añadir al carrito' : 'Añadir a la canasta' }}
+          {{ mode() === 'servicio' ? 'Reservar' : mode() === 'canasta' ? 'Añadir al carrito' : 'Añadir a la canasta' }}
         </button>
       </footer>
     </section>

@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { AdminApiService } from '../../../core/services/admin-api.service';
+import { SiteConfigService } from '../../../core/services/site-config.service';
 import {
   ApiClosing,
   ApiClosingOrder,
@@ -39,6 +40,7 @@ function money(value: number): string {
 })
 export class SalesReports {
   protected readonly adminApi = inject(AdminApiService);
+  private readonly brand = inject(SiteConfigService);
 
   /** Sale de `admin_groups` (migración 0025), no de una constante fija. */
   protected readonly groups = this.adminApi.groupOptions;
@@ -274,7 +276,7 @@ export class SalesReports {
       : [];
 
     return [
-      'AGRICULTORES ORGÁNICOS',
+      this.brand.siteName().toUpperCase(),
       `Cierre de jornada ${closing.referencia}`,
       `Fecha: ${when}`,
       `Responsable: ${closing.cerradoPor}`,

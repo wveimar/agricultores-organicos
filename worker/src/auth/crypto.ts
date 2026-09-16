@@ -1,5 +1,5 @@
 import { ApiError } from '../http';
-import { ALL_ROLES, JwtPayload, UserRole } from '../types';
+import { ALL_ROLES, JwtPayload, UserRole, Workspace } from '../types';
 
 // ─────────────────────────────── base64url ───────────────────────────────
 
@@ -49,6 +49,7 @@ export interface SignInput {
   readonly email: string;
   readonly nombre: string;
   readonly roles: readonly UserRole[];
+  readonly workspace: Workspace;
 }
 
 export async function signJwt(input: SignInput, secret: string): Promise<{ token: string; expiresAt: number }> {
@@ -143,7 +144,14 @@ export async function verifyJwt(token: string, secret: string): Promise<JwtPaylo
     ? payload.roles.filter((role): role is UserRole => ALL_ROLES.includes(role as UserRole))
     : [];
 
-  return { ...payload, roles };
+  // `workspace` es del 0040: un token emitido antes de ese cambio no lo trae.
+  // 'ambos' de respaldo hasta que expire (8 h) y esa sesión vuelva a entrar —
+  // igual que antes de existir esta columna, nunca menos acceso del que ya
+  // tenía.
+  const workspace: Workspace =
+    payload.workspace === 'mercado' || payload.workspace === 'turismo' ? payload.workspace : 'ambos';
+
+  return { ...payload, roles, workspace };
 }
 
 // ─────────────────────────────── Contraseñas ───────────────────────────────

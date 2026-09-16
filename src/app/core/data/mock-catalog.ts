@@ -34,6 +34,8 @@ export const PRODUCTS: readonly Product[] = [
   // ─────────────────────────── Verduras y raíces ───────────────────────────
   {
     id: 'p-01',
+    type: 'fisico',
+    description: '',
     slug: 'tomate-chonto-en-rama',
     name: 'Tomate Chonto en Rama',
     tagline: 'Cortado con la rama para que aguante toda la semana',
@@ -55,6 +57,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-02',
+    type: 'fisico',
+    description: '',
     slug: 'tomate-de-huerta-grande',
     name: 'Tomate de Huerta Grande',
     tagline: 'Una sola pieza alcanza para toda la ensalada',
@@ -76,6 +80,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-03',
+    type: 'fisico',
+    description: '',
     slug: 'papa-nativa-de-paramo',
     name: 'Papa Nativa de Páramo',
     tagline: 'Sembrada a 3.100 metros, de piel fina y sabor mantecoso',
@@ -95,6 +101,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-04',
+    type: 'fisico',
+    description: '',
     slug: 'zanahoria-con-hoja',
     name: 'Zanahoria con Hoja',
     tagline: 'Se arranca joven, cuando todavía es dulce',
@@ -116,6 +124,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-05',
+    type: 'fisico',
+    description: '',
     slug: 'aguacate-hass',
     name: 'Aguacate Hass',
     tagline: 'Te llega en su punto exacto, listo para abrir',
@@ -137,6 +147,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-06',
+    type: 'fisico',
+    description: '',
     slug: 'raices-de-estacion',
     name: 'Raíces de Estación',
     tagline: 'Remolacha, nabo y zanahoria de colores, como salieron de la tierra',
@@ -158,6 +170,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-07',
+    type: 'fisico',
+    description: '',
     slug: 'verduras-verdes-del-huerto',
     name: 'Verduras Verdes del Huerto',
     tagline: 'Brócoli, calabacín y habichuela recogidos el mismo día',
@@ -180,6 +194,8 @@ export const PRODUCTS: readonly Product[] = [
   // ───────────────────────────── Frutas frescas ─────────────────────────────
   {
     id: 'p-08',
+    type: 'fisico',
+    description: '',
     slug: 'manzana-roja-de-altura',
     name: 'Manzana Roja de Altura',
     tagline: 'El frío de la noche es lo que la vuelve crujiente',
@@ -199,6 +215,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-09',
+    type: 'fisico',
+    description: '',
     slug: 'fresa-de-temporada',
     name: 'Fresa de Temporada',
     tagline: 'De la mata a tu nevera en menos de doce horas',
@@ -221,6 +239,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-10',
+    type: 'fisico',
+    description: '',
     slug: 'sandia-sin-semilla',
     name: 'Sandía Sin Semilla',
     tagline: 'Pesada, sonora y con el corazón rojo intenso',
@@ -242,6 +262,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-11',
+    type: 'fisico',
+    description: '',
     slug: 'mango-de-azucar',
     name: 'Mango de Azúcar',
     tagline: 'Pequeño, fibroso y absurdamente dulce',
@@ -262,6 +284,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-12',
+    type: 'fisico',
+    description: '',
     slug: 'banano-de-vereda',
     name: 'Banano de Vereda',
     tagline: 'Racimos pequeños, madurados sin cámara de gas',
@@ -282,6 +306,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-13',
+    type: 'fisico',
+    description: '',
     slug: 'citricos-y-tropicales',
     name: 'Cítricos y Tropicales',
     tagline: 'Papaya, cítricos, kiwi y aguacate en una sola caja',
@@ -303,6 +329,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-14',
+    type: 'fisico',
+    description: '',
     slug: 'frutos-del-bosque',
     name: 'Frutos del Bosque',
     tagline: 'Arándano, cereza y mora recogidos a mano',
@@ -325,6 +353,8 @@ export const PRODUCTS: readonly Product[] = [
   // ─────────────────────────── Listos para comer ───────────────────────────
   {
     id: 'p-15',
+    type: 'fisico',
+    description: '',
     slug: 'ensalada-arcoiris',
     name: 'Ensalada Arcoíris',
     tagline: 'Ocho vegetales crudos, cortados esta mañana',
@@ -346,6 +376,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-16',
+    type: 'fisico',
+    description: '',
     slug: 'bowl-verde-con-aguacate',
     name: 'Bowl Verde con Aguacate',
     tagline: 'Aguacate, garbanzo, mango y brotes tiernos',
@@ -366,6 +398,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-17',
+    type: 'fisico',
+    description: '',
     slug: 'bowl-andino-de-huevo',
     name: 'Bowl Andino de Huevo',
     tagline: 'Huevo campesino, rábano y tomate sobre quinua',
@@ -386,6 +420,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-18',
+    type: 'fisico',
+    description: '',
     slug: 'smoothie-de-fresa-y-chia',
     name: 'Smoothie de Fresa y Chía',
     tagline: 'Sin azúcar añadida: la fresa ya trae la suya',
@@ -407,6 +443,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-19',
+    type: 'fisico',
+    description: '',
     slug: 'guiso-campesino-de-verduras',
     name: 'Guiso Campesino de Verduras',
     tagline: 'Cocción lenta de cuatro horas; tú solo lo calientas',
@@ -429,6 +467,8 @@ export const PRODUCTS: readonly Product[] = [
   // ───────────────────────── Granos y semillas ─────────────────────────
   {
     id: 'p-20',
+    type: 'fisico',
+    description: '',
     slug: 'trigo-integral-molido-en-piedra',
     name: 'Trigo Integral Molido en Piedra',
     tagline: 'Sin refinar: conserva el germen y el salvado',
@@ -448,6 +488,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-21',
+    type: 'fisico',
+    description: '',
     slug: 'semillas-y-especias-selectas',
     name: 'Semillas y Especias Selectas',
     tagline: 'Doce variedades secadas al sol y molidas al pedido',
@@ -471,6 +513,8 @@ export const PRODUCTS: readonly Product[] = [
   // ──────────────────────────────── Despensa ────────────────────────────────
   {
     id: 'p-22',
+    type: 'fisico',
+    description: '',
     slug: 'cafe-de-origen-tueste-medio',
     name: 'Café de Origen · Tueste Medio',
     tagline: 'Un solo lote, tostado la semana que lo pides',
@@ -491,6 +535,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-23',
+    type: 'fisico',
+    description: '',
     slug: 'miel-de-abeja-cruda',
     name: 'Miel de Abeja Cruda',
     tagline: 'Sin pasteurizar ni filtrar: cristaliza, y eso es buena señal',
@@ -513,6 +559,8 @@ export const PRODUCTS: readonly Product[] = [
   // ──────────────────────────────── Canastas ────────────────────────────────
   {
     id: 'p-24',
+    type: 'fisico',
+    description: '',
     slug: 'canasta-semanal-familiar',
     name: 'Canasta Semanal Familiar',
     tagline: 'Fruta y verdura para cuatro personas, sin repetir a la semana siguiente',
@@ -535,6 +583,8 @@ export const PRODUCTS: readonly Product[] = [
   },
   {
     id: 'p-25',
+    type: 'fisico',
+    description: '',
     slug: 'canasta-del-mercado-grande',
     name: 'Canasta del Mercado · Grande',
     tagline: 'La compra completa del mes, en una sola entrega',

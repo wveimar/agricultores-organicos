@@ -31,6 +31,7 @@ const COLUMNS = `id,
                   orden,
                   activo,
                   icono,
+                  tema,
                   actualizado_en AS actualizadoEn`;
 
 interface GroupBody {
@@ -40,6 +41,17 @@ interface GroupBody {
   orden?: unknown;
   activo?: unknown;
   icono?: unknown;
+  tema?: unknown;
+}
+
+/**
+ * El tema visual del grupo (0039). Texto libre y no una lista cerrada, por
+ * el mismo motivo que `icono`: el repertorio de clases `theme-*` vive en el
+ * CSS del frontend, y atarlo aquí obligaría a desplegar el Worker cada vez
+ * que se diseñe uno nuevo. Vacío = el tema de por defecto de la tienda.
+ */
+function readTema(value: unknown): string {
+  return value === '' || value === undefined ? '' : requireString(value, 'tema', 40);
 }
 
 /**
@@ -96,7 +108,7 @@ function slugify(texto: string): string {
  */
 export async function listPublic(env: Env): Promise<Response> {
   const { results } = await env.DB.prepare(
-    `SELECT id, nombre, icono, orden
+    `SELECT id, nombre, icono, orden, tema
        FROM admin_groups
       WHERE activo = 1
       ORDER BY orden, nombre COLLATE NOCASE`,
@@ -179,8 +191,8 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
   }
 
   await env.DB.prepare(
-    `INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden, activo, icono)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+    `INSERT INTO admin_groups (id, nombre, mostrar_filtro_fino, orden, activo, icono, tema)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
   )
     .bind(
       id,
@@ -189,6 +201,7 @@ export async function create(request: Request, env: Env, user: JwtPayload): Prom
       body.orden === undefined ? 100 : Number(body.orden),
       body.activo === 0 ? 0 : 1,
       body.icono === undefined ? '' : readIcono(body.icono),
+      readTema(body.tema),
     )
     .run();
 
@@ -233,6 +246,9 @@ export async function update(
   }
   if (body.icono !== undefined) {
     sets.push(`icono = ?${bindings.push(readIcono(body.icono))}`);
+  }
+  if (body.tema !== undefined) {
+    sets.push(`tema = ?${bindings.push(readTema(body.tema))}`);
   }
 
   if (sets.length === 0) {

@@ -48,7 +48,9 @@ import {
   PurchaseInput,
   PurchaseItemInput,
 } from '../api/api-client';
-import { UserRole, WholesaleRole } from '../models/user.model';
+import { UserRole, WholesaleRole, Workspace } from '../models/user.model';
+import { PublicWorkspace } from '../models/product.model';
+import { TokenStore } from '../api/token-store';
 
 type SalesTotals = { unidades: number; ingresos: number; costo: number; ganancia: number };
 
@@ -82,12 +84,34 @@ function recomputeSummary(products: readonly ApiWholesaleRow[]): ApiWholesaleTar
 @Injectable({ providedIn: 'root' })
 export class AdminApiService {
   private readonly api = inject(ApiClient);
+  private readonly tokens = inject(TokenStore);
+
+  /**
+   * Workspace al que hay que acotar los datos del panel (0040), o `null`
+   * cuando la cuenta ve todo (SUPER_ADMIN/'ambos'). Categorías, grupos,
+   * productos y pedidos se filtran contra esto — ver los `computed` que
+   * envuelven cada `all*` de más abajo. No hace falta acotar en el Worker:
+   * las rutas que ya son solo-Mercado (Caja, Compras…) las bloquea
+   * `workspaceGuard`, y el resto de datos los sigue viendo el rol de
+   * siempre — esto es qué SE MUESTRA, no qué se PERMITE.
+   */
+  private readonly workspaceScope = computed<PublicWorkspace | null>(() => {
+    const ws = this.tokens.workspace();
+    return ws === 'mercado' || ws === 'turismo' ? ws : null;
+  });
 
   // ──────────────────────────────── Categorías ────────────────────────────────
 
-  readonly categories = signal<readonly ApiCategory[]>([]);
+  /** Todas las categorías, sin acotar por workspace. Ver `categories` (filtrada) más abajo. */
+  readonly allCategories = signal<readonly ApiCategory[]>([]);
   readonly categoriesLoading = signal(false);
   readonly categoriesError = signal<string | null>(null);
+
+  /** Acotadas al workspace de la cuenta (0040) — ver `workspaceScope`. */
+  readonly categories = computed<readonly ApiCategory[]>(() => {
+    const scope = this.workspaceScope();
+    return scope ? this.allCategories().filter((c) => c.grupoAdmin === scope) : this.allCategories();
+  });
 
   /**
    * Todas, incluidas las desactivadas: esta es la pantalla desde donde se
@@ -99,7 +123,7 @@ export class AdminApiService {
 
     this.api.adminCategories().subscribe({
       next: (rows) => {
-        this.categories.set(rows);
+        this.allCategories.set(rows);
         this.categoriesLoading.set(false);
       },
       error: (error: ApiErrorBody) => {
@@ -132,7 +156,7 @@ export class AdminApiService {
 
   createCategory(input: Parameters<ApiClient['createCategory']>[0]): Observable<ApiCategory> {
     return this.api.createCategory(input).pipe(
-      tap((created) => this.categories.set([...this.categories(), created])),
+      tap((created) => this.allCategories.set([...this.allCategories(), created])),
     );
   }
 
@@ -145,8 +169,8 @@ export class AdminApiService {
         // Se conserva `productos`: el recuento lo calcula el listado y la
         // respuesta del PUT no lo trae. Sin esto, editar un nombre dejaría la
         // fila diciendo que está vacía y el botón de borrar se activaría.
-        this.categories.set(
-          this.categories().map((c) =>
+        this.allCategories.set(
+          this.allCategories().map((c) =>
             c.id === id ? { ...updated, productos: c.productos } : c,
           ),
         ),
@@ -156,15 +180,26 @@ export class AdminApiService {
 
   deleteCategory(id: string): Observable<void> {
     return this.api.deleteCategory(id).pipe(
-      tap(() => this.categories.set(this.categories().filter((c) => c.id !== id))),
+      tap(() => this.allCategories.set(this.allCategories().filter((c) => c.id !== id))),
     );
   }
 
   // ────────────────────── Grupos del panel de compras ──────────────────────
 
-  readonly adminGroups = signal<readonly ApiAdminGroup[]>([]);
+  /** Todos los grupos, sin acotar por workspace. Ver `adminGroups` (filtrada) más abajo. */
+  readonly allAdminGroups = signal<readonly ApiAdminGroup[]>([]);
   readonly adminGroupsLoading = signal(false);
   readonly adminGroupsError = signal<string | null>(null);
+
+  /**
+   * Acotados al workspace de la cuenta (0040). A diferencia de categorías y
+   * productos —que se acotan por `grupoAdmin`—, un grupo ES su propio
+   * workspace: el filtro compara `g.id` directamente.
+   */
+  readonly adminGroups = computed<readonly ApiAdminGroup[]>(() => {
+    const scope = this.workspaceScope();
+    return scope ? this.allAdminGroups().filter((g) => g.id === scope) : this.allAdminGroups();
+  });
 
   /** Todos, incluidos los desactivados: es la pantalla desde donde se reactivan. */
   loadAdminGroups(): void {
@@ -173,7 +208,7 @@ export class AdminApiService {
 
     this.api.adminGroups().subscribe({
       next: (rows) => {
-        this.adminGroups.set(rows);
+        this.allAdminGroups.set(rows);
         this.adminGroupsLoading.set(false);
       },
       error: (error: ApiErrorBody) => {
@@ -209,7 +244,7 @@ export class AdminApiService {
     input: Parameters<ApiClient['createAdminGroup']>[0],
   ): Observable<ApiAdminGroup> {
     return this.api.createAdminGroup(input).pipe(
-      tap((created) => this.adminGroups.set([...this.adminGroups(), created])),
+      tap((created) => this.allAdminGroups.set([...this.allAdminGroups(), created])),
     );
   }
 
@@ -221,8 +256,8 @@ export class AdminApiService {
       tap((updated) =>
         // Se conservan los recuentos: la respuesta del PUT no los trae, y sin
         // esto la fila mostraría "0 categorías, 0 productos" hasta recargar.
-        this.adminGroups.set(
-          this.adminGroups().map((g) =>
+        this.allAdminGroups.set(
+          this.allAdminGroups().map((g) =>
             g.id === id
               ? { ...updated, categorias: g.categorias, productos: g.productos }
               : g,
@@ -234,29 +269,45 @@ export class AdminApiService {
 
   deleteAdminGroup(id: string): Observable<void> {
     return this.api.deleteAdminGroup(id).pipe(
-      tap(() => this.adminGroups.set(this.adminGroups().filter((g) => g.id !== id))),
+      tap(() => this.allAdminGroups.set(this.allAdminGroups().filter((g) => g.id !== id))),
     );
   }
 
   // ──────────────────────────────── Inventario ────────────────────────────────
 
-  readonly products = signal<readonly ApiProduct[]>([]);
+  /** Todo el inventario, sin acotar por workspace. Ver `products` (filtrada) más abajo. */
+  readonly allProducts = signal<readonly ApiProduct[]>([]);
   readonly productsLoading = signal(false);
   readonly productsError = signal<string | null>(null);
+
+  /** Acotado al workspace de la cuenta (0040) — ver `workspaceScope`. */
+  readonly products = computed<readonly ApiProduct[]>(() => {
+    const scope = this.workspaceScope();
+    return scope ? this.allProducts().filter((p) => p.grupoAdmin === scope) : this.allProducts();
+  });
 
   /**
    * Las alertas de reposición solo miran lo que se está ofreciendo. Un
    * producto marcado como sin oferta esta semana no "falta": es que no se
    * vende, y contarlo llenaría el aviso de ruido cada vez que el agricultor
    * dice que no hay cosecha.
+   *
+   * Y solo miran productos 'fisico': un servicio (0038) no tiene bodega —su
+   * `stock` vale 0 por definición, porque lo que decide si se puede vender
+   * es el cupo de sus sesiones, no un número de existencias— así que sin
+   * este filtro TODO tour se contaría como "bajo mínimo" para siempre.
    */
   readonly alertCount = computed(
     () =>
-      this.products().filter((p) => p.activo !== 0 && p.stock <= (p.stockSeguridad ?? 0)).length,
+      this.products().filter(
+        (p) => p.tipo !== 'servicio' && p.activo !== 0 && p.stock <= (p.stockSeguridad ?? 0),
+      ).length,
   );
 
   readonly outOfStockCount = computed(
-    () => this.products().filter((p) => p.activo !== 0 && p.stock <= 0).length,
+    () =>
+      this.products().filter((p) => p.tipo !== 'servicio' && p.activo !== 0 && p.stock <= 0)
+        .length,
   );
 
   /** Productos retirados de la venta a la espera de que vuelva la cosecha. */
@@ -268,7 +319,7 @@ export class AdminApiService {
 
     this.api.adminProducts().subscribe({
       next: (products) => {
-        this.products.set(products);
+        this.allProducts.set(products);
         this.productsLoading.set(false);
       },
       error: (error: ApiErrorBody) => {
@@ -282,23 +333,26 @@ export class AdminApiService {
     nombre: string;
     slug?: string;
     tagline?: string;
+    /** Párrafo largo para la ficha de detalle (0039) — sobre todo en un tour. */
+    descripcion?: string;
     categoriaId: string;
     grupoAdmin: string;
     precio: number;
     precioCosto?: number;
-    unidad: string;
+    unidad?: string;
     cantidadUnidad?: number;
-    origen: string;
+    origen?: string;
     imagen: string;
     imagenHover?: string;
     imagenAlt: string;
     parentId?: string | null;
     varianteEtiqueta?: string | null;
     vendidoPorPeso?: 0 | 1;
+    tipo?: 'fisico' | 'servicio';
   }): Observable<ApiProduct> {
     return this.api.createProduct(input).pipe(
       tap((created) => {
-        this.products.update((list) => [...list, created]);
+        this.allProducts.update((list) => [...list, created]);
       }),
     );
   }
@@ -317,7 +371,7 @@ export class AdminApiService {
   ): Observable<ApiProduct> {
     return this.api.updateProduct(id, patch).pipe(
       tap((updated) => {
-        this.products.update((list) => list.map((p) => (p.id === id ? updated : p)));
+        this.allProducts.update((list) => list.map((p) => (p.id === id ? updated : p)));
       }),
     );
   }
@@ -332,7 +386,7 @@ export class AdminApiService {
    */
   duplicateProduct(id: string): Observable<ApiProduct> {
     return this.api.duplicateProduct(id).pipe(
-      tap((copia) => this.products.update((list) => [...list, copia])),
+      tap((copia) => this.allProducts.update((list) => [...list, copia])),
     );
   }
 
@@ -357,7 +411,7 @@ export class AdminApiService {
   deleteOrder(id: string): Observable<{ ok: boolean; referencia: string; unidadesDevueltas: number }> {
     return this.api.deleteOrder(id).pipe(
       tap(({ unidadesDevueltas }) => {
-        this.orders.update((list) => list.filter((o) => o.id !== id));
+        this.allOrders.update((list) => list.filter((o) => o.id !== id));
         if (unidadesDevueltas > 0 && this.products().length > 0) {
           this.loadProducts();
         }
@@ -380,26 +434,29 @@ export class AdminApiService {
     nombre: string;
     slug?: string;
     tagline?: string;
+    /** Párrafo largo para la ficha de detalle (0039) — sobre todo en un tour. */
+    descripcion?: string;
     categoriaId: string;
     grupoAdmin: string;
     precio: number;
     precioCosto: number;
-    unidad: string;
+    unidad?: string;
     cantidadUnidad?: number;
-    origen: string;
+    origen?: string;
     imagen: string;
     imagenHover?: string;
     imagenAlt: string;
     parentId?: string | null;
     varianteEtiqueta?: string | null;
     vendidoPorPeso?: 0 | 1;
+    tipo: 'fisico' | 'servicio';
   }): Observable<ApiProduct> {
     return this.api.updateProductFull(id, input).pipe(
       tap((updated) => {
         // Basta con sustituir la fila: las agrupaciones de variantes son
         // `computed` sobre esta misma señal, así que cambiar el `parentId` de
         // una fila reordena los grupos solo, sin recargar el inventario.
-        this.products.update((list) => list.map((p) => (p.id === id ? updated : p)));
+        this.allProducts.update((list) => list.map((p) => (p.id === id ? updated : p)));
       }),
     );
   }
@@ -493,6 +550,7 @@ export class AdminApiService {
     nombre: string;
     password: string;
     roles: readonly UserRole[];
+    workspace?: Workspace;
   }): Observable<ApiUser> {
     return this.api.createUser(input).pipe(
       tap((created) => this.users.update((list) => [...list, created])),
@@ -507,6 +565,7 @@ export class AdminApiService {
       password: string;
       roles: readonly UserRole[];
       activo: 0 | 1;
+      workspace: Workspace;
     }>,
   ): Observable<ApiUser> {
     return this.api.updateUser(id, patch).pipe(
@@ -522,9 +581,25 @@ export class AdminApiService {
 
   // ───────────────────────────────── Pedidos ─────────────────────────────────
 
-  readonly orders = signal<readonly ApiOrder[]>([]);
+  /** Todos los pedidos, sin acotar por workspace. Ver `orders` (filtrada) más abajo. */
+  readonly allOrders = signal<readonly ApiOrder[]>([]);
   readonly ordersLoading = signal(false);
   readonly ordersError = signal<string | null>(null);
+
+  /**
+   * Acotados al workspace de la cuenta (0040). Un pedido no tiene
+   * `grupoAdmin` propio —lo hereda de sus líneas—, así que se clasifica por
+   * `esServicio` (0038: sus líneas llevan `sessionId`), que el Worker ya
+   * calcula por pedido. Nunca hay mezcla de tipos dentro de un mismo pedido.
+   */
+  readonly orders = computed<readonly ApiOrder[]>(() => {
+    const scope = this.workspaceScope();
+    if (!scope) {
+      return this.allOrders();
+    }
+    const quiereServicio = scope === 'turismo';
+    return this.allOrders().filter((o) => (o.esServicio === 1) === quiereServicio);
+  });
 
   readonly pendingCount = computed(
     () => this.orders().filter((o) => o.estado === 'pendiente' || o.estado === 'verificacion').length,
@@ -537,7 +612,7 @@ export class AdminApiService {
 
     this.api.orders({ abiertos: true }).subscribe({
       next: (orders) => {
-        this.orders.set(orders);
+        this.allOrders.set(orders);
         this.ordersLoading.set(false);
       },
       error: (error: ApiErrorBody) => {
@@ -550,7 +625,7 @@ export class AdminApiService {
   approveOrder(id: string): Observable<ApiOrder> {
     return this.api.approveOrder(id).pipe(
       tap((updated) => {
-        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+        this.allOrders.update((list) => list.map((o) => (o.id === id ? updated : o)));
       }),
     );
   }
@@ -558,7 +633,7 @@ export class AdminApiService {
   shipOrder(id: string): Observable<ApiOrder> {
     return this.api.shipOrder(id).pipe(
       tap((updated) => {
-        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+        this.allOrders.update((list) => list.map((o) => (o.id === id ? updated : o)));
       }),
     );
   }
@@ -573,7 +648,7 @@ export class AdminApiService {
   cancelOrder(id: string, motivo?: string): Observable<{ order: ApiOrder; unidadesDevueltas: number }> {
     return this.api.cancelOrder(id, motivo).pipe(
       tap(({ order, unidadesDevueltas }) => {
-        this.orders.update((list) => list.map((o) => (o.id === id ? order : o)));
+        this.allOrders.update((list) => list.map((o) => (o.id === id ? order : o)));
         if (unidadesDevueltas > 0 && this.products().length > 0) {
           this.loadProducts();
         }
@@ -593,7 +668,7 @@ export class AdminApiService {
   markOrderPaid(id: string, monto?: number): Observable<ApiOrder> {
     return this.api.markOrderPaid(id, monto).pipe(
       tap((updated) => {
-        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+        this.allOrders.update((list) => list.map((o) => (o.id === id ? updated : o)));
       }),
     );
   }
@@ -608,7 +683,7 @@ export class AdminApiService {
   confirmDelivery(id: string): Observable<ApiOrder> {
     return this.api.confirmDelivery(id).pipe(
       tap((updated) => {
-        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+        this.allOrders.update((list) => list.map((o) => (o.id === id ? updated : o)));
       }),
     );
   }
@@ -617,7 +692,7 @@ export class AdminApiService {
   grantCredit(id: string): Observable<ApiOrder> {
     return this.api.grantCredit(id).pipe(
       tap((updated) => {
-        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+        this.allOrders.update((list) => list.map((o) => (o.id === id ? updated : o)));
         // Acaba de nacer una deuda: la cartera ya no dice lo mismo.
         this.loadCartera();
       }),
@@ -632,7 +707,7 @@ export class AdminApiService {
   collectCredit(id: string): Observable<ApiOrder> {
     return this.api.collectCredit(id).pipe(
       tap((updated) => {
-        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+        this.allOrders.update((list) => list.map((o) => (o.id === id ? updated : o)));
         this.cartera.update((list) => list.filter((d) => d.id !== id));
         this.loadCashSummary();
       }),
@@ -643,7 +718,7 @@ export class AdminApiService {
   settleOrderCash(id: string): Observable<ApiOrder> {
     return this.api.settleOrderCash(id).pipe(
       tap((updated) => {
-        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+        this.allOrders.update((list) => list.map((o) => (o.id === id ? updated : o)));
         // El resumen de caja acaba de cambiar de significado: este pedido
         // pasa a contar como recaudado, y sale de la lista de pendientes.
         this.loadCashSummary();
@@ -674,7 +749,7 @@ export class AdminApiService {
   rejectDelivery(id: string, motivo?: string): Observable<{ order: ApiOrder; unidadesDevueltas: number }> {
     return this.api.rejectDelivery(id, motivo).pipe(
       tap(({ order, unidadesDevueltas }) => {
-        this.orders.update((list) => list.map((o) => (o.id === id ? order : o)));
+        this.allOrders.update((list) => list.map((o) => (o.id === id ? order : o)));
         if (unidadesDevueltas > 0 && this.products().length > 0) {
           this.loadProducts();
         }
@@ -709,7 +784,7 @@ export class AdminApiService {
   ): Observable<ApiOrder> {
     return this.api.updateOrderItems(id, items).pipe(
       tap((updated) => {
-        this.orders.update((list) => list.map((o) => (o.id === id ? updated : o)));
+        this.allOrders.update((list) => list.map((o) => (o.id === id ? updated : o)));
         if (this.products().length > 0) {
           this.loadProducts();
         }
@@ -1539,12 +1614,44 @@ export class AdminApiService {
 
   readonly ajustes = signal<readonly ApiAjuste[]>([]);
 
+  /**
+   * `true` en cuanto `loadAjustes()` recibió una respuesta (con éxito o sin
+   * él). Antes de eso, `ajustes()` está vacío y los `modulo*` de abajo caen
+   * en su valor por defecto ("activado") — que es el comportamiento correcto
+   * mientras se espera, pero `moduleGuard()` necesita distinguir "todavía no
+   * sé" de "ya sé y está activado" para no dejar pasar un deep-link a un
+   * módulo apagado solo porque la respuesta no había llegado.
+   */
+  readonly ajustesLoaded = signal(false);
+  private ajustesLoading = false;
+
+  /**
+   * Idempotente a propósito: la llaman tanto `AdminLayout` (para que el menú
+   * reaccione) como `moduleGuard()` (para decidir si deja pasar una URL
+   * directa) — y `moduleGuard` de una ruta hija se resuelve ANTES de que
+   * `AdminLayout` llegue a construirse, así que no puede depender de que el
+   * layout ya la haya disparado. Sin esta bandera, dos peticiones idénticas
+   * saldrían en cada navegación directa a un módulo.
+   */
   loadAjustes(): void {
+    if (this.ajustesLoading) {
+      return;
+    }
+    this.ajustesLoading = true;
+
     this.api.settings().subscribe({
       // Si fallan, la caja sigue funcionando con los valores por defecto: son
       // preferencias de comodidad, no algo sin lo que no se pueda vender.
-      next: (lista) => this.ajustes.set(lista),
-      error: () => this.ajustes.set([]),
+      next: (lista) => {
+        this.ajustes.set(lista);
+        this.ajustesLoaded.set(true);
+        this.ajustesLoading = false;
+      },
+      error: () => {
+        this.ajustes.set([]);
+        this.ajustesLoaded.set(true);
+        this.ajustesLoading = false;
+      },
     });
   }
 
@@ -1557,4 +1664,27 @@ export class AdminApiService {
       }),
     );
   }
+
+  /**
+   * Un ajuste booleano, leído de `ajustes()`. `true` mientras no haya
+   * cargado todavía (o falle la carga) — el mismo criterio defensivo que
+   * `loadAjustes()`: sin dato, se asume activado, para que un módulo real
+   * nunca desaparezca del menú por un problema de red.
+   */
+  private ajusteActivo(clave: string): boolean {
+    return (this.ajustes().find((a) => a.clave === clave)?.valor ?? '1') !== '0';
+  }
+
+  /**
+   * Módulos activables por negocio (0038 en adelante): todos "encendidos"
+   * por defecto, así que un negocio que nunca toque `/admin/ajustes` no
+   * nota ningún cambio. `AdminLayout` los usa para filtrar el menú y las
+   * rutas de admin.routes.ts para bloquear el acceso directo por URL.
+   */
+  readonly moduloMermas = computed(() => this.ajusteActivo('modulo_mermas'));
+  readonly moduloCompras = computed(() => this.ajusteActivo('modulo_compras_proveedores'));
+  readonly moduloMayoristas = computed(() => this.ajusteActivo('modulo_mayoristas'));
+  readonly moduloPos = computed(() => this.ajusteActivo('modulo_pos'));
+  readonly moduloDomicilios = computed(() => this.ajusteActivo('modulo_domicilios'));
+  readonly moduloVentaPorPeso = computed(() => this.ajusteActivo('modulo_venta_por_peso'));
 }

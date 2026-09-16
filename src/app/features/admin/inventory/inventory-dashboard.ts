@@ -215,6 +215,11 @@ export class InventoryDashboard {
     return this.adminApi.isParent(product.id);
   }
 
+  /** 'servicio' (0038): no tiene stock, su disponibilidad vive en sus sesiones. */
+  protected esServicio(product: ApiProduct): boolean {
+    return product.tipo === 'servicio';
+  }
+
   /** La ficha que agrupa a esta variante, para nombrarla en su fila. */
   protected parentOf(product: ApiProduct): ApiProduct | undefined {
     return product.parentId ? this.adminApi.productById(product.parentId) : undefined;

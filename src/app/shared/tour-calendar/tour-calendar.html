@@ -1,0 +1,101 @@
+<div>
+  <!-- Encabezado: mes y navegación -->
+  <div class="flex items-center justify-between">
+    <p class="font-display text-base capitalize text-ink">{{ monthLabel() }}</p>
+    <div class="flex items-center gap-1">
+      <button
+        type="button"
+        class="flex size-8 items-center justify-center rounded-full text-ink-soft transition-colors duration-200 hover:bg-linen hover:text-ink disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+        [disabled]="!canGoBack()"
+        (click)="prevMonth()"
+        aria-label="Mes anterior"
+      >
+        <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10 3 5 8l5 5" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="flex size-8 items-center justify-center rounded-full text-ink-soft transition-colors duration-200 hover:bg-linen hover:text-ink"
+        (click)="nextMonth()"
+        aria-label="Mes siguiente"
+      >
+        <svg class="size-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m6 3 5 5-5 5" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Encabezado de días de la semana -->
+  <div class="mt-3 grid grid-cols-7 gap-1 text-center text-xs font-semibold text-ink-muted">
+    @for (d of dias; track d) {
+      <span>{{ d }}</span>
+    }
+  </div>
+
+  <!-- Cuadrícula del mes -->
+  <div class="mt-1 grid grid-cols-7 gap-1">
+    @for (semana of weeks(); track $index) {
+      @for (cell of semana; track cell.key) {
+        @let disponible = hasAvailability(cell);
+        @let elegible = cell.inMonth && !cell.isPast && disponible;
+        <button
+          type="button"
+          class="relative flex aspect-square items-center justify-center rounded-md text-sm transition-colors duration-200"
+          [class]="
+            !cell.inMonth
+              ? 'text-ink-muted/40'
+              : cell.isPast
+                ? 'text-ink-muted/50 cursor-default'
+                : !disponible
+                  ? 'text-ink-muted/60 cursor-default'
+                  : expandedDay() === cell.key
+                    ? 'bg-moss text-bone font-semibold'
+                    : 'text-ink hover:bg-sage-light font-medium cursor-pointer'
+          "
+          [disabled]="!elegible"
+          (click)="pickDay(cell)"
+        >
+          {{ cell.date.getDate() }}
+          @if (disponible && cell.inMonth && !cell.isPast) {
+            <span
+              class="absolute bottom-1 size-1 rounded-full"
+              [class]="expandedDay() === cell.key ? 'bg-bone' : 'bg-clay'"
+              aria-hidden="true"
+            ></span>
+          }
+        </button>
+      }
+    }
+  </div>
+
+  <!-- Horarios del día elegido, solo cuando tiene más de una sesión -->
+  @if (expandedSessions().length > 1) {
+    <div class="mt-4 flex flex-wrap gap-2 border-t border-sand pt-4">
+      @for (session of expandedSessions(); track session.id) {
+        <button
+          type="button"
+          class="rounded-full border px-3.5 py-2 text-sm transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50"
+          [class]="
+            selectedId() === session.id
+              ? 'border-moss bg-moss text-bone'
+              : 'border-sand text-ink hover:border-moss'
+          "
+          [disabled]="!disponible(session)"
+          (click)="pickSession(session.id)"
+        >
+          {{ hora(session) }}
+          @if (!disponible(session)) {
+            <span class="text-xs"> · sin cupo</span>
+          }
+        </button>
+      }
+    </div>
+  }
+
+  <p class="mt-3 flex items-center gap-1.5 text-xs text-ink-muted">
+    <span class="size-1 rounded-full bg-clay" aria-hidden="true"></span>
+    Fecha con cupo disponible
+  </p>
+</div>

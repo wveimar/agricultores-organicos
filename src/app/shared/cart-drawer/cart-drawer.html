@@ -59,24 +59,26 @@
         </button>
       </div>
     } @else {
-      <!-- Progreso hacia el envío gratis -->
-      <div class="border-b border-sand px-6 py-4">
-        @if (cart.amountToFreeShipping() > 0) {
-          <p class="text-sm text-ink-soft">
-            Te faltan
-            <span class="tabular font-semibold text-ink">{{ cart.amountToFreeShipping() | cop }}</span>
-            para el envío gratis
-          </p>
-        } @else {
-          <p class="text-sm font-semibold text-moss">Tienes envío gratis 🌿</p>
-        }
-        <div class="mt-2.5 h-1.5 overflow-hidden rounded-full bg-sand">
-          <div
-            class="h-full rounded-full bg-clay transition-[width] duration-500 ease-[cubic-bezier(.22,1,.36,1)]"
-            [style.width.%]="cart.freeShippingProgress() * 100"
-          ></div>
+      <!-- Progreso hacia el envío gratis: no aplica a un carrito de servicios -->
+      @if (cart.cartType() !== 'servicio') {
+        <div class="border-b border-sand px-6 py-4">
+          @if (cart.amountToFreeShipping() > 0) {
+            <p class="text-sm text-ink-soft">
+              Te faltan
+              <span class="tabular font-semibold text-ink">{{ cart.amountToFreeShipping() | cop }}</span>
+              para el envío gratis
+            </p>
+          } @else {
+            <p class="text-sm font-semibold text-moss">Tienes envío gratis 🌿</p>
+          }
+          <div class="mt-2.5 h-1.5 overflow-hidden rounded-full bg-sand">
+            <div
+              class="h-full rounded-full bg-clay transition-[width] duration-500 ease-[cubic-bezier(.22,1,.36,1)]"
+              [style.width.%]="cart.freeShippingProgress() * 100"
+            ></div>
+          </div>
         </div>
-      </div>
+      }
 
       <!-- Líneas -->
       <ul class="flex-1 divide-y divide-sand overflow-y-auto px-6">
@@ -92,7 +94,14 @@
 
             <div class="flex min-w-0 flex-1 flex-col">
               <h3 class="truncate text-base font-medium text-ink">{{ line.product.name }}</h3>
-              <p class="truncate text-sm text-ink-muted">{{ line.product.origin }}</p>
+              @if (line.session; as sesion) {
+                <p class="truncate text-sm text-ink-muted">
+                  {{ fechaSesion(sesion.start) }}
+                  @if (sesion.location) { · {{ sesion.location }} }
+                </p>
+              } @else {
+                <p class="truncate text-sm text-ink-muted">{{ line.product.origin }}</p>
+              }
 
               <div class="mt-auto flex items-center justify-between gap-3 pt-3">
                 <!-- Selector de cantidad -->
@@ -117,7 +126,7 @@
                     [disabled]="cart.atStockLimit(line.product.id)"
                     [attr.title]="
                       cart.atStockLimit(line.product.id)
-                        ? 'Solo quedan ' + line.product.stock + ' en bodega'
+                        ? (line.session ? 'No queda más cupo en esa sesión' : 'Solo quedan ' + line.product.stock + ' en bodega')
                         : null
                     "
                     (click)="increase(line.product.id, line.quantity)"
@@ -139,30 +148,34 @@
 
       <!-- Resumen -->
       <div class="border-t border-sand px-6 py-5">
-        <!-- Ventana semanal: se pide antes del jueves o se despacha el domingo siguiente -->
-        <div
-          class="mb-4 rounded-md border px-4 py-3"
-          [class]="cutoffNear ? 'border-clay/40 bg-clay/5' : 'border-sand bg-linen/50'"
-        >
-          <p class="text-sm" [class]="cutoffNear ? 'font-semibold text-clay-deep' : 'text-ink'">
-            Pedidos hasta el {{ cutoffDay }} a las 12:00 m.
-          </p>
-          <p class="mt-0.5 text-xs text-ink-soft">
-            Lo que pidas ahora sale el {{ dispatchDay }}, después del mediodía.
-          </p>
-        </div>
+        <!-- Ventana semanal: no aplica a una reserva de servicio, que se entrega en su propia fecha -->
+        @if (cart.cartType() !== 'servicio') {
+          <div
+            class="mb-4 rounded-md border px-4 py-3"
+            [class]="cutoffNear ? 'border-clay/40 bg-clay/5' : 'border-sand bg-linen/50'"
+          >
+            <p class="text-sm" [class]="cutoffNear ? 'font-semibold text-clay-deep' : 'text-ink'">
+              Pedidos hasta el {{ cutoffDay }} a las 12:00 m.
+            </p>
+            <p class="mt-0.5 text-xs text-ink-soft">
+              Lo que pidas ahora sale el {{ dispatchDay }}, después del mediodía.
+            </p>
+          </div>
+        }
 
         <dl class="flex flex-col gap-2 text-sm">
           <div class="flex justify-between text-ink-soft">
             <dt>Subtotal</dt>
             <dd class="tabular text-ink">{{ cart.subtotal() | cop }}</dd>
           </div>
-          <div class="flex justify-between text-ink-soft">
-            <dt>Envío</dt>
-            <dd class="tabular" [class]="cart.shipping() === 0 ? 'text-moss font-semibold' : 'text-ink'">
-              {{ cart.shipping() === 0 ? 'Gratis' : (cart.shipping() | cop) }}
-            </dd>
-          </div>
+          @if (cart.cartType() !== 'servicio') {
+            <div class="flex justify-between text-ink-soft">
+              <dt>Envío</dt>
+              <dd class="tabular" [class]="cart.shipping() === 0 ? 'text-moss font-semibold' : 'text-ink'">
+                {{ cart.shipping() === 0 ? 'Gratis' : (cart.shipping() | cop) }}
+              </dd>
+            </div>
+          }
           <div class="mt-2 flex items-baseline justify-between border-t border-sand pt-3">
             <dt class="text-base text-ink">Total</dt>
             <dd class="tabular text-h3 text-ink">{{ cart.total() | cop }}</dd>
@@ -170,11 +183,11 @@
         </dl>
 
         <a
-          routerLink="/checkout"
+          [routerLink]="checkoutPath()"
           class="mt-5 block w-full rounded-full bg-clay py-4 text-center text-sm font-semibold text-bone transition-colors duration-200 hover:bg-clay-deep"
           (click)="cart.close()"
         >
-          Finalizar compra
+          {{ cart.cartType() === 'servicio' ? 'Reservar' : 'Finalizar compra' }}
         </a>
 
         <p class="mt-3 text-center text-xs text-ink-muted">

@@ -1,3 +1,28 @@
+/**
+ * 'fisico' = stock/peso, se envía o se recoge (todo el catálogo de siempre).
+ * 'servicio' = se reserva por fecha y cupo — ver `ProductSession` (0038): no
+ * usa `stock`/`unit`, no lleva dirección de envío en el checkout.
+ */
+export type ProductType = 'fisico' | 'servicio';
+
+/** Una salida/cita reservable de un producto 'servicio': fecha y cupo. */
+export interface ProductSession {
+  readonly id: string;
+  readonly start: string;
+  readonly end?: string;
+  readonly location?: string;
+  readonly capacityTotal: number;
+  /** Ya restado: cuántos cupos quedan, no cuántos se han tomado. */
+  readonly capacityAvailable: number;
+}
+
+/** Una foto de la galería de un producto, para el carrusel de su ficha (0039). */
+export interface ProductPhoto {
+  readonly id: string;
+  readonly url: string;
+  readonly alt: string;
+}
+
 /** Etiqueta destacada de una tarjeta. Un producto muestra como máximo una. */
 export type ProductBadge = 'nuevo' | 'bestseller' | 'temporada' | 'ultimas-unidades';
 
@@ -19,6 +44,9 @@ export interface Product {
   readonly name: string;
   /** Frase corta de apoyo bajo el nombre. */
   readonly tagline: string;
+  /** Párrafo completo para la ficha de detalle (0039): itinerario, qué
+   *  incluye, qué llevar… Vacío si nadie lo ha escrito todavía. */
+  readonly description: string;
   readonly categoryId: CategoryId;
   /**
    * Lo que paga **este** cliente. Ya lleva aplicado el descuento de mayorista
@@ -107,6 +135,25 @@ export interface Product {
    * sin saber que las canastas existen.
    */
   readonly contains?: readonly ProductComponent[];
+  /**
+   * 'fisico' si no viene del backend — es lo que era todo el catálogo antes
+   * de existir los servicios (0038). Con 'servicio', `stock`/`unit` no
+   * significan nada: la disponibilidad real vive en `sessions`.
+   */
+  readonly type: ProductType;
+  /**
+   * Las próximas salidas/citas reservables, solo en un producto 'servicio'.
+   * Ausente en 'fisico' y también en un 'servicio' sin ninguna sesión futura
+   * activa — la ficha lo muestra como "sin fechas disponibles" en vez de una
+   * lista vacía indistinguible de "todavía no cargó".
+   */
+  readonly sessions?: readonly ProductSession[];
+  /**
+   * La galería completa para el carrusel de la ficha de detalle (0039).
+   * Ausente cuando nadie ha subido ninguna — la ficha cae entonces en
+   * `image`/`imageHover`, las dos de siempre.
+   */
+  readonly photos?: readonly ProductPhoto[];
 }
 
 /** Un producto dentro de una canasta, tal como se le enseña al cliente. */
@@ -260,6 +307,16 @@ export function marginPercentOf(product: Product): number {
 export type AdminGroup = string;
 
 /**
+ * Las dos vitrinas públicas independientes (0040): `/mercado`
+ * (QualityMarketShop) y `/turismo` (QualityTourShop). A diferencia de
+ * `AdminGroup` —que es cualquier fila de `admin_groups`— esto es literal:
+ * son las dos únicas ramas de ruta que existen, y de las que dependen el
+ * tema visual, la marca (`SiteConfigService.nameFor`) y la navegación de
+ * `Header`/`Footer`.
+ */
+export type PublicWorkspace = 'mercado' | 'turismo';
+
+/**
  * Un grupo tal como lo pinta la solapa de la vitrina.
  *
  * Los grupos eran internos del panel de compras. Al subirlos a la tienda hacen
@@ -278,6 +335,13 @@ export interface Group {
   readonly name: string;
   /** Clave de la silueta, igual que en `Category.icon`. */
   readonly icon: string;
+  /**
+   * Vestido visual que toma la tienda mientras este grupo está activo
+   * (0039) — una clase `theme-<theme>` que `PublicShell` pone en
+   * `<body>` y que redefine los mismos tokens de color de `styles.css`.
+   * Vacío = el tema de por defecto, sin clase.
+   */
+  readonly theme: string;
 }
 
 // `ADMIN_GROUP_LABELS` vivía aquí: un array fijo con las tres opciones y sus
@@ -356,4 +420,28 @@ export function unitPresentation(quantity: number, unit: ProductUnit): string {
 export function componentPortion(component: ProductComponent): string {
   const presentacion = unitPresentation(component.unitQuantity, component.unit);
   return component.quantity === 1 ? presentacion : `${component.quantity} × ${presentacion}`;
+}
+
+/**
+ * «viernes 14 mar · 9:00 a. m.» — fecha y hora de una sesión reservable.
+ *
+ * Usa `Intl.DateTimeFormat` en vez del pipe `date` de Angular a propósito:
+ * ese pipe exige registrar los datos de idioma de CLDR (`registerLocaleData`,
+ * que este proyecto nunca hizo — ver `ordering-window.ts` para el mismo
+ * criterio con las fechas del ciclo semanal) y sin ellos revienta en
+ * producción con "Missing locale data". `Intl` es una API del navegador: 'es-CO'
+ * funciona sin registrar nada.
+ */
+export function formatSessionDate(iso: string): string {
+  const date = new Date(iso);
+  const formatted = new Intl.DateTimeFormat('es-CO', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+  // Colombia usa coma tras el día de la semana ("viernes, 14 mar"); esta
+  // tienda ya usa el punto medio en el resto de fechas compuestas.
+  return formatted.replace(',', ' ·');
 }

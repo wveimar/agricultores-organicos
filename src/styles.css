@@ -1,9 +1,13 @@
 @import 'tailwindcss';
 
 /* ===========================================================================
-   Design tokens — Agricultores Orgánicos
-   Ver doc/plan.md §2 y §3. Todo token declarado aquí queda disponible como
-   utilidad de Tailwind (bg-bone, text-moss, font-display, ...).
+   Design tokens del proyecto.
+   Este es el único fichero que hay que re-tocar para re-vestir la tienda a
+   otra marca: colores, tipografías y las utilidades de Tailwind que generan
+   (bg-bone, text-moss, font-display, ...). El nombre, el WhatsApp y los
+   datos bancarios NO viven aquí — son datos, no diseño: ver `SiteConfigService`
+   y `leerMarca()` en el Worker (`PUT /api/admin/settings`).
+   Ver doc/plan.md §2 y §3 para el razonamiento detrás de esta paleta.
    =========================================================================== */
 @theme {
   /* --- Neutros cálidos: superficie --- */
@@ -61,6 +65,45 @@
 
   /* --- Movimiento --- */
   --ease-organic: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ===========================================================================
+   Temas por grupo (0039)
+   `PublicShell` pone `theme-<valor>` en `<body>` según el `tema` del grupo
+   activo (ver `admin_groups.tema`) — cada bloque de abajo redefine los MISMOS
+   tokens del `@theme` de arriba, así que toda utilidad que ya existe
+   (bg-moss, text-sage, border-sand…) cambia sola, sin tocar ni una plantilla.
+   Añadir un tema nuevo es copiar un bloque como este con otros valores y
+   ponerle ese nombre al grupo desde el panel — nada de código además de esto.
+   =========================================================================== */
+
+/* Turismo: se aleja a propósito del verde de la vitrina de productos frescos
+   — un tour no es una cosecha—, hacia un azul claro y blanco que se lee como
+   cielo/agua. `clay`, `honey` y `berry` no se tocan: son los acentos
+   funcionales (CTA, alerta) y su contraste ya está pensado para funcionar
+   sobre cualquier fondo neutro. */
+body.theme-turismo {
+  --color-bone: #f7fbff;
+  --color-linen: #eaf3fb;
+  --color-sand: #d3e6f5;
+  --color-stone: #9ec2e0;
+
+  --color-moss: #1f6fb2;
+  --color-moss-deep: #144a78;
+  --color-sage: #6fa8dc;
+  --color-sage-light: #dbeafe;
+
+  --color-ink: #142a3d;
+  --color-ink-soft: #3d5872;
+  --color-ink-muted: #7996ad;
+}
+
+/* El cambio de tema es instantáneo por defecto — con `prefers-reduced-motion`
+   respetado más abajo, esta transición ya queda anulada sin condición aparte. */
+body {
+  transition:
+    background-color 0.4s var(--ease-organic),
+    color 0.4s var(--ease-organic);
 }
 
 /* ===========================================================================

@@ -2,7 +2,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, catchError, map, tap, throwError } from 'rxjs';
 import { ApiSession, TokenStore } from './token-store';
-import { UserRole, WholesaleRole } from '../models/user.model';
+import { UserRole, WholesaleRole, Workspace } from '../models/user.model';
 import { PaymentMethod, WebPaymentMethod } from '../models/order.model';
 import {
   CategoryId,
@@ -10,6 +10,43 @@ import {
   ProductBadge,
   ProductUnit,
 } from '../models/product.model';
+
+/**
+ * `GET /api/config` — lo único que la tienda pública necesita antes incluso
+ * de tener sesión: la sitekey de Turnstile y la marca del sitio. Sirve para
+ * que clonar este proyecto a un cliente nuevo sea cambiar estos valores en
+ * `app_settings` (ver `leerMarca()` en el Worker), no grepear el repo.
+ */
+export interface ApiSiteConfig {
+  readonly turnstileSiteKey: string;
+  /** Marca del *panel* (login, menú del admin) — no de ninguna vitrina pública. */
+  readonly siteName: string;
+  readonly siteTagline: string;
+  readonly metaDescription: string;
+  readonly footerDescription: string;
+  /** Formato internacional sin "+", ej. "573001234567". */
+  readonly whatsappNumber: string;
+  readonly bank: {
+    readonly bank: string;
+    readonly accountType: string;
+    readonly accountNumber: string;
+    readonly holder: string;
+    readonly holderDocument: string;
+  };
+  /**
+   * Marca de cada vitrina pública (0040): el split QualityMarketShop /
+   * QualityTourShop en `/mercado` y `/turismo`. WhatsApp y datos bancarios se
+   * quedan arriba, compartidos — es el mismo negocio por debajo.
+   */
+  readonly marketName: string;
+  readonly marketTagline: string;
+  readonly marketMetaDescription: string;
+  readonly marketFooterDescription: string;
+  readonly tourName: string;
+  readonly tourTagline: string;
+  readonly tourMetaDescription: string;
+  readonly tourFooterDescription: string;
+}
 
 /** Cuenta del panel. `password_hash` nunca sale del servidor. */
 export interface ApiUser {
@@ -37,6 +74,8 @@ export interface ApiUser {
   readonly contactId: string | null;
   /** El nombre de esa ficha, para pintarlo sin cruzar con Contactos. */
   readonly contactoNombre: string | null;
+  /** Qué mitad del panel ve (0040). Ver `Workspace`. */
+  readonly workspace: Workspace;
 }
 
 /** Forma estable de los errores del Worker: `{ error: { code, message, details } }`. */
@@ -119,6 +158,8 @@ export interface ApiPublicGroup {
   readonly icono: string;
   /** Posición de la solapa. Menor va antes. */
   readonly orden: number;
+  /** Clase `theme-<tema>` que la tienda aplica mientras este grupo está activo (0039). Vacío = tema de por defecto. */
+  readonly tema: string;
 }
 
 /**
@@ -141,10 +182,42 @@ export interface ApiAdminGroup {
   readonly activo: 0 | 1;
   /** Clave de la silueta (`CategoryIcon`, compartida con categorías). Vacío = la de por defecto. */
   readonly icono: string;
+  /** Clase `theme-<tema>` que la tienda aplica mientras este grupo está activo (0039). */
+  readonly tema: string;
   readonly actualizadoEn: string;
   /** Cuántas categorías y productos lo usan. Solo en `/api/admin/admin-groups`. */
   readonly categorias?: number;
   readonly productos?: number;
+}
+
+/** Una salida/cita reservable de un producto 'servicio' (migración 0038). */
+export interface ApiProductSession {
+  readonly id: string;
+  readonly inicio: string;
+  readonly fin: string | null;
+  readonly ubicacion: string | null;
+  readonly cupoTotal: number;
+  /** Ya restado: cuánto cupo queda, no cuánto se ha tomado. */
+  readonly cupoDisponible: number;
+}
+
+/** Cómo ve el panel una sesión: cupo reservado en crudo, no ya restado. */
+export interface ApiAdminProductSession {
+  readonly id: string;
+  readonly productId: string;
+  readonly inicio: string;
+  readonly fin: string | null;
+  readonly ubicacion: string | null;
+  readonly cupoTotal: number;
+  readonly cupoReservado: number;
+  readonly activo: 0 | 1;
+}
+
+/** Una foto de la galería de un producto (0039), para el carrusel de su ficha. */
+export interface ApiProductPhoto {
+  readonly id: string;
+  readonly url: string;
+  readonly alt: string;
 }
 
 export interface ApiProduct {
@@ -152,6 +225,10 @@ export interface ApiProduct {
   readonly slug: string;
   readonly nombre: string;
   readonly tagline: string;
+  /** Párrafo largo para la ficha de detalle (0039). '' si nadie lo escribió. */
+  readonly descripcion: string;
+  /** 'fisico' | 'servicio' (0038). Ausente = 'fisico', como era todo antes. */
+  readonly tipo?: 'fisico' | 'servicio';
   readonly categoriaId: string;
   readonly grupoAdmin: string;
   readonly precio: number;
@@ -226,6 +303,14 @@ export interface ApiProduct {
    * decimal en vez de un conteo de unidades. Solo en `/api/admin/*`.
    */
   readonly vendidoPorPeso?: number;
+  /**
+   * Las próximas salidas/citas activas, solo cuando `tipo === 'servicio'` y
+   * el producto tiene al menos una futura. Viaja en `/api/products` igual
+   * que `contiene`: es lo que necesita el selector de fecha de la tienda.
+   */
+  readonly sesiones?: readonly ApiProductSession[];
+  /** La galería completa, para el carrusel de la ficha de detalle (0039). */
+  readonly fotos?: readonly ApiProductPhoto[];
 }
 
 /**
@@ -245,6 +330,7 @@ export function toProduct(p: ApiProduct): Product {
     slug: p.slug,
     name: p.nombre,
     tagline: p.tagline,
+    description: p.descripcion ?? '',
     categoryId: p.categoriaId as CategoryId,
     // `price` es siempre lo que paga quien mira: con tarifa de mayorista, el
     // precio ya descontado. Así el carrito y el checkout suman sin saber que
@@ -277,6 +363,16 @@ export function toProduct(p: ApiProduct): Product {
       unit: c.unidad as ProductUnit,
       unitQuantity: c.cantidadUnidad,
     })),
+    type: p.tipo === 'servicio' ? 'servicio' : 'fisico',
+    sessions: p.sesiones?.map((s) => ({
+      id: s.id,
+      start: s.inicio,
+      end: s.fin ?? undefined,
+      location: s.ubicacion ?? undefined,
+      capacityTotal: s.cupoTotal,
+      capacityAvailable: s.cupoDisponible,
+    })),
+    photos: p.fotos?.map((f) => ({ id: f.id, url: f.url, alt: f.alt })),
   };
 }
 
@@ -351,6 +447,13 @@ export interface ApiOrder {
   readonly domiciliarioId: string | null;
   /** Copia congelada: sobrevive a que se borre la cuenta del domiciliario. */
   readonly domiciliarioNombre: string | null;
+  /**
+   * `true` si es un pedido de reservas de tours (0040): sus líneas llevan
+   * `sessionId`. Un pedido nunca mezcla productos físicos y servicios, así
+   * que esto clasifica el pedido entero — lo usa `AdminApiService` para
+   * separar Mercado de Turismo en el panel.
+   */
+  readonly esServicio: 0 | 1;
   readonly items: readonly ApiOrderItem[];
 }
 
@@ -548,6 +651,8 @@ export interface ApiCashConsolidado {
 export interface ApiAjuste {
   readonly clave: string;
   readonly descripcion: string;
+  /** Cómo pintarlo: interruptor Sí/No, o campo de texto libre. */
+  readonly tipo: 'texto' | 'booleano';
   readonly valor: string;
 }
 
@@ -1300,11 +1405,14 @@ export class ApiClient {
 
   // ──────────────────────────────── Auth ────────────────────────────────
 
-  /** Sitekey pública de Turnstile. Vacía = no está configurada en el servidor. */
-  config(): Observable<{ turnstileSiteKey: string }> {
-    return this.http
-      .get<{ turnstileSiteKey: string }>('/api/config')
-      .pipe(catchError(handleError));
+  /**
+   * Configuración pública: sitekey de Turnstile y la marca del sitio (nombre,
+   * WhatsApp, datos bancarios…). Sitekey vacía = Turnstile no está
+   * configurado en el servidor. Ver `SiteConfigService`, que es quien de
+   * verdad consume esto — casi nada más debería llamar aquí directamente.
+   */
+  config(): Observable<ApiSiteConfig> {
+    return this.http.get<ApiSiteConfig>('/api/config').pipe(catchError(handleError));
   }
 
   login(email: string, password: string, turnstileToken?: string | null): Observable<ApiSession> {
@@ -1360,6 +1468,7 @@ export class ApiClient {
     nombre: string;
     password: string;
     roles: readonly UserRole[];
+    workspace?: Workspace;
   }): Observable<ApiUser> {
     return this.http
       .post<{ user: ApiUser }>('/api/admin/users', input)
@@ -1376,6 +1485,7 @@ export class ApiClient {
       activo: 0 | 1;
       /** `null` desenlaza la ficha de la agenda. */
       contactId: string | null;
+      workspace: Workspace;
     }>,
   ): Observable<ApiUser> {
     return this.http
@@ -1524,6 +1634,94 @@ export class ApiClient {
       .pipe(catchError(handleError));
   }
 
+  // ────────────────── Sesiones de un producto-servicio (0038) ──────────────────
+
+  /** Cómo ve el panel una sesión: con cupo reservado y si está activa. */
+  listProductSessions(productId: string): Observable<readonly ApiAdminProductSession[]> {
+    return this.http
+      .get<{ sesiones: ApiAdminProductSession[] }>(`/api/admin/products/${productId}/sesiones`)
+      .pipe(map((res) => res.sesiones), catchError(handleError));
+  }
+
+  createProductSession(
+    productId: string,
+    input: { inicio: string; fin?: string; ubicacion?: string; cupoTotal: number },
+  ): Observable<readonly ApiAdminProductSession[]> {
+    return this.http
+      .post<{ sesiones: ApiAdminProductSession[] }>(
+        `/api/admin/products/${productId}/sesiones`,
+        input,
+      )
+      .pipe(map((res) => res.sesiones), catchError(handleError));
+  }
+
+  updateProductSession(
+    productId: string,
+    sessionId: string,
+    patch: Partial<{
+      inicio: string;
+      fin: string | null;
+      ubicacion: string | null;
+      cupoTotal: number;
+      activo: 0 | 1;
+    }>,
+  ): Observable<readonly ApiAdminProductSession[]> {
+    return this.http
+      .patch<{ sesiones: ApiAdminProductSession[] }>(
+        `/api/admin/products/${productId}/sesiones/${sessionId}`,
+        patch,
+      )
+      .pipe(map((res) => res.sesiones), catchError(handleError));
+  }
+
+  /** Falla con `sesion-con-reservas` si ya tiene reservas: desactívala en vez de borrarla. */
+  deleteProductSession(
+    productId: string,
+    sessionId: string,
+  ): Observable<readonly ApiAdminProductSession[]> {
+    return this.http
+      .delete<{ sesiones: ApiAdminProductSession[] }>(
+        `/api/admin/products/${productId}/sesiones/${sessionId}`,
+      )
+      .pipe(map((res) => res.sesiones), catchError(handleError));
+  }
+
+  // ───────────────── Galería de fotos de un producto (0039) ─────────────────
+
+  listProductPhotos(productId: string): Observable<readonly ApiProductPhoto[]> {
+    return this.http
+      .get<{ fotos: ApiProductPhoto[] }>(`/api/admin/products/${productId}/fotos`)
+      .pipe(map((res) => res.fotos), catchError(handleError));
+  }
+
+  createProductPhoto(
+    productId: string,
+    input: { url: string; alt?: string; orden?: number },
+  ): Observable<readonly ApiProductPhoto[]> {
+    return this.http
+      .post<{ fotos: ApiProductPhoto[] }>(`/api/admin/products/${productId}/fotos`, input)
+      .pipe(map((res) => res.fotos), catchError(handleError));
+  }
+
+  updateProductPhoto(
+    productId: string,
+    photoId: string,
+    patch: Partial<{ alt: string; orden: number }>,
+  ): Observable<readonly ApiProductPhoto[]> {
+    return this.http
+      .patch<{ fotos: ApiProductPhoto[] }>(
+        `/api/admin/products/${productId}/fotos/${photoId}`,
+        patch,
+      )
+      .pipe(map((res) => res.fotos), catchError(handleError));
+  }
+
+  deleteProductPhoto(productId: string, photoId: string): Observable<readonly ApiProductPhoto[]> {
+    return this.http
+      .delete<{ fotos: ApiProductPhoto[] }>(`/api/admin/products/${productId}/fotos/${photoId}`)
+      .pipe(map((res) => res.fotos), catchError(handleError));
+  }
+
   // ────────────────────────────── Catálogo ──────────────────────────────
 
   products(): Observable<readonly ApiProduct[]> {
@@ -1542,13 +1740,17 @@ export class ApiClient {
     nombre: string;
     slug?: string;
     tagline?: string;
+    /** Párrafo largo para la ficha de detalle (0039). */
+    descripcion?: string;
     categoriaId: string;
     grupoAdmin: string;
     precio: number;
     precioCosto?: number;
-    unidad: string;
+    /** Requerida solo para 'fisico'; un servicio no tiene presentación. */
+    unidad?: string;
     cantidadUnidad?: number;
-    origen: string;
+    /** Requerido solo para 'fisico'; un servicio no tiene finca de origen. */
+    origen?: string;
     imagen: string;
     imagenHover?: string;
     imagenAlt: string;
@@ -1556,8 +1758,10 @@ export class ApiClient {
     parentId?: string | null;
     /** Solo tiene efecto en las madres: 'presentación', 'sabor'… */
     varianteEtiqueta?: string | null;
-    /** 1 = se vende a granel, pesado en la caja. */
+    /** 1 = se vende a granel, pesado en la caja. Solo aplica a 'fisico'. */
     vendidoPorPeso?: 0 | 1;
+    /** 'fisico' | 'servicio' (0038). Ausente = 'fisico'. */
+    tipo?: 'fisico' | 'servicio';
   }): Observable<ApiProduct> {
     return this.http
       .post<{ product: ApiProduct }>('/api/admin/products', input)
@@ -1595,13 +1799,17 @@ export class ApiClient {
     nombre: string;
     slug?: string;
     tagline?: string;
+    /** Párrafo largo para la ficha de detalle (0039). */
+    descripcion?: string;
     categoriaId: string;
     grupoAdmin: string;
     precio: number;
     precioCosto: number;
-    unidad: string;
+    /** Requerida solo para 'fisico'; un servicio no tiene presentación. */
+    unidad?: string;
     cantidadUnidad?: number;
-    origen: string;
+    /** Requerido solo para 'fisico'; un servicio no tiene finca de origen. */
+    origen?: string;
     imagen: string;
     imagenHover?: string;
     imagenAlt: string;
@@ -1613,8 +1821,14 @@ export class ApiClient {
      */
     parentId?: string | null;
     varianteEtiqueta?: string | null;
-    /** 1 = se vende a granel, pesado en la caja. */
+    /** 1 = se vende a granel, pesado en la caja. Solo aplica a 'fisico'. */
     vendidoPorPeso?: 0 | 1;
+    /**
+     * 'fisico' | 'servicio' (0038). Obligatorio: el Worker lo exige a
+     * propósito para que un formulario que no lo conozca no pueda convertir
+     * en silencio un servicio de vuelta a físico. Ver `requireTipo()`.
+     */
+    tipo: 'fisico' | 'servicio';
   }): Observable<ApiProduct> {
     return this.http
       .put<{ product: ApiProduct }>(`/api/admin/products/${id}`, input)
@@ -1626,11 +1840,20 @@ export class ApiClient {
   createOrder(input: {
     clienteNombre: string;
     clienteTelefono: string;
+    /**
+     * Vacía cuando el carrito es solo de servicios (0038): el Worker no la
+     * exige en ese caso — una reserva se confirma por sesión, no por dirección.
+     */
     clienteDireccion: string;
     /** La cedula del cliente. Obligatoria desde que es la llave de negocio. */
     clienteCedula: string;
     envio: number;
-    items: readonly { productId: string; cantidad: number }[];
+    items: readonly {
+      productId: string;
+      cantidad: number;
+      /** Solo en un producto 'servicio': qué sesión reservó esta línea. */
+      sessionId?: string;
+    }[];
     comprobanteNombre?: string;
     /** Data URL del comprobante ya comprimido (ver `shared/utils/image-file.ts`). */
     comprobanteUrl?: string;

@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { Router } from '@angular/router';
 import { CartService } from '../../../core/services/cart.service';
 import { CatalogService } from '../../../core/services/catalog.service';
 import { ProductSheet } from '../../../core/services/product-sheet.service';
@@ -41,6 +42,7 @@ export class ProductCard {
   private readonly cart = inject(CartService);
   private readonly catalog = inject(CatalogService);
   private readonly sheet = inject(ProductSheet);
+  private readonly router = inject(Router);
 
   /**
    * Resumen de las variantes, o `null` si este producto se vende solo.
@@ -103,8 +105,18 @@ export class ProductCard {
 
   protected readonly isPriority = computed(() => this.index() < 4);
 
-  /** Disponibilidad derivada del inventario, no de un booleano guardado aparte. */
+  /** Solo en 'servicio': ¿hay al menos una sesión futura con cupo? */
+  protected readonly isService = computed(() => this.product().type === 'servicio');
+
+  /**
+   * Disponibilidad derivada del inventario, no de un booleano guardado
+   * aparte. Un servicio no tiene `stock` —siempre vale 0, no aplica—: su
+   * disponibilidad es que alguna sesión futura tenga cupo (ver `sessions`).
+   */
   protected readonly available = computed(() => {
+    if (this.isService()) {
+      return (this.product().sessions ?? []).some((s) => s.capacityAvailable > 0);
+    }
     const grupo = this.variants();
     return grupo ? grupo.stock > 0 : isInStock(this.product());
   });
@@ -159,7 +171,7 @@ export class ProductCard {
     this.variants() ? this.inCartVariants() : this.cart.quantityOf(this.product().id),
   );
 
-  /** Texto del botón. Con variantes no se añade nada: se abre la elección. */
+  /** Texto del botón. Con variantes o con un servicio no se añade nada: se abre la elección. */
   protected readonly actionLabel = computed(() => {
     const grupo = this.variants();
 
@@ -167,6 +179,10 @@ export class ProductCard {
       return this.inCart() > 0
         ? `Elegir otra · ${this.inCart()} en la canasta`
         : `Elegir entre ${grupo.count}`;
+    }
+
+    if (this.isService()) {
+      return this.inCart() > 0 ? `Cambiar fecha · ${this.inCart()} reservado(s)` : 'Elegir fecha';
     }
 
     return this.inCart() > 0 ? `Añadir otro · ${this.inCart()} en el carrito` : 'Añadir';
@@ -184,12 +200,15 @@ export class ProductCard {
   protected readonly addAriaLabel = computed(() => {
     const base = this.variants()
       ? `Elegir ${this.variantWord()} de ${this.product().name}`
-      : `Añadir ${this.product().name} al carrito`;
+      : this.isService()
+        ? `Elegir fecha para ${this.product().name}`
+        : `Añadir ${this.product().name} al carrito`;
 
     if (this.inCart() === 0) {
       return base;
     }
-    return `${base} · ${this.inCart()} en ${this.variants() ? 'la canasta' : 'el carrito'}`;
+    const destino = this.variants() ? 'la canasta' : this.isService() ? 'la reserva' : 'el carrito';
+    return `${base} · ${this.inCart()} en ${destino}`;
   });
 
   /**
@@ -199,10 +218,34 @@ export class ProductCard {
    * madre por si alguien llama a la API sin pasar por aquí.
    */
   protected add(): void {
+    if (this.isService()) {
+      this.verDetalle();
+      return;
+    }
     if (this.variants()) {
       this.sheet.open(this.product());
       return;
     }
     this.cart.add(this.product());
+  }
+
+  /**
+   * Un tour tiene bastante que enseñar —fotos, itinerario, fechas— como para
+   * merecer su propia URL en vez del modal compacto: ver `TourDetailPage`.
+   * Toda la tarjeta navega ahí, no solo el botón, porque en un tour la foto
+   * y el nombre son tan "elegir fecha" como el botón mismo.
+   */
+  protected verDetalle(): void {
+    // Solo 'servicio' llega aquí, y solo Turismo tiene productos de ese tipo
+    // (0040): no hace falta leer el workspace activo, esta ficha vive nada
+    // más bajo /turismo.
+    void this.router.navigate(['/turismo/producto', this.product().slug]);
+  }
+
+  /** Clic en cualquier punto no interactivo de la tarjeta: solo navega si es un tour. */
+  protected onCardClick(): void {
+    if (this.isService()) {
+      this.verDetalle();
+    }
   }
 }

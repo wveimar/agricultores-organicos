@@ -1,0 +1,124 @@
+<div class="space-y-5 rounded-md border border-sand/50 bg-linen/30 p-5">
+  <div>
+    <p class="text-sm font-semibold text-ink">Galería de fotos</p>
+    <p class="mt-1 text-sm text-ink-soft">
+      El carrusel que se ve en la ficha de detalle. La imagen principal de
+      arriba es la que sale en la tarjeta de la tienda; estas son las que se
+      ven al abrir el tour — el sitio, el recorrido, el grupo en acción.
+    </p>
+  </div>
+
+  @if (error(); as msg) {
+    <p class="rounded-md border border-berry/30 bg-berry/5 px-4 py-3 text-sm text-berry" role="alert">
+      {{ msg }}
+    </p>
+  }
+
+  @if (loading()) {
+    <p class="text-sm text-ink-muted">Cargando…</p>
+  } @else {
+    @if (photos().length === 0) {
+      <p class="rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink-soft">
+        Todavía no tiene fotos propias. Mientras tanto, la ficha usa la
+        imagen principal y la de hover como respaldo.
+      </p>
+    } @else {
+      <ul class="flex flex-col gap-2">
+        @for (photo of photos(); track photo.id; let i = $index; let first = $first; let last = $last) {
+          <li class="flex items-center gap-3 rounded-md border border-sand bg-bone p-2.5">
+            <img
+              [src]="photo.url"
+              [alt]="photo.alt"
+              class="size-16 shrink-0 rounded object-cover"
+              loading="lazy"
+            />
+
+            <div class="min-w-0 flex-1">
+              <label [for]="'foto-alt-' + photo.id" class="block text-xs font-medium text-ink-muted">
+                Texto alternativo
+              </label>
+              <input
+                [id]="'foto-alt-' + photo.id"
+                type="text"
+                [value]="photo.alt"
+                placeholder="Describe la foto para accesibilidad"
+                (change)="updateAlt(photo, $event)"
+                class="mt-1 w-full rounded-md border border-sand bg-transparent px-3 py-2 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+              />
+            </div>
+
+            <div class="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                class="flex size-8 items-center justify-center rounded-full border border-sand text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:opacity-30"
+                [disabled]="busyId() === photo.id || first"
+                (click)="mover(photo, -1)"
+                aria-label="Subir un puesto"
+                title="Subir un puesto"
+              >
+                <svg class="size-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M8 12V4M4 8l4-4 4 4" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="flex size-8 items-center justify-center rounded-full border border-sand text-ink-soft transition-colors duration-200 hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:opacity-30"
+                [disabled]="busyId() === photo.id || last"
+                (click)="mover(photo, 1)"
+                aria-label="Bajar un puesto"
+                title="Bajar un puesto"
+              >
+                <svg class="size-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M8 4v8m4-4-4 4-4-4" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rounded-full border border-sand px-3 py-2 text-sm text-ink-soft transition-colors duration-200 hover:border-berry hover:text-berry disabled:opacity-50"
+                [disabled]="busyId() === photo.id"
+                (click)="remove(photo)"
+              >
+                Quitar
+              </button>
+            </div>
+          </li>
+        }
+      </ul>
+    }
+
+    <!-- Añadir foto -->
+    <div class="flex flex-col gap-3 border-t border-sand/60 pt-4">
+      <app-image-field
+        [control]="nuevaFotoUrl"
+        label="Nueva foto"
+        fieldId="nueva-foto"
+        hint="Un enlace pesa nada y lo sirve el CDN de origen; una foto subida se guarda en la base."
+      />
+
+      <div class="flex flex-wrap items-end gap-3">
+        <div class="min-w-48 flex-1">
+          <label for="nueva-foto-alt" class="block text-xs font-semibold text-ink">
+            Texto alternativo <span class="font-normal text-ink-muted">(opcional)</span>
+          </label>
+          <input
+            id="nueva-foto-alt"
+            type="text"
+            [value]="nuevaFotoAlt()"
+            (input)="nuevaFotoAlt.set($any($event.target).value)"
+            placeholder="Describe la foto para accesibilidad"
+            class="mt-1.5 w-full rounded-md border border-sand bg-transparent px-3 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+          />
+        </div>
+
+        <button
+          type="button"
+          class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-bone transition-colors duration-200 hover:bg-moss-deep disabled:opacity-50"
+          [disabled]="adding() || !nuevaFotoUrl.value"
+          (click)="add()"
+        >
+          {{ adding() ? 'Añadiendo…' : 'Añadir foto' }}
+        </button>
+      </div>
+    </div>
+  }
+</div>

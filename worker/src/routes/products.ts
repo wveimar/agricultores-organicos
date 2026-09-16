@@ -1,8 +1,10 @@
 import { ApiError, json, readJson, requireInt, requireString } from '../http';
-import { Env, JwtPayload } from '../types';
+import { Env, JwtPayload, ProductType } from '../types';
 import { optionalAuth, requireRole } from '../auth/middleware';
 import { discountedPrice, loadDiscounts, loadUserRoles } from '../pricing';
 import { contenidoPublico } from '../combos';
+import { sesionesFuturasPublicas } from '../sessions';
+import { fotosDeProductos } from '../photos';
 import { validarGrupo } from './admin-groups';
 
 /**
@@ -49,7 +51,7 @@ function checkImageSource(value: string | undefined, field: string): void {
 
 /** Columnas que ve el público. `precio_costo` queda deliberadamente fuera. */
 const PUBLIC_COLUMNS = `
-  id, slug, nombre, tagline, categoria_id AS categoriaId, grupo_admin_id AS grupoAdmin,
+  id, slug, nombre, tagline, descripcion, tipo, categoria_id AS categoriaId, grupo_admin_id AS grupoAdmin,
   precio, precio_anterior AS precioAnterior, unidad, cantidad_unidad AS cantidadUnidad, origen, rating,
   review_count AS reviewCount, badge, destacado,
   -- Stock de una canasta: cuántas se pueden armar con lo que hay de sus
@@ -216,6 +218,7 @@ export async function listPublic(request: Request, env: Env, url: URL): Promise<
   const { results } = await env.DB.prepare(sql).bind(...bindings).all<{
     id: string;
     precio: number;
+    tipo: string;
   }>();
 
   /**
@@ -239,7 +242,18 @@ export async function listPublic(request: Request, env: Env, url: URL): Promise<
   // antes de pagarla; su `stock` ya viene calculado desde PUBLIC_COLUMNS.
   const contenidos = await contenidoPublico(env, ids);
 
-  if (discounts.size === 0 && contenidos.size === 0) {
+  // Las próximas salidas/citas de cada producto-servicio, para el selector
+  // de fecha de la tienda. Solo se consulta si el catálogo trae alguno: la
+  // inmensa mayoría de instalaciones no tiene ninguno.
+  const idsServicio = results.filter((p) => p.tipo === 'servicio').map((p) => p.id);
+  const sesiones = await sesionesFuturasPublicas(env, idsServicio);
+
+  // La galería de fotos, para el carrusel de la ficha de detalle. Se pide
+  // para todo el catálogo, no solo servicios: cualquier producto puede
+  // tener más de una foto.
+  const fotos = await fotosDeProductos(env, ids);
+
+  if (discounts.size === 0 && contenidos.size === 0 && sesiones.size === 0 && fotos.size === 0) {
     return json({ products: results });
   }
 
@@ -247,6 +261,8 @@ export async function listPublic(request: Request, env: Env, url: URL): Promise<
     products: results.map((product) => {
       const porcentaje = discounts.get(product.id);
       const contenido = contenidos.get(product.id);
+      const sesionesProducto = sesiones.get(product.id);
+      const fotosProducto = fotos.get(product.id);
 
       return {
         ...product,
@@ -257,6 +273,8 @@ export async function listPublic(request: Request, env: Env, url: URL): Promise<
             }
           : {}),
         ...(contenido ? { contiene: contenido } : {}),
+        ...(sesionesProducto ? { sesiones: sesionesProducto } : {}),
+        ...(fotosProducto ? { fotos: fotosProducto } : {}),
       };
     }),
   });
@@ -520,6 +538,8 @@ interface UpdateFullBody {
   nombre?: unknown;
   slug?: unknown;
   tagline?: unknown;
+  /** Párrafo largo para la ficha de detalle (0039). Opcional: '' si no viene. */
+  descripcion?: unknown;
   categoriaId?: unknown;
   grupoAdmin?: unknown;
   precio?: unknown;
@@ -534,13 +554,35 @@ interface UpdateFullBody {
   parentId?: unknown;
   /** Solo en las madres: 'presentación', 'sabor'… */
   varianteEtiqueta?: unknown;
-  /** 1 = se vende a granel, pesado en la caja. */
+  /** 1 = se vende a granel, pesado en la caja. Solo aplica a 'fisico'. */
   vendidoPorPeso?: unknown;
+  /** 'fisico' | 'servicio' (0038). Obligatorio: ver requireTipo(). */
+  tipo?: unknown;
 }
 
 /** `0` si no viene o viene basura: casi ningún producto se vende a granel. */
 function readVendidoPorPeso(value: unknown): 0 | 1 {
   return value === 1 || value === true ? 1 : 0;
+}
+
+/** `'fisico'` si no viene o viene basura: es lo que era todo el catálogo hasta 0038. */
+function readTipo(value: unknown): ProductType {
+  return value === 'servicio' ? 'servicio' : 'fisico';
+}
+
+/**
+ * `tipo` obligatorio y estricto, para un PUT que reemplaza el producto
+ * entero. A diferencia de `readTipo()` (que asume 'fisico' si no viene, la
+ * opción correcta al CREAR), aquí un valor ausente no puede significar
+ * "vuelve a físico": convertiría en silencio un servicio en un producto sin
+ * fecha ni cupo la primera vez que alguien edite el precio sin saber que
+ * este campo existe.
+ */
+function requireTipo(value: unknown): ProductType {
+  if (value !== 'fisico' && value !== 'servicio') {
+    throw ApiError.badRequest('tipo-invalido', 'El tipo de producto debe ser "fisico" o "servicio".');
+  }
+  return value;
 }
 
 /**
@@ -561,6 +603,7 @@ export async function updateFull(
   const nombre = body.nombre as string | undefined;
   const slug = body.slug as string | undefined;
   const tagline = (body.tagline as string) ?? '';
+  const descripcion = (body.descripcion as string) ?? '';
   const categoriaId = body.categoriaId as string | undefined;
   const grupoAdmin = body.grupoAdmin as string | undefined;
   const precio = body.precio !== undefined ? requireInt(body.precio, 'precio', 0) : undefined;
@@ -572,7 +615,10 @@ export async function updateFull(
   const imagen = body.imagen as string | undefined;
   const imagenHover = body.imagenHover as string | undefined;
   const imagenAlt = body.imagenAlt as string | undefined;
-  const vendidoPorPeso = readVendidoPorPeso(body.vendidoPorPeso);
+  const tipo = requireTipo(body.tipo);
+  // Un servicio no se pesa: forzado a 0 aunque llegue otra cosa en el
+  // cuerpo, para que no quede una combinación sin sentido en la base.
+  const vendidoPorPeso = tipo === 'servicio' ? 0 : readVendidoPorPeso(body.vendidoPorPeso);
 
   if (!nombre || nombre.trim().length === 0) {
     throw ApiError.badRequest('nombre-requerido', 'El nombre es requerido.');
@@ -590,12 +636,17 @@ export async function updateFull(
   if (precioCosto === undefined) {
     throw ApiError.badRequest('precio-costo-requerido', 'El precio de costo es requerido.');
   }
-  if (!unidad || unidad.trim().length === 0) {
+  // Unidad y origen son conceptos de inventario físico (qué presentación se
+  // vende, de qué finca viene): un servicio no tiene ni uno ni otro, así que
+  // solo se exigen para 'fisico'.
+  if (tipo === 'fisico' && (!unidad || unidad.trim().length === 0)) {
     throw ApiError.badRequest('unidad-requerida', 'La unidad es requerida.');
   }
-  if (!origen || origen.trim().length === 0) {
+  if (tipo === 'fisico' && (!origen || origen.trim().length === 0)) {
     throw ApiError.badRequest('origen-requerido', 'El origen es requerido.');
   }
+  const unidadFinal = unidad && unidad.trim() ? unidad.trim() : 'servicio';
+  const origenFinal = origen && origen.trim() ? origen.trim() : '';
   if (!imagen || imagen.trim().length === 0) {
     throw ApiError.badRequest('imagen-requerida', 'La imagen es requerida.');
   }
@@ -629,11 +680,11 @@ export async function updateFull(
   const extraValores: unknown[] = [];
   if (tocaParent) {
     extraValores.push(parentId);
-    extras.push(`parent_id = ?${14 + extraValores.length}`);
+    extras.push(`parent_id = ?${16 + extraValores.length}`);
   }
   if (tocaEtiqueta) {
     extraValores.push(varianteEtiqueta);
-    extras.push(`variante_etiqueta = ?${14 + extraValores.length}`);
+    extras.push(`variante_etiqueta = ?${16 + extraValores.length}`);
   }
 
   const updateSlug = slug ? slug : nombre
@@ -648,11 +699,12 @@ export async function updateFull(
       `UPDATE products SET
         slug = ?1, nombre = ?2, tagline = ?3, categoria_id = ?4, grupo_admin_id = ?5,
         precio = ?6, precio_costo = ?7, unidad = ?8, cantidad_unidad = ?9, origen = ?10,
-        imagen = ?11, imagen_hover = ?12, imagen_alt = ?13, vendido_por_peso = ?14,
+        imagen = ?11, imagen_hover = ?12, imagen_alt = ?13, vendido_por_peso = ?14, tipo = ?15,
+        descripcion = ?16,
         ${extras.map((set) => `${set}, `).join('')}actualizado_en = datetime('now')
-       WHERE id = ?${15 + extraValores.length}`,
+       WHERE id = ?${17 + extraValores.length}`,
     )
-      .bind(updateSlug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt, vendidoPorPeso, ...extraValores, productId)
+      .bind(updateSlug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidadFinal, cantidadUnidad, origenFinal, imagen, imagenHover ?? null, imagenAlt, vendidoPorPeso, tipo, descripcion, ...extraValores, productId)
       .run();
   } catch (error) {
     if ((error as Error).message.includes('UNIQUE constraint failed: products.slug')) {
@@ -676,6 +728,8 @@ interface CreateBody {
   nombre?: unknown;
   slug?: unknown;
   tagline?: unknown;
+  /** Párrafo largo para la ficha de detalle (0039). Opcional. */
+  descripcion?: unknown;
   categoriaId?: unknown;
   grupoAdmin?: unknown;
   precio?: unknown;
@@ -690,8 +744,10 @@ interface CreateBody {
   parentId?: unknown;
   /** Solo en las madres: 'presentación', 'sabor'… */
   varianteEtiqueta?: unknown;
-  /** 1 = se vende a granel, pesado en la caja. */
+  /** 1 = se vende a granel, pesado en la caja. Solo aplica a 'fisico'. */
   vendidoPorPeso?: unknown;
+  /** 'fisico' | 'servicio' (0038). Ausente = 'fisico', como era todo antes. */
+  tipo?: unknown;
 }
 
 /**
@@ -712,6 +768,7 @@ export async function create(
   const nombre = body.nombre as string | undefined;
   let slug = body.slug as string | undefined;
   const tagline = (body.tagline as string) ?? '';
+  const descripcion = (body.descripcion as string) ?? '';
   const categoriaId = body.categoriaId as string | undefined;
   const grupoAdmin = body.grupoAdmin as string | undefined;
   const precio = body.precio !== undefined ? requireInt(body.precio, 'precio', 0) : undefined;
@@ -723,7 +780,8 @@ export async function create(
   const imagen = body.imagen as string | undefined;
   const imagenHover = body.imagenHover as string | undefined;
   const imagenAlt = body.imagenAlt as string | undefined;
-  const vendidoPorPeso = readVendidoPorPeso(body.vendidoPorPeso);
+  const tipo = readTipo(body.tipo);
+  const vendidoPorPeso = tipo === 'servicio' ? 0 : readVendidoPorPeso(body.vendidoPorPeso);
 
   if (!nombre || nombre.trim().length === 0) {
     throw ApiError.badRequest('nombre-requerido', 'El nombre es requerido.');
@@ -738,12 +796,14 @@ export async function create(
   if (precio === undefined) {
     throw ApiError.badRequest('precio-requerido', 'El precio es requerido.');
   }
-  if (!unidad || unidad.trim().length === 0) {
+  if (tipo === 'fisico' && (!unidad || unidad.trim().length === 0)) {
     throw ApiError.badRequest('unidad-requerida', 'La unidad es requerida.');
   }
-  if (!origen || origen.trim().length === 0) {
+  if (tipo === 'fisico' && (!origen || origen.trim().length === 0)) {
     throw ApiError.badRequest('origen-requerido', 'El origen es requerido.');
   }
+  const unidadFinal = unidad && unidad.trim() ? unidad.trim() : 'servicio';
+  const origenFinal = origen && origen.trim() ? origen.trim() : '';
   if (!imagen || imagen.trim().length === 0) {
     throw ApiError.badRequest('imagen-requerida', 'La imagen es requerida.');
   }
@@ -783,10 +843,11 @@ export async function create(
       `INSERT INTO products (
         id, slug, nombre, tagline, categoria_id, grupo_admin, grupo_admin_id,
         precio, precio_costo, unidad, cantidad_unidad, origen,
-        imagen, imagen_hover, imagen_alt, parent_id, variante_etiqueta, vendido_por_peso
-      ) VALUES (?1, ?2, ?3, ?4, ?5, 'agroindustriales', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)`,
+        imagen, imagen_hover, imagen_alt, parent_id, variante_etiqueta, vendido_por_peso, tipo,
+        descripcion
+      ) VALUES (?1, ?2, ?3, ?4, ?5, 'agroindustriales', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)`,
     )
-      .bind(id, slug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidad, cantidadUnidad, origen, imagen, imagenHover ?? null, imagenAlt, parentId, varianteEtiqueta, vendidoPorPeso)
+      .bind(id, slug, nombre, tagline, categoriaId, grupoAdmin, precio, precioCosto, unidadFinal, cantidadUnidad, origenFinal, imagen, imagenHover ?? null, imagenAlt, parentId, varianteEtiqueta, vendidoPorPeso, tipo, descripcion)
       .run();
   } catch (error) {
     if ((error as Error).message.includes('UNIQUE constraint failed: products.slug')) {

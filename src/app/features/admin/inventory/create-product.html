@@ -63,6 +63,46 @@
         />
       </div>
 
+      <!-- Descripción larga: la que se ve en la ficha de detalle (0039) -->
+      <div>
+        <label for="descripcion" class="block text-sm font-semibold text-ink">
+          Descripción
+          <span class="font-normal text-ink-muted">(párrafo largo de la ficha, opcional)</span>
+        </label>
+        <textarea
+          id="descripcion"
+          formControlName="descripcion"
+          rows="5"
+          class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+          placeholder="Qué incluye, cómo es el recorrido, qué llevar, duración…"
+        ></textarea>
+        <p class="mt-2 text-sm text-ink-soft">
+          Es lo que se lee en «Detalles» al abrir la ficha completa — la
+          tarjeta de la tienda sigue usando el tagline de arriba.
+        </p>
+      </div>
+
+      <!-- Tipo de producto: decide qué campos de abajo aplican -->
+      <div>
+        <label for="tipo" class="block text-sm font-semibold text-ink">Tipo de producto</label>
+        <select
+          id="tipo"
+          [value]="tipo()"
+          (change)="onTipoChange($event)"
+          class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+        >
+          <option value="fisico">Físico — stock, se envía o se recoge</option>
+          <option value="servicio">Servicio — se reserva por fecha y cupo</option>
+        </select>
+        @if (esServicio()) {
+          <p class="mt-2 text-sm text-ink-soft">
+            Sin dirección de envío ni peso. Al guardar, se abre la ficha para
+            que agregues al menos una sesión y más fotos — sin una sesión con
+            cupo no se puede reservar.
+          </p>
+        }
+      </div>
+
       <!-- Categoría -->
       <div>
         <label for="categoria" class="block text-sm font-semibold text-ink">Categoría</label>
@@ -126,77 +166,85 @@
           <app-field-error [for]="errPrecioCosto" message="Requerido. Pon 0 si no lo llevas." />
         </div>
       </div>
-        <!-- Presentación: cuánto se lleva el cliente por el precio marcado -->
-        <div class="grid gap-4 sm:grid-cols-[7rem_1fr]">
+        @if (!esServicio()) {
+          <!-- Presentación: cuánto se lleva el cliente por el precio marcado -->
+          <div class="grid gap-4 sm:grid-cols-[7rem_1fr]">
+            <div>
+              <label for="cantidad" class="block text-sm font-semibold text-ink">Cantidad</label>
+              <input
+                id="cantidad"
+                #errCantidad="fieldError"
+                type="number"
+                formControlName="cantidadUnidad"
+                [appFieldError]="form.controls.cantidadUnidad"
+                min="1"
+                step="1"
+                required
+                aria-required="true"
+                class="tabular mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+              />
+              <app-field-error [for]="errCantidad" message="Mínimo 1." />
+            </div>
+
+            <div>
+              <label for="unidad" class="block text-sm font-semibold text-ink">Unidad</label>
+              <select
+                id="unidad"
+                formControlName="unidad"
+                required
+                aria-required="true"
+                class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+              >
+                @for (u of unidades; track u.value) {
+                  <option [value]="u.value">{{ u.label }}</option>
+                }
+              </select>
+            </div>
+          </div>
+
+          <p class="-mt-2 text-sm text-ink-soft">
+            El cliente verá <strong class="text-ink">{{ vistaPrevia() }}</strong> junto al precio.
+          </p>
+
+          <!--
+            Solo afecta a la caja: si está marcado, el ticket del POS pide un
+            peso en kg con decimales en vez de un conteo de unidades enteras.
+            Oculto si el negocio desactivó el módulo (Ajustes): un catálogo
+            que nunca vende a granel no necesita la casilla.
+          -->
+          @if (adminApi.moduloVentaPorPeso()) {
+            <label class="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                formControlName="vendidoPorPeso"
+                class="h-4 w-4 rounded border-sand text-moss focus:ring-moss/30"
+              />
+              Se vende a granel, pesado en la caja
+            </label>
+          }
+
+          <!-- Origen -->
           <div>
-            <label for="cantidad" class="block text-sm font-semibold text-ink">Cantidad</label>
+            <label for="origen" class="block text-sm font-semibold text-ink">Origen</label>
             <input
-              id="cantidad"
-              #errCantidad="fieldError"
-              type="number"
-              formControlName="cantidadUnidad"
-              [appFieldError]="form.controls.cantidadUnidad"
-              min="1"
-              step="1"
-              required
-              aria-required="true"
-              class="tabular mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+              id="origen"
+              #errOrigen="fieldError"
+              type="text"
+              formControlName="origen"
+              [appFieldError]="form.controls.origen"
+              class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+              placeholder="Finca, región…"
             />
-            <app-field-error [for]="errCantidad" message="Mínimo 1." />
+            <app-field-error [for]="errOrigen" message="Requerido" />
           </div>
-
-          <div>
-            <label for="unidad" class="block text-sm font-semibold text-ink">Unidad</label>
-            <select
-              id="unidad"
-              formControlName="unidad"
-              required
-              aria-required="true"
-              class="mt-2 w-full rounded-md border border-sand bg-bone px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
-            >
-              @for (u of unidades; track u.value) {
-                <option [value]="u.value">{{ u.label }}</option>
-              }
-            </select>
-          </div>
-        </div>
-
-      <p class="-mt-2 text-sm text-ink-soft">
-        El cliente verá <strong class="text-ink">{{ vistaPrevia() }}</strong> junto al precio.
-      </p>
-
-      <!--
-        Solo afecta a la caja: si está marcado, el ticket del POS pide un
-        peso en kg con decimales en vez de un conteo de unidades enteras.
-      -->
-      <label class="flex items-center gap-2 text-sm text-ink">
-        <input
-          type="checkbox"
-          formControlName="vendidoPorPeso"
-          class="h-4 w-4 rounded border-sand text-moss focus:ring-moss/30"
-        />
-        Se vende a granel, pesado en la caja
-      </label>
-
-      <!-- Origen -->
-      <div>
-        <label for="origen" class="block text-sm font-semibold text-ink">Origen</label>
-        <input
-          id="origen"
-          #errOrigen="fieldError"
-          type="text"
-          formControlName="origen"
-          [appFieldError]="form.controls.origen"
-          class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
-          placeholder="Finca, región…"
-        />
-        <app-field-error [for]="errOrigen" message="Requerido" />
-      </div>
+        }
 
       <!--
         Variantes. Se llega aquí con la madre ya elegida desde «Añadir
-        variante» del inventario, o se elige a mano en el desplegable.
+        variante» del inventario, o se elige a mano en el desplegable. Solo
+        tiene sentido en un producto físico: un servicio no usa variantes en v1.
       -->
+      @if (!esServicio()) {
       <div class="space-y-5 rounded-md border border-sand/50 bg-linen/30 p-5">
         <div>
           <p class="text-sm font-semibold text-ink">Variantes</p>
@@ -273,6 +321,7 @@
           </div>
         }
       </div>
+      }
 
       <!-- Imágenes -->
       <div class="space-y-5 rounded-md border border-sand/50 bg-linen/30 p-5">

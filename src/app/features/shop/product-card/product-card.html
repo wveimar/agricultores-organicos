@@ -11,7 +11,11 @@
   las más anchas de todo el rango: comprimirlas ahí sería al revés. Ver
   doc/plan.md §6.
 -->
-<article class="group relative flex flex-1 flex-col">
+<article
+  class="group relative flex flex-1 flex-col"
+  [class.cursor-pointer]="isService()"
+  (click)="onCardClick()"
+>
   <!-- Marco de la imagen: ratio fijo por breakpoint, así la rejilla nunca se descuadra -->
   <div class="relative aspect-square overflow-hidden rounded-md bg-linen sm:aspect-4/5">
     <img
@@ -83,7 +87,7 @@
         class="absolute bottom-2 right-2 flex size-11 items-center justify-center rounded-full shadow-sm backdrop-blur-sm transition-colors duration-200 sm:hidden"
         [class]="inCart() > 0 ? 'bg-moss text-bone' : 'bg-bone/95 text-moss-deep'"
         [attr.aria-label]="addAriaLabel()"
-        [attr.aria-haspopup]="variants() ? 'dialog' : null"
+        [attr.aria-haspopup]="variants() || isService() ? 'dialog' : null"
         (click)="add()"
       >
         @if (inCart() > 0) {
@@ -108,7 +112,7 @@
           type="button"
           class="flex w-full items-center justify-center gap-2 rounded-full bg-bone/95 px-5 py-3 text-sm font-semibold text-moss-deep backdrop-blur-sm transition-colors duration-200 hover:bg-moss hover:text-bone"
           [attr.aria-label]="addAriaLabel()"
-          [attr.aria-haspopup]="variants() ? 'dialog' : null"
+          [attr.aria-haspopup]="variants() || isService() ? 'dialog' : null"
           (click)="add()"
         >
           @if (variants()) {

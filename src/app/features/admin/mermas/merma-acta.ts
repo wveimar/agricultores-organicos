@@ -1,6 +1,7 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
 import { CopPipe } from '../../../shared/pipes/cop.pipe';
 import { ApiMerma, MOTIVO_MERMA_LABELS, MotivoMerma } from '../../../core/api/api-client';
+import { SiteConfigService } from '../../../core/services/site-config.service';
 
 /**
  * El acta de baja de inventario, para imprimir y archivar.
@@ -25,7 +26,7 @@ import { ApiMerma, MOTIVO_MERMA_LABELS, MotivoMerma } from '../../../core/api/ap
   template: `
     <div class="acta rounded-xl border border-sand bg-white p-6 text-ink">
       <header class="border-b border-sand pb-3">
-        <p class="text-base font-semibold">Agricultores Orgánicos</p>
+        <p class="text-base font-semibold">{{ brand.siteName() }}</p>
         <p class="font-serif text-lg">Acta de baja de inventario</p>
         <p class="mt-1 text-xs text-ink/60">
           Salida por merma · Documento interno de control de inventario
@@ -130,6 +131,7 @@ import { ApiMerma, MOTIVO_MERMA_LABELS, MotivoMerma } from '../../../core/api/ap
   `,
 })
 export class MermaActa {
+  protected readonly brand = inject(SiteConfigService);
   readonly merma = input.required<ApiMerma>();
 
   protected etiqueta(motivo: MotivoMerma): string {

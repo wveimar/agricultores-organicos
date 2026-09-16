@@ -50,6 +50,9 @@ export class CatalogService {
     id: 'todos',
     name: 'Todo',
     icon: 'brote',
+    // «Todo» siempre vuelve al tema de por defecto: mezcla productos de
+    // cualquier grupo, así que no le pertenece el vestido visual de ninguno.
+    theme: '',
   };
 
   private readonly loadedCategories = signal<readonly Category[]>([]);
@@ -100,6 +103,25 @@ export class CatalogService {
   readonly activeGroup = signal<AdminGroup | 'todos'>('todos');
   readonly sort = signal<SortOption>('destacados');
   readonly query = signal('');
+
+  /**
+   * El tema visual de la solapa activa (0039), o `''` para el de por
+   * defecto. `PublicShell` lo convierte en una clase `theme-<valor>` sobre
+   * `<body>` — ver el mismo campo en `Group`, del que sale este valor.
+   */
+  readonly activeGroupTheme = computed(
+    () => this.groups().find((g) => g.id === this.activeGroup())?.theme ?? '',
+  );
+
+  /**
+   * Anula el tema de la solapa activa mientras vale algo distinto de `null`.
+   *
+   * Hace falta para `TourDetailPage`: se llega ahí por enlace directo —o
+   * recargando la página—, sin haber pasado por la solapa "Turismo" que
+   * pondría el tema. Sin este override, un tour compartido por WhatsApp
+   * abriría con el verde de siempre en vez del azul que le corresponde.
+   */
+  readonly themeOverride = signal<string | null>(null);
 
   /**
    * Nivel de mayorista de la sesión, o `null` para el cliente normal.
@@ -153,7 +175,7 @@ export class CatalogService {
   }
 
   private static toGroup(row: ApiPublicGroup): Group {
-    return { id: row.id, name: row.nombre, icon: row.icono ?? '' };
+    return { id: row.id, name: row.nombre, icon: row.icono ?? '', theme: row.tema ?? '' };
   }
 
   /**
@@ -448,9 +470,20 @@ export class CatalogService {
     }
 
     const abierto = this.groups().find((item) => item.id === group);
-    return abierto
-      ? { ...CatalogService.TODOS, id: 'todos', name: abierto.name, icon: abierto.icon }
-      : CatalogService.TODOS;
+    if (!abierto) {
+      return CatalogService.TODOS;
+    }
+    // La descripción de "Todo el huerto" es de mercado ("Cosechado esta
+    // semana por familias campesinas") y ya no encaja bajo cualquier
+    // grupo: desde el split en vitrinas independientes (0040), Turismo es
+    // su propia marca y esa frase no le pertenece. `admin_groups` no
+    // guarda descripción propia por fila, así que el caso de Turismo se
+    // resuelve aquí en vez de dejarlo heredar la de mercado.
+    const descripcion =
+      group === 'turismo'
+        ? 'Fechas y cupo confirmados al reservar.'
+        : CatalogService.TODOS.description;
+    return { ...CatalogService.TODOS, id: 'todos', name: abierto.name, icon: abierto.icon, description: descripcion };
   });
 
   readonly hasResults = computed(() => this.visible().length > 0);
@@ -482,6 +515,24 @@ export class CatalogService {
     return this.products().find((product) => product.id === id);
   }
 
+  /** Para la ficha de detalle (`/producto/:slug`), que navega por slug, no por id. */
+  productBySlug(slug: string): Product | undefined {
+    return this.products().find((product) => product.slug === slug);
+  }
+
+  /**
+   * El tema del grupo al que pertenece un producto, siguiendo
+   * producto → categoría → grupo (el mismo camino que `activeGroupTheme`
+   * recorre para la solapa activa, pero para uno concreto).
+   */
+  themeForProduct(product: Product): string {
+    const categoria = this.categories().find((c) => c.id === product.categoryId);
+    if (!categoria) {
+      return '';
+    }
+    return this.groups().find((g) => g.id === categoria.adminGroup)?.theme ?? '';
+  }
+
   selectCategory(id: CategoryId | 'todos'): void {
     this.activeCategory.set(id);
   }
@@ -496,6 +547,32 @@ export class CatalogService {
   selectGroup(id: AdminGroup | 'todos'): void {
     this.activeGroup.set(id);
     this.activeCategory.set('todos');
+  }
+
+  /**
+   * `true` mientras la vitrina vive bajo una de las rutas fijas de
+   * workspace (`/mercado`, `/turismo` — ver `PublicShell`), en vez de la
+   * antigua tienda con solapas «Todo/Mercado/Turismo» compartidas.
+   *
+   * `category-filter.html` usa esto para no pintar esas solapas: no tiene
+   * sentido ofrecer «cambiar de grupo» dentro de una vitrina que ya ES un
+   * solo grupo — sería un enlace de vuelta a un catálogo mixto que este
+   * split existe justamente para no mostrar.
+   */
+  readonly workspaceLocked = signal(false);
+
+  /**
+   * Fija el grupo activo y marca la vitrina como bloqueada. Lo llama
+   * `PublicShell` al construirse, con el workspace que trae la ruta
+   * (`data.workspace`). Si se navega de `/mercado` a `/turismo` sin recarga
+   * completa, `PublicShell` se reconstruye —son rutas hermanas, no la
+   * misma— y esto se vuelve a llamar con el grupo nuevo: no hay solapa que
+   * conmutar, cada vitrina es su propia ruta de principio a fin.
+   */
+  lockWorkspace(id: AdminGroup): void {
+    this.activeGroup.set(id);
+    this.activeCategory.set('todos');
+    this.workspaceLocked.set(true);
   }
 
   setSort(option: SortOption): void {

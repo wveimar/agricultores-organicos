@@ -3,14 +3,17 @@ import {
   Component,
   ElementRef,
   HostListener,
+  computed,
   effect,
   inject,
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { CartService } from '../../core/services/cart.service';
+import { CatalogService } from '../../core/services/catalog.service';
 import { CopPipe } from '../pipes/cop.pipe';
 import { FREE_SHIPPING_THRESHOLD } from '../../core/models/cart.model';
+import { formatSessionDate } from '../../core/models/product.model';
 import {
   formatDay,
   isCutoffNear,
@@ -26,7 +29,16 @@ import {
 })
 export class CartDrawer {
   protected readonly cart = inject(CartService);
+  private readonly catalog = inject(CatalogService);
   protected readonly freeShippingThreshold = FREE_SHIPPING_THRESHOLD;
+
+  /**
+   * `/mercado/checkout` o `/turismo/checkout` (0040): el carrito vive dentro
+   * de `PublicShell`, cuyo workspace fijo `CatalogService.activeGroup()` ya
+   * conoce (`lockWorkspace()`) — no hace falta un `input()` propio, el mismo
+   * dato ya está en el mismo servicio que decide qué hay en el carrito.
+   */
+  protected readonly checkoutPath = computed(() => `/${this.catalog.activeGroup()}/checkout`);
 
   /**
    * Se resuelven al construir el panel, no en cada detección de cambios: son
@@ -36,6 +48,8 @@ export class CartDrawer {
   protected readonly cutoffDay = formatDay(nextCutoff());
   protected readonly dispatchDay = formatDay(nextDispatch());
   protected readonly cutoffNear = isCutoffNear();
+  /** «viernes 14 mar · 9:00 a. m.»: fecha de la sesión reservada de una línea. */
+  protected readonly fechaSesion = formatSessionDate;
 
   private readonly closeButton = viewChild<ElementRef<HTMLButtonElement>>('closeButton');
 

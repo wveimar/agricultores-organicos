@@ -1,5 +1,5 @@
 import { ApiError, json, readJson, requireString } from '../http';
-import { Env, JwtPayload, UserRole, ALL_ROLES } from '../types';
+import { Env, JwtPayload, UserRole, ALL_ROLES, Workspace, ALL_WORKSPACES } from '../types';
 import { requireRole } from '../auth/middleware';
 import { hashPassword, verifyPassword } from '../auth/crypto';
 
@@ -11,7 +11,7 @@ import { hashPassword, verifyPassword } from '../auth/crypto';
 const USER_COLUMNS = `
   u.id, u.email, u.nombre, u.activo, u.creado_en AS creadoEn,
   u.cupo_credito AS cupoCredito, u.dias_credito AS diasCredito,
-  u.contact_id AS contactId,
+  u.contact_id AS contactId, u.workspace AS workspace,
   -- Para pintar el nombre sin que el panel tenga que cruzar con la agenda por
   -- su cuenta. NULL cuando no hay enlace, que es el estado normal.
   (SELECT c.nombre FROM contacts c WHERE c.id = u.contact_id) AS contactoNombre,
@@ -32,6 +32,7 @@ interface UserRow {
   diasCredito: number;
   contactId: string | null;
   contactoNombre: string | null;
+  workspace: Workspace;
 }
 
 const toUser = (row: UserRow) => ({
@@ -49,6 +50,8 @@ const toUser = (row: UserRow) => ({
   // el checkout de esta cuenta sin importar qué teléfono teclee ese día.
   contactId: row.contactId,
   contactoNombre: row.contactoNombre,
+  // Qué mitad del panel ve (0040). Ver `Workspace` en types.ts.
+  workspace: row.workspace,
 });
 
 function validarPassword(value: unknown, campo: string): string {
@@ -71,6 +74,20 @@ function validarRoles(value: unknown): UserRole[] {
     throw ApiError.badRequest('rol-invalido', `Los roles válidos son: ${ALL_ROLES.join(', ')}.`);
   }
   return [...new Set(roles)];
+}
+
+/** `'ambos'` si no viene: es el valor con el que nace toda cuenta (ver la migración 0040). */
+function validarWorkspace(value: unknown): Workspace {
+  if (value === undefined) {
+    return 'ambos';
+  }
+  if (!ALL_WORKSPACES.includes(value as Workspace)) {
+    throw ApiError.badRequest(
+      'workspace-invalido',
+      `El workspace debe ser uno de: ${ALL_WORKSPACES.join(', ')}.`,
+    );
+  }
+  return value as Workspace;
 }
 
 /**
@@ -109,6 +126,7 @@ interface CreateBody {
   nombre?: unknown;
   password?: unknown;
   roles?: unknown;
+  workspace?: unknown;
 }
 
 /** POST /api/admin/users — alta de una cuenta del panel. */
@@ -124,6 +142,7 @@ export async function create(
   const nombre = requireString(body.nombre, 'nombre', 120).trim();
   const password = validarPassword(body.password, 'password');
   const roles = validarRoles(body.roles);
+  const workspace = validarWorkspace(body.workspace);
 
   const id = crypto.randomUUID();
   const hash = await hashPassword(password);
@@ -133,8 +152,8 @@ export async function create(
     // a ninguna pantalla, y quedaría ahí ocupando el correo sin servir de nada.
     await env.DB.batch([
       env.DB.prepare(
-        `INSERT INTO users (id, email, nombre, password_hash) VALUES (?1, ?2, ?3, ?4)`,
-      ).bind(id, email, nombre, hash),
+        `INSERT INTO users (id, email, nombre, password_hash, workspace) VALUES (?1, ?2, ?3, ?4, ?5)`,
+      ).bind(id, email, nombre, hash, workspace),
       ...roles.map((role) =>
         env.DB.prepare(`INSERT INTO user_roles (user_id, role) VALUES (?1, ?2)`).bind(id, role),
       ),
@@ -172,6 +191,7 @@ interface UpdateBody {
   cupoCredito?: unknown;
   diasCredito?: unknown;
   contactId?: unknown;
+  workspace?: unknown;
 }
 
 /**
@@ -285,6 +305,14 @@ export async function update(
 
       push('contact_id', contactId);
     }
+  }
+
+  // Workspace fijo (0040): qué mitad del panel ve esta cuenta. No lleva los
+  // guardas de "último SUPER_ADMIN" que sí llevan `activo`/`roles` — restringir
+  // a alguien a un workspace no le quita el rol, así que siempre queda otra
+  // cuenta capaz de revertirlo desde Usuarios.
+  if (body.workspace !== undefined) {
+    push('workspace', validarWorkspace(body.workspace));
   }
 
   if (body.activo !== undefined) {

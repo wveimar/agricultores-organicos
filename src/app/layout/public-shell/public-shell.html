@@ -5,13 +5,13 @@
   Saltar al catálogo
 </a>
 
-<app-header />
+<app-header [workspace]="workspace" />
 
 <main>
   <router-outlet />
 </main>
 
-<app-footer />
+<app-footer [workspace]="workspace" />
 
 <!-- Viven fuera de <main> porque son capas flotantes sobre toda la tienda -->
 <app-cart-drawer />

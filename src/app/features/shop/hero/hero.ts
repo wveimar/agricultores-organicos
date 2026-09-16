@@ -1,5 +1,15 @@
-import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { HERO_IMAGE } from '../../../core/data/mock-catalog';
+import { CatalogService } from '../../../core/services/catalog.service';
+
+/**
+ * Imagen del hero mientras la solapa Turismo está activa.
+ *
+ * No sale de `mock-catalog.ts` como `HERO_IMAGE` a propósito: aquella es la
+ * foto del puesto de mercado, y enseñarla bajo "Turismo" —con el tema ya en
+ * azul— sería el mismo desajuste que este componente existe para evitar.
+ */
+const TOUR_HERO_IMAGE = 'https://picsum.photos/seed/hero-turismo/1600/900';
 
 @Component({
   selector: 'app-hero',
@@ -7,8 +17,21 @@ import { HERO_IMAGE } from '../../../core/data/mock-catalog';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class Hero {
+  private readonly catalog = inject(CatalogService);
+
+  /**
+   * El hero es el primer bloque de la página y el que más se nota el
+   * desajuste de vertical: mostrar "Cosecha de la semana" con fotos de
+   * verdura mientras la tienda ya está en azul (Turismo, ver `styles.css`)
+   * sería justo lo contrario de lo que pide un tema por grupo. Un negocio
+   * que solo venda un tipo de cosas puede simplificar esto a una sola
+   * versión; este proyecto vende los dos a la vez, así que el hero necesita
+   * las dos.
+   */
+  protected readonly isTurismo = computed(() => this.catalog.activeGroup() === 'turismo');
+
   /** Imagen de fondo. Carga con prioridad alta: es el LCP de la página. */
-  protected readonly image = HERO_IMAGE;
+  protected readonly image = computed(() => (this.isTurismo() ? TOUR_HERO_IMAGE : HERO_IMAGE));
 
   private readonly ahora = signal(new Date());
 

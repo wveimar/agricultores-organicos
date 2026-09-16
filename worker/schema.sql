@@ -50,6 +50,11 @@ DROP TABLE IF EXISTS order_item_components;
 DROP TABLE IF EXISTS order_status_log;
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
+-- Antes que `products`, que referencia (0038): una sesión no significa nada
+-- sin el producto-servicio al que pertenece.
+DROP TABLE IF EXISTS product_sessions;
+-- Igual que las sesiones (0039): una foto no significa nada sin su producto.
+DROP TABLE IF EXISTS product_photos;
 DROP TABLE IF EXISTS cash_closings;
 DROP TABLE IF EXISTS product_components;
 DROP TABLE IF EXISTS product_wholesale_discounts;
@@ -97,7 +102,14 @@ CREATE TABLE users (
   -- día— así que el cupo que se le abrió no se pierde entre una compra y otra.
   -- `contacts` se declara más abajo; SQLite no exige que exista todavía para
   -- aceptar esta referencia.
-  contact_id    TEXT    REFERENCES contacts(id) ON DELETE SET NULL
+  contact_id    TEXT    REFERENCES contacts(id) ON DELETE SET NULL,
+
+  -- Workspace fijo de la cuenta (0040): qué mitad del panel ve — el split
+  -- QualityMarketShop / QualityTourShop. 'ambos' es SUPER_ADMIN y cualquier
+  -- cuenta que necesite ver las dos vitrinas; es el valor con el que nace
+  -- toda cuenta, para no perder acceso a nada por defecto.
+  workspace     TEXT    NOT NULL DEFAULT 'ambos'
+                CHECK (workspace IN ('mercado', 'turismo', 'ambos'))
 );
 
 -- Una ficha, como mucho, una cuenta enlazada. Parcial: sin enlazar es el
@@ -246,6 +258,12 @@ CREATE TABLE admin_groups (
   -- CHECK: una clave desconocida cae en la silueta por defecto. Vacío = «la
   -- que sea» (migración 0026).
   icono               TEXT    NOT NULL DEFAULT '',
+  -- Vestido visual que toma la tienda mientras este grupo está activo (0039):
+  -- una clave que el frontend traduce a una clase CSS (`theme-<tema>`), que
+  -- redefine los mismos tokens de color que ya usa toda la interfaz. Vacío =
+  -- el tema de por defecto, sin clase — así un grupo nuevo no necesita tema
+  -- propio para verse bien.
+  tema                TEXT    NOT NULL DEFAULT '',
   creado_en           TEXT    NOT NULL DEFAULT (datetime('now')),
   actualizado_en      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
@@ -289,6 +307,16 @@ CREATE TABLE products (
   slug            TEXT    NOT NULL UNIQUE,
   nombre          TEXT    NOT NULL,
   tagline         TEXT    NOT NULL DEFAULT '',
+  -- Párrafo completo para la ficha de detalle (0039): itinerario, qué
+  -- incluye, qué llevar. `tagline` sigue siendo la frase corta de la
+  -- tarjeta; esto es lo largo, y por eso vive aparte y no la reemplaza.
+  descripcion     TEXT    NOT NULL DEFAULT '',
+  -- 'fisico' = tiene stock/peso, se envía o se recoge (todo lo de siempre).
+  -- 'servicio' = se reserva por fecha y cupo (ver `product_sessions`, 0038):
+  -- no descuenta stock_actual, no lleva vendido_por_peso ni dirección de
+  -- envío. Los dos comparten el resto de la ficha (nombre, precio, imagen,
+  -- categoría) para no duplicar catálogo, cesta ni checkout.
+  tipo            TEXT    NOT NULL DEFAULT 'fisico' CHECK (tipo IN ('fisico', 'servicio')),
   categoria_id    TEXT    NOT NULL,
   -- Agrupación macro que usa el panel de compras.
   -- ⚠ SIN USO desde la migración 0025 — ver el mismo aviso en `categories`.
@@ -386,6 +414,44 @@ CREATE INDEX idx_products_stock     ON products (stock_actual, stock_seguridad) 
 CREATE INDEX idx_products_parent    ON products (parent_id) WHERE parent_id IS NOT NULL;
 -- La portada pide solo los destacados activos: se resuelve sin recorrer nada más.
 CREATE INDEX idx_products_destacado ON products (destacado) WHERE activo = 1 AND destacado = 1;
+
+-- ──────────────── Sesiones de un producto-servicio (0038) ────────────────
+-- Una salida/cita concreta: "Tour al Nevado, sábado 14, cupo 20". Un
+-- producto 'servicio' tiene muchas; uno 'fisico' no tiene ninguna.
+
+CREATE TABLE product_sessions (
+  id             TEXT    PRIMARY KEY,
+  product_id     TEXT    NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  inicio         TEXT    NOT NULL,
+  fin            TEXT,
+  ubicacion      TEXT,
+  cupo_total     INTEGER NOT NULL CHECK (cupo_total > 0),
+  -- Mismo patrón que products.stock_actual: el CHECK es la defensa real
+  -- contra dos reservas concurrentes que dejarían el cupo en negativo.
+  cupo_reservado INTEGER NOT NULL DEFAULT 0
+                 CHECK (cupo_reservado >= 0 AND cupo_reservado <= cupo_total),
+  activo         INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
+  creado_en      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_sessions_product ON product_sessions (product_id, inicio)
+  WHERE activo = 1;
+
+-- ──────────────── Galería de fotos de un producto (0039) ────────────────
+-- Para el carrusel de la ficha de detalle. `products.imagen`/`imagen_hover`
+-- siguen siendo las de la tarjeta de la vitrina; esto es la lista completa,
+-- que puede repetir alguna de esas dos o traer otras nuevas.
+
+CREATE TABLE product_photos (
+  id         TEXT    PRIMARY KEY,
+  product_id TEXT    NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  url        TEXT    NOT NULL,
+  alt        TEXT    NOT NULL DEFAULT '',
+  orden      INTEGER NOT NULL DEFAULT 100,
+  creado_en  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_product_photos_product ON product_photos (product_id, orden);
 
 -- ─────────────── Canastas: qué lleva dentro cada una (0014) ───────────────
 -- La receta VIGENTE. Es lo que se descuenta del inventario al vender una
@@ -679,6 +745,11 @@ CREATE TABLE order_items (
   precio_unitario  INTEGER NOT NULL CHECK (precio_unitario >= 0),
   costo_unitario   INTEGER NOT NULL DEFAULT 0 CHECK (costo_unitario >= 0),
   cantidad         INTEGER NOT NULL CHECK (cantidad > 0),
+
+  -- Qué sesión reservó esta línea (0038). NULL en todo lo que no sea un
+  -- producto 'servicio' — uno físico no tiene fecha que elegir. RESTRICT:
+  -- una sesión con reservas encima no se borra del catálogo.
+  session_id       TEXT    REFERENCES product_sessions(id) ON DELETE RESTRICT,
 
   -- Por qué esta línea no salió al precio calculado (migración 0032). NULL =
   -- precio automático, de lista o con el descuento de mayorista que le toque

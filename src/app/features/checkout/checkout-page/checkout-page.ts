@@ -2,20 +2,20 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  computed,
   effect,
   inject,
   signal,
   viewChild,
 } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { CartService } from '../../../core/services/cart.service';
-import {
-  BANK_DETAILS,
-  CheckoutService,
-} from '../../../core/services/checkout.service';
+import { CatalogService } from '../../../core/services/catalog.service';
+import { CheckoutService } from '../../../core/services/checkout.service';
 import { ApiErrorBody, Shortfall } from '../../../core/api/api-client';
 import { PaymentProof, WebPaymentMethod } from '../../../core/models/order.model';
-import { componentPortion } from '../../../core/models/product.model';
+import { componentPortion, formatSessionDate } from '../../../core/models/product.model';
 import {
   formatDay,
   isCutoffNear,
@@ -48,16 +48,33 @@ const CAMPOS: readonly { control: CampoDatos; etiqueta: string; id: string }[] =
 
 @Component({
   selector: 'app-checkout-page',
-  imports: [ReactiveFormsModule, CopPipe, FieldErrorState, FieldError, ProofUploader, OrderSuccess],
+  imports: [
+    ReactiveFormsModule,
+    CopPipe,
+    FieldErrorState,
+    FieldError,
+    ProofUploader,
+    OrderSuccess,
+    RouterLink,
+  ],
   templateUrl: './checkout-page.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CheckoutPage {
   protected readonly cart = inject(CartService);
   protected readonly checkout = inject(CheckoutService);
+  private readonly catalog = inject(CatalogService);
+
+  /**
+   * A dónde vuelve "Ver la cosecha de hoy" con el carrito vacío (0040). Sale
+   * del workspace fijo de esta vitrina (`CatalogService.activeGroup()`), no
+   * del tipo de carrito: con el carrito vacío `cart.cartType()` no dice nada
+   * todavía.
+   */
+  protected readonly shopPath = computed(() => `/${this.catalog.activeGroup()}`);
   private readonly fb = inject(FormBuilder);
 
-  protected readonly bank = BANK_DETAILS;
+  protected readonly bank = this.checkout.bank;
 
   /** Ventana semanal de acopio; ver `ordering-window.ts`. */
   protected readonly cutoffDay = formatDay(nextCutoff());
@@ -69,6 +86,14 @@ export class CheckoutPage {
   protected readonly placing = signal(false);
 
   protected readonly metodoPago = this.checkout.metodoPago;
+
+  /** El carrito es solo servicios: sin dirección, sin envío, sin ventana de acopio. */
+  protected readonly isServiceOnly = this.checkout.isServiceOnly;
+
+  /** Los campos que de verdad aplican: un servicio no pide dirección. */
+  protected readonly campos = computed(() =>
+    this.isServiceOnly() ? CAMPOS.filter((c) => c.control !== 'address') : CAMPOS,
+  );
 
   /** Se muestra solo tras un intento de envío con el formulario incompleto,
    *  o cuando el servidor rechaza el pedido por un motivo que no es stock. */
@@ -82,8 +107,6 @@ export class CheckoutPage {
     phone: ['', [Validators.required, Validators.pattern(PHONE_PATTERN)]],
     address: ['', [Validators.required, Validators.minLength(5)]],
   });
-
-  protected readonly campos = CAMPOS;
 
   /**
    * Campos que fallaron en el último intento de envío.
@@ -122,6 +145,23 @@ export class CheckoutPage {
       this.focoInicialHecho = true;
       primero.nativeElement.focus();
     });
+
+    /**
+     * Un servicio no pide dirección ni elige método de entrega: se reserva
+     * por transferencia y se confirma por WhatsApp, como cualquier otra
+     * compra sin pasarela. Se fuerza aquí, no solo se oculta el selector —
+     * si no, `metodoPago` se quedaría en el default 'contraentrega' y el
+     * Worker recibiría un método que no significa nada para una reserva.
+     */
+    effect(() => {
+      if (this.isServiceOnly()) {
+        this.metodoPago.set('transferencia');
+        this.form.controls.address.clearValidators();
+      } else {
+        this.form.controls.address.setValidators([Validators.required, Validators.minLength(5)]);
+      }
+      this.form.controls.address.updateValueAndValidity({ emitEvent: false });
+    });
   }
 
   protected onProofChange(proof: PaymentProof | null): void {
@@ -130,6 +170,8 @@ export class CheckoutPage {
 
   /** «2 × 500 gr»: cuánto de un componente lleva UNA canasta de esta línea. */
   protected readonly porcion = componentPortion;
+  /** «viernes 14 mar · 9:00 a. m.»: fecha de la sesión reservada de una línea. */
+  protected readonly fechaSesion = formatSessionDate;
 
   private refDe(control: CampoDatos): ElementRef<HTMLInputElement> | undefined {
     switch (control) {
@@ -154,13 +196,13 @@ export class CheckoutPage {
    * las tres cosas de una vez.
    */
   protected focusFirstInvalid(): void {
-    const primero = CAMPOS.find(({ control }) => this.form.controls[control].invalid);
+    const primero = this.campos().find(({ control }) => this.form.controls[control].invalid);
     this.refDe(primero?.control ?? 'name')?.nativeElement.focus();
   }
 
   /** Enfoca un campo concreto desde el resumen de errores de la cabecera. */
   protected focusCampo(id: string): void {
-    const campo = CAMPOS.find((c) => c.id === id);
+    const campo = this.campos().find((c) => c.id === id);
     if (campo) {
       this.refDe(campo.control)?.nativeElement.focus();
     }
@@ -169,7 +211,7 @@ export class CheckoutPage {
   /** Copia el número de cuenta: escribirlo a mano es donde se cuelan errores. */
   protected async copyAccount(): Promise<void> {
     try {
-      await navigator.clipboard.writeText(this.bank.accountNumber);
+      await navigator.clipboard.writeText(this.bank().accountNumber);
       this.copied.set(true);
       setTimeout(() => this.copied.set(false), 2000);
     } catch {
@@ -188,7 +230,7 @@ export class CheckoutPage {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
 
-      const fallidos = CAMPOS.filter(({ control }) => this.form.controls[control].invalid);
+      const fallidos = this.campos().filter(({ control }) => this.form.controls[control].invalid);
       this.camposConError.set(fallidos.map(({ etiqueta, id }) => ({ etiqueta, id })));
       this.formError.set(
         fallidos.length === 1

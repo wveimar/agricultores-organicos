@@ -160,7 +160,7 @@
           required
           aria-required="true"
           class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
-          placeholder="nombre@agricultores.co"
+          placeholder="nombre@correo.com"
         />
         <app-field-error [for]="errNuevoEmail" message="Escribe un correo con formato válido." />
       </div>
@@ -199,6 +199,28 @@
           Mínimo {{ minPassword }} caracteres.
         </p>
       }
+    </div>
+
+    <!--
+      Workspace fijo (0040): qué mitad del panel podrá ver esta cuenta —
+      Caja, Compras, Mermas, Entregas y Mayoristas solo existen para
+      Mercado. Va antes de los roles porque acota qué tiene sentido marcar
+      debajo: a un admin de Turismo no hace falta ni ofrecerle esas casillas.
+    -->
+    <div class="mt-5">
+      <label for="crear-workspace" class="block text-sm font-medium text-ink">Workspace</label>
+      <p class="mt-0.5 text-xs text-ink-muted">
+        Qué vitrina administra esta cuenta. "Ambos" ve las dos — es lo que necesita SUPER_ADMIN.
+      </p>
+      <select
+        id="crear-workspace"
+        formControlName="workspace"
+        class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+      >
+        @for (ws of workspaces; track ws) {
+          <option [value]="ws">{{ workspaceLabels[ws] }}</option>
+        }
+      </select>
     </div>
 
     <!--
@@ -340,6 +362,11 @@
               @if (isWholesaleOnly(user)) {
                 <span class="text-overline rounded-full bg-clay/12 px-2 py-0.5 font-semibold uppercase text-clay-deep">
                   Cliente
+                </span>
+              }
+              @if (user.workspace !== 'ambos') {
+                <span class="text-overline rounded-full bg-sage-light px-2 py-0.5 font-semibold uppercase text-moss-deep">
+                  {{ workspaceLabels[user.workspace] }}
                 </span>
               }
             </p>
@@ -491,6 +518,24 @@
                 El cupo y el plazo se ponen en
                 <strong class="font-semibold text-ink">Contactos</strong>, no aquí.
               </p>
+            </div>
+
+            <div class="mt-4 rounded-md border border-sand p-4">
+              <label [for]="'workspace-' + user.id" class="block text-sm font-medium text-ink">
+                Workspace
+              </label>
+              <p class="mt-0.5 text-xs text-ink-muted">
+                Qué vitrina administra esta cuenta. "Ambos" ve las dos.
+              </p>
+              <select
+                [id]="'workspace-' + user.id"
+                formControlName="workspace"
+                class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-2.5 text-sm text-ink transition-colors duration-200 hover:border-stone focus:border-moss"
+              >
+                @for (ws of workspaces; track ws) {
+                  <option [value]="ws">{{ workspaceLabels[ws] }}</option>
+                }
+              </select>
             </div>
 
             @for (group of roleGroups; track group.key) {
