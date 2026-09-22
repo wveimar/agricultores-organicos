@@ -936,6 +936,12 @@ CREATE TABLE payments (
   -- que cuente ese dinero cuenta plata que nadie ha visto.
   liquidado           INTEGER NOT NULL DEFAULT 1 CHECK (liquidado IN (0, 1)),
 
+  -- Cuándo el domiciliario entregó ese efectivo en la tienda (migración 0038).
+  -- NULL mientras siga en la moto. Es la fecha con la que el movimiento entra
+  -- al libro de Tesorería: si cobró a las 10 a. m. y entregó a las 5 p. m., ese
+  -- billete entró al cajón en el turno de la tarde, no en el de la mañana.
+  liquidado_en        TEXT,
+
   closing_id          TEXT    REFERENCES cash_closings(id) ON DELETE SET NULL,
 
   comprobante_url     TEXT,

@@ -51,8 +51,11 @@ const HOY = `date('now', '-5 hours')`;
  * columnas, y un signo obliga a decidir en cada consulta de qué lado va.
  */
 const MOVIMIENTOS_SQL = `
+  -- La fecha es la de ENTRADA AL CAJÓN, no la del cobro: para el efectivo que
+  -- trae un domiciliario, las dos cosas pasan a horas distintas y puede que en
+  -- turnos distintos (migración 0038).
   SELECT p.id                                   AS id,
-         p.recibido_en                          AS fecha,
+         COALESCE(p.liquidado_en, p.recibido_en) AS fecha,
          p.cuenta_id                            AS cuentaId,
          'cobro'                                AS tipo,
          COALESCE(p.nota, 'Cobro')              AS concepto,
@@ -61,7 +64,12 @@ const MOVIMIENTOS_SQL = `
          p.monto                                AS entra,
          0                                      AS sale
     FROM payments p
-   WHERE p.cuenta_id IS NOT NULL
+   -- Sin acentos graves aquí: van DENTRO de una plantilla de JS.
+   -- liquidado = 0 es plata cobrada en la puerta que todavía va en la moto.
+   -- Contarla aquí inflaría el saldo del cajón y le marcaría un faltante
+   -- fantasma al cajero en el arqueo: contaría bien sus billetes y el sistema
+   -- le exigiría unos que nadie ha traído todavía.
+   WHERE p.cuenta_id IS NOT NULL AND p.liquidado = 1
 
   UNION ALL
 

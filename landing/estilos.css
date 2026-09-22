@@ -493,6 +493,38 @@ a { color: inherit; }
   color: var(--tinta-tenue);
 }
 
+/* ── El medio de cada módulo: video o lámina ──────────────────────────────
+   Un solo contenedor para los dos, para que la columna derecha de todos los
+   módulos tenga el mismo ancho y el mismo borde, tenga video o no. */
+.modulo-medios { align-self: start; }
+
+.modulo-medios .video {
+  background: var(--blanco);
+  border: 1px solid var(--arena);
+  padding: 10px;
+}
+
+.modulo-medios .video figcaption {
+  margin-top: 9px;
+  padding: 0;
+  font-size: 13px;
+  color: var(--tinta-tenue);
+  text-align: left;
+}
+
+/* Los pasos escritos del video: hacen de narración, porque el video es mudo. */
+.pasos-video {
+  margin-top: 18px;
+  padding: 11px 14px;
+  background: var(--hueso);
+  border-left: 2px solid var(--arcilla);
+  font-size: 14.5px;
+  color: var(--tinta-suave);
+}
+
+.seccion-alterna .pasos-video { background: var(--blanco); }
+.pasos-video b { color: var(--tinta); }
+
 /* ── Garantías ─────────────────────────────────────────────────────────── */
 /* Columnas explícitas: son seis, y 2 o 3 dividen exacto. Con `auto-fit`
    quedaban celdas vacías pintadas del color del borde. */
@@ -534,6 +566,56 @@ a { color: inherit; }
 .seccion-oscura .sub { color: #f6f3ed; }
 
 .pruebas-grid { display: grid; gap: 36px; }
+
+/* ── Lo comprobado, en lenguaje del negocio ───────────────────────────────
+   Dos columnas desde tableta: son nueve, y en una sola columna la lista se
+   hacía larguísima sobre fondo oscuro. */
+.comprobado {
+  display: grid;
+  gap: 4px 40px;
+  margin-top: 8px;
+}
+
+@media (min-width: 780px) {
+  .comprobado { grid-template-columns: 1fr 1fr; }
+}
+
+.comprobado-item {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 12px;
+  padding: 16px 0;
+  border-top: 1px solid rgba(246, 243, 237, 0.12);
+}
+
+.comprobado-item .check {
+  color: var(--salvia);
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.comprobado-item b {
+  display: block;
+  color: #f6f3ed;
+  font-size: 16px;
+  margin-bottom: 3px;
+}
+
+.comprobado-item p {
+  margin: 0;
+  color: #c3c8bd;
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.nota-comprobado {
+  margin-top: 34px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(246, 243, 237, 0.12);
+  color: #9aa79a;
+  font-size: 15px;
+  max-width: 62ch;
+}
 
 .tabla {
   width: 100%;

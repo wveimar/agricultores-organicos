@@ -13,6 +13,7 @@ import {
   BANK_DETAILS,
   CheckoutService,
 } from '../../../core/services/checkout.service';
+import { ModulosStore } from '../../../core/api/modulos-store';
 import { ApiErrorBody, Shortfall } from '../../../core/api/api-client';
 import { PaymentProof, WebPaymentMethod } from '../../../core/models/order.model';
 import { componentPortion } from '../../../core/models/product.model';
@@ -55,7 +56,16 @@ const CAMPOS: readonly { control: CampoDatos; etiqueta: string; id: string }[] =
 export class CheckoutPage {
   protected readonly cart = inject(CartService);
   protected readonly checkout = inject(CheckoutService);
+  protected readonly modulos = inject(ModulosStore);
   private readonly fb = inject(FormBuilder);
+
+  /**
+   * Se lee UNA vez, al construir: los módulos activos se resuelven al
+   * arrancar la app (`provideAppInitializer` en `app.config.ts`) y no
+   * cambian en medio de una sesión de compra — no hace falta reaccionar a
+   * un signal que, en la práctica, ya está fijo cuando esta pantalla existe.
+   */
+  protected readonly entregasActivas = this.modulos.isActive('entregas');
 
   protected readonly bank = BANK_DETAILS;
 
@@ -79,11 +89,17 @@ export class CheckoutPage {
     // Cinco caracteres es lo más corto que puede ser un documento real.
     // No se valida el formato: aquí entran cédulas, NIT y pasaportes.
     cedula: ['', [Validators.required, Validators.minLength(5)]],
-    phone: ['', [Validators.required, Validators.pattern(PHONE_PATTERN)]],
-    address: ['', [Validators.required, Validators.minLength(5)]],
+    // Sin Entregas nadie va a llamar a este teléfono para coordinar un
+    // domicilio ni a tocar esa dirección: los dos campos siguen ahí porque
+    // `orders.create()` los sigue aceptando, pero dejan de ser obligatorios.
+    phone: ['', this.entregasActivas ? [Validators.required, Validators.pattern(PHONE_PATTERN)] : []],
+    address: ['', this.entregasActivas ? [Validators.required, Validators.minLength(5)] : []],
   });
 
-  protected readonly campos = CAMPOS;
+  /** Sin Entregas, el resumen de errores no puede señalar un campo que ni se muestra. */
+  protected readonly campos = this.entregasActivas
+    ? CAMPOS
+    : CAMPOS.filter((c) => c.control !== 'phone' && c.control !== 'address');
 
   /**
    * Campos que fallaron en el último intento de envío.
@@ -103,6 +119,13 @@ export class CheckoutPage {
   private focoInicialHecho = false;
 
   constructor() {
+    // El servicio nace en 'contraentrega' porque hasta ahora era el único
+    // método sin fricción — pero ese método significa "el domiciliario cobra
+    // al tocar la puerta", y sin Entregas no hay quién toque nada.
+    if (!this.entregasActivas && this.metodoPago() === 'contraentrega') {
+      this.metodoPago.set('entrega_en_tienda');
+    }
+
     /**
      * Al llegar a /checkout el foco se queda donde estuviera el enlace que
      * trajo al usuario —normalmente el carrito o el pie—, así que navegar con
@@ -154,13 +177,13 @@ export class CheckoutPage {
    * las tres cosas de una vez.
    */
   protected focusFirstInvalid(): void {
-    const primero = CAMPOS.find(({ control }) => this.form.controls[control].invalid);
+    const primero = this.campos.find(({ control }) => this.form.controls[control].invalid);
     this.refDe(primero?.control ?? 'name')?.nativeElement.focus();
   }
 
   /** Enfoca un campo concreto desde el resumen de errores de la cabecera. */
   protected focusCampo(id: string): void {
-    const campo = CAMPOS.find((c) => c.id === id);
+    const campo = this.campos.find((c) => c.id === id);
     if (campo) {
       this.refDe(campo.control)?.nativeElement.focus();
     }
@@ -188,7 +211,7 @@ export class CheckoutPage {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
 
-      const fallidos = CAMPOS.filter(({ control }) => this.form.controls[control].invalid);
+      const fallidos = this.campos.filter(({ control }) => this.form.controls[control].invalid);
       this.camposConError.set(fallidos.map(({ etiqueta, id }) => ({ etiqueta, id })));
       this.formError.set(
         fallidos.length === 1

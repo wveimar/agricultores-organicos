@@ -17,7 +17,29 @@ const AJUSTES: Record<string, { descripcion: string; porDefecto: string }> = {
     descripcion: 'Si la caja marca "imprimir recibo" al abrir una venta nueva.',
     porDefecto: '1',
   },
+  // Los cuatro interruptores del negocio (plan de modularización). Por
+  // defecto en '1': una instalación existente que nunca los toca sigue
+  // funcionando exactamente igual que antes de que existieran.
+  modulo_pos: {
+    descripcion: 'Vender de mostrador desde la Caja.',
+    porDefecto: '1',
+  },
+  modulo_ecommerce: {
+    descripcion: 'La tienda pública y su checkout.',
+    porDefecto: '1',
+  },
+  modulo_entregas: {
+    descripcion: 'Domicilios: dirección de envío, domiciliario, "enviado".',
+    porDefecto: '1',
+  },
+  modulo_tesoreria: {
+    descripcion: 'Caja, movimientos, turnos y cierre.',
+    porDefecto: '1',
+  },
 };
+
+/** Los dos módulos que venden — al menos uno tiene que seguir encendido. */
+const CANALES_DE_VENTA = ['modulo_pos', 'modulo_ecommerce'] as const;
 
 /** Lee un ajuste con su valor por defecto si nadie lo ha tocado nunca. */
 export async function leerAjuste(env: Env, clave: string): Promise<string> {
@@ -66,6 +88,23 @@ export async function update(request: Request, env: Env, user: JwtPayload): Prom
 
   if (!(clave in AJUSTES)) {
     throw ApiError.badRequest('ajuste-desconocido', `No existe un ajuste llamado "${clave}".`);
+  }
+
+  // Apagar POS o E-commerce no puede dejar el negocio sin ningún canal de
+  // venta: ese estado no tiene con qué generar un pedido, y arrastraría a
+  // Entregas y Tesorería a quedarse sin nada que mostrar tampoco. Se valida
+  // aquí, contra lo que ya está guardado, no contra lo que el cliente cree
+  // que hay — la misma razón por la que el resto del proyecto recalcula en
+  // vez de confiar en lo que llega del navegador.
+  if ((CANALES_DE_VENTA as readonly string[]).includes(clave) && valor === '0') {
+    const otroCanal = CANALES_DE_VENTA.find((c) => c !== clave)!;
+    const otroValor = await leerAjuste(env, otroCanal);
+    if (otroValor === '0') {
+      throw ApiError.conflict(
+        'sin-canal-de-venta',
+        'POS y E-commerce no se pueden apagar los dos a la vez: el negocio se quedaría sin ninguna forma de vender.',
+      );
+    }
   }
 
   await env.DB.prepare(

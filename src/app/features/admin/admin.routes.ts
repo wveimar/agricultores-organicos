@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard, guestGuard, roleGuard } from '../../core/guards/admin.guards';
+import { authGuard, guestGuard, moduleGuard, roleGuard } from '../../core/guards/admin.guards';
 
 /**
  * Rutas del panel. Se cargan en diferido desde `app.routes.ts`, así que nada
@@ -86,13 +86,13 @@ export const ADMIN_ROUTES: Routes = [
         // fía: la venta de caja son esas mismas operaciones fusionadas en un
         // paso, así que no hace falta un rol nuevo. Devolver sí exige
         // SUPER_ADMIN, y eso lo comprueba el Worker.
-        canActivate: [roleGuard('GESTOR_PEDIDOS')],
+        canActivate: [roleGuard('GESTOR_PEDIDOS'), moduleGuard('pos')],
         title: 'Caja · Panel',
         loadComponent: () => import('./pos/pos-sell').then((m) => m.PosSell),
       },
       {
         path: 'caja/historial',
-        canActivate: [roleGuard('GESTOR_PEDIDOS')],
+        canActivate: [roleGuard('GESTOR_PEDIDOS'), moduleGuard('pos')],
         title: 'Historial de caja · Panel',
         loadComponent: () => import('./pos/pos-history').then((m) => m.PosHistory),
       },
@@ -134,7 +134,7 @@ export const ADMIN_ROUTES: Routes = [
         // Quien maneja la plata es quien gestiona pedidos: cobrar, pagar y
         // cuadrar cambian lo que entra al cierre, no el inventario. El Worker
         // aplica la misma regla.
-        canActivate: [roleGuard('GESTOR_PEDIDOS')],
+        canActivate: [roleGuard('GESTOR_PEDIDOS'), moduleGuard('tesoreria')],
         title: 'Tesorería · Panel',
         loadComponent: () => import('./tesoreria/tesoreria').then((m) => m.Tesoreria),
       },
@@ -186,7 +186,7 @@ export const ADMIN_ROUTES: Routes = [
       },
       {
         path: 'entregas',
-        canActivate: [roleGuard('DOMICILIARIO')],
+        canActivate: [roleGuard('DOMICILIARIO'), moduleGuard('entregas')],
         title: 'Entregas · Panel',
         loadComponent: () =>
           import('./deliveries/delivery-orders').then((m) => m.DeliveryOrders),
@@ -209,9 +209,22 @@ export const ADMIN_ROUTES: Routes = [
         loadComponent: () => import('./users/users-manager').then((m) => m.UsersManager),
       },
       {
+        path: 'modulos',
+        // Prender y apagar módulos es una decisión comercial de toda la
+        // instalación, no de quien está en la caja ese día.
+        canActivate: [roleGuard('SUPER_ADMIN')],
+        title: 'Módulos activos · Panel',
+        loadComponent: () => import('./modulos/modulos-activos').then((m) => m.ModulosActivosScreen),
+      },
+      {
         path: 'sin-acceso',
         title: 'Sin acceso · Panel',
         loadComponent: () => import('./forbidden/forbidden').then((m) => m.Forbidden),
+      },
+      {
+        path: 'modulo-apagado',
+        title: 'Módulo apagado · Panel',
+        loadComponent: () => import('./modulo-apagado/modulo-apagado').then((m) => m.ModuloApagado),
       },
       {
         path: '',

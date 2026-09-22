@@ -101,7 +101,12 @@
     "qa:delivery": "node worker/tests/qa-delivery.mjs",
     "db:migrate:notas": "wrangler d1 execute DB --local --file=worker/migrations/0030_notas_credito_debito.sql",
     "db:migrate:notas:remote": "wrangler d1 execute DB --remote --file=worker/migrations/0030_notas_credito_debito.sql",
-    "qa:notas": "node worker/tests/qa-notas.mjs"
+    "qa:notas": "node worker/tests/qa-notas.mjs",
+    "db:limpiar": "wrangler d1 execute DB --local --file=worker/tools/reset-produccion.sql",
+    "db:limpiar:remote": "wrangler d1 execute DB --remote --file=worker/tools/reset-produccion.sql",
+    "db:superusuario": "node worker/tools/crear-superusuario.mjs",
+    "db:exportar-catalogo": "node worker/tools/exportar-catalogo.mjs",
+    "db:catalogo:remote": "wrangler d1 execute DB --remote --file=worker/tools/catalogo.sql"
   },
   "private": true,
   "packageManager": "npm@11.12.1",

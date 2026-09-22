@@ -92,56 +92,58 @@
                 }
               </div>
 
-              <div class="grid gap-5 sm:grid-cols-2">
-                <div>
-                  <label for="telefono" class="block text-sm font-medium text-ink">
-                    Teléfono
-                    <span class="text-berry" aria-hidden="true">*</span>
-                  </label>
-                  <input
-                    #telefonoInput
-                    #errTelefono="fieldError"
-                    id="telefono"
-                    type="tel"
-                    formControlName="phone"
-                    [appFieldError]="form.controls.phone"
-                    autocomplete="tel"
-                    required
-                    aria-required="true"
-                    class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
-                    placeholder="300 214 5588"
-                  />
-                  <app-field-error
-                    [for]="errTelefono"
-                    [message]="
-                      form.controls.phone.hasError('required')
-                        ? 'El teléfono es obligatorio.'
-                        : 'Escribe un número de teléfono válido.'
-                    "
-                  />
-                </div>
+              @if (entregasActivas) {
+                <div class="grid gap-5 sm:grid-cols-2">
+                  <div>
+                    <label for="telefono" class="block text-sm font-medium text-ink">
+                      Teléfono
+                      <span class="text-berry" aria-hidden="true">*</span>
+                    </label>
+                    <input
+                      #telefonoInput
+                      #errTelefono="fieldError"
+                      id="telefono"
+                      type="tel"
+                      formControlName="phone"
+                      [appFieldError]="form.controls.phone"
+                      autocomplete="tel"
+                      required
+                      aria-required="true"
+                      class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+                      placeholder="300 214 5588"
+                    />
+                    <app-field-error
+                      [for]="errTelefono"
+                      [message]="
+                        form.controls.phone.hasError('required')
+                          ? 'El teléfono es obligatorio.'
+                          : 'Escribe un número de teléfono válido.'
+                      "
+                    />
+                  </div>
 
-                <div>
-                  <label for="direccion" class="block text-sm font-medium text-ink">
-                    Dirección de entrega
-                    <span class="text-berry" aria-hidden="true">*</span>
-                  </label>
-                  <input
-                    #direccionInput
-                    #errDireccion="fieldError"
-                    id="direccion"
-                    type="text"
-                    formControlName="address"
-                    [appFieldError]="form.controls.address"
-                    autocomplete="street-address"
-                    required
-                    aria-required="true"
-                    class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
-                    placeholder="Calle 127 # 15-40, Bogotá"
-                  />
-                  <app-field-error [for]="errDireccion" message="Indica tu dirección de entrega." />
+                  <div>
+                    <label for="direccion" class="block text-sm font-medium text-ink">
+                      Dirección de entrega
+                      <span class="text-berry" aria-hidden="true">*</span>
+                    </label>
+                    <input
+                      #direccionInput
+                      #errDireccion="fieldError"
+                      id="direccion"
+                      type="text"
+                      formControlName="address"
+                      [appFieldError]="form.controls.address"
+                      autocomplete="street-address"
+                      required
+                      aria-required="true"
+                      class="mt-2 w-full rounded-md border border-sand bg-transparent px-4 py-3 text-sm text-ink transition-colors duration-200 placeholder:text-ink-muted hover:border-stone focus:border-moss"
+                      placeholder="Calle 127 # 15-40, Bogotá"
+                    />
+                    <app-field-error [for]="errDireccion" message="Indica tu dirección de entrega." />
+                  </div>
                 </div>
-              </div>
+              }
             </div>
           </section>
 
@@ -155,7 +157,10 @@
                 (change)="onMetodoPagoChange($any($event.target).value)"
                 class="block w-full rounded-lg border border-sand px-4 py-3 text-sm text-ink focus:border-moss focus:outline-none focus:ring-2 focus:ring-moss/20"
               >
-                <option value="contraentrega">Pago contra entrega — Pagas en efectivo cuando te lo llevemos</option>
+                @if (entregasActivas) {
+                  <!-- Contra entrega solo existe si hay quién toque la puerta a cobrar. -->
+                  <option value="contraentrega">Pago contra entrega — Pagas en efectivo cuando te lo llevemos</option>
+                }
                 <option value="entrega_en_tienda">Entrega en tienda — Retira tu pedido sin costo de envío</option>
                 <option value="transferencia">Transferencia — Consignas y nos envías el comprobante</option>
               </select>

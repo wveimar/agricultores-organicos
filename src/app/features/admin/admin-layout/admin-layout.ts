@@ -2,6 +2,8 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { ApiClient } from '../../../core/api/api-client';
 import { TokenStore } from '../../../core/api/token-store';
+import { ModulosStore } from '../../../core/api/modulos-store';
+import { ModuloKey } from '../../../core/api/api-client';
 import { AdminApiService } from '../../../core/services/admin-api.service';
 import { UserRole } from '../../../core/models/user.model';
 import { AdminNavIcon } from './admin-nav-icon';
@@ -14,6 +16,13 @@ interface NavItem {
   readonly icon: string;
   readonly roles: readonly UserRole[];
   readonly badge?: () => number;
+  /**
+   * Solo para lo que un módulo apagado deja de tener sentido de verdad —
+   * Caja, Tesorería, Entregas. Facturación, Cobros y Mayoristas se quedan
+   * sin esta propiedad a propósito: se pueden necesitar aunque Tesorería o
+   * E-commerce estén apagados, así que no cuelgan de ningún interruptor.
+   */
+  readonly modules?: readonly ModuloKey[];
 }
 
 @Component({
@@ -25,6 +34,7 @@ interface NavItem {
 export class AdminLayout {
   protected readonly tokens = inject(TokenStore);
   protected readonly adminApi = inject(AdminApiService);
+  protected readonly modulos = inject(ModulosStore);
   private readonly api = inject(ApiClient);
   private readonly router = inject(Router);
 
@@ -77,7 +87,7 @@ export class AdminLayout {
     { path: '/admin/grupos', label: 'Grupos', icon: 'grupos', roles: ['ADMIN_INVENTARIO'] },
     // Primero la caja: es la pantalla que se abre al empezar el día en la
     // tienda física y la única que se usa con un cliente esperando enfrente.
-    { path: '/admin/caja', label: 'Caja', icon: 'caja', roles: ['GESTOR_PEDIDOS'] },
+    { path: '/admin/caja', label: 'Caja', icon: 'caja', roles: ['GESTOR_PEDIDOS'], modules: ['pos'] },
     {
       path: '/admin/pedidos',
       label: 'Pedidos',
@@ -105,7 +115,7 @@ export class AdminLayout {
     // registrado. Lo que se quitó es la entrada del menú: el cobro del día a
     // día se hace desde «Por cobrar», factura por factura, que es como llega
     // el cliente al mostrador.
-    { path: '/admin/tesoreria', label: 'Tesorería', icon: 'cartera', roles: ['GESTOR_PEDIDOS'] },
+    { path: '/admin/tesoreria', label: 'Tesorería', icon: 'cartera', roles: ['GESTOR_PEDIDOS'], modules: ['tesoreria'] },
     {
       path: '/admin/compras',
       label: 'Compras',
@@ -134,14 +144,20 @@ export class AdminLayout {
       icon: 'entregas',
       roles: ['DOMICILIARIO'],
       badge: this.adminApi.deliveryCount,
+      modules: ['entregas'],
     },
     { path: '/admin/mayoristas', label: 'Mayoristas', icon: 'mayoristas', roles: ['SUPER_ADMIN'] },
     { path: '/admin/usuarios', label: 'Usuarios', icon: 'usuarios', roles: ['SUPER_ADMIN'] },
+    // El interruptor mismo no cuelga de ningún interruptor: siempre visible
+    // para quien puede tocarlo, aunque todo lo demás esté apagado.
+    { path: '/admin/modulos', label: 'Módulos activos', icon: 'modulos', roles: ['SUPER_ADMIN'] },
   ];
 
-  /** El menú solo muestra lo que el rol puede abrir de verdad. */
+  /** El menú solo muestra lo que el rol puede abrir Y lo que está encendido. */
   protected readonly navItems = computed(() =>
-    this.allItems.filter((item) => this.tokens.can(...item.roles)),
+    this.allItems.filter(
+      (item) => this.tokens.can(...item.roles) && (!item.modules || this.modulos.isActive(...item.modules)),
+    ),
   );
 
   constructor() {

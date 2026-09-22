@@ -1,0 +1,52 @@
+<section class="mx-auto max-w-2xl px-4 py-8">
+  <header class="mb-6">
+    <h1 class="text-h2 text-ink">Módulos activos</h1>
+    <p class="mt-1 text-sm text-ink-soft">
+      Apagar un módulo lo quita del menú y deja de exigirle sus datos a un pedido nuevo. No borra
+      nada de lo que ya existe — se puede volver a encender cuando haga falta.
+    </p>
+  </header>
+
+  @if (error(); as mensaje) {
+    <p class="mb-4 rounded-lg bg-clay/10 px-3 py-2 text-sm text-clay" role="alert">{{ mensaje }}</p>
+  }
+
+  <div class="overflow-hidden rounded-xl border border-sand bg-white">
+    <ul class="divide-y divide-sand">
+      @for (fila of filas; track fila.clave) {
+        <li class="flex items-center justify-between gap-4 p-4">
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-ink">{{ fila.nombre }}</p>
+            <p class="mt-0.5 text-xs text-ink-soft">{{ descripcion(fila.clave) }}</p>
+            @if (bloqueado(fila.clave)) {
+              <p class="mt-1 text-xs text-clay">
+                Es el único canal de venta encendido — no se puede apagar sin prender el otro primero.
+              </p>
+            }
+          </div>
+
+          <label
+            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
+            [class]="activo(fila.clave) ? 'bg-moss' : 'bg-sand'"
+            [class.opacity-50]="bloqueado(fila.clave)"
+            [class.cursor-not-allowed]="bloqueado(fila.clave) || cambiando() === fila.clave"
+            [class.cursor-pointer]="!bloqueado(fila.clave) && cambiando() !== fila.clave"
+          >
+            <input
+              type="checkbox"
+              class="sr-only"
+              [checked]="activo(fila.clave)"
+              [disabled]="bloqueado(fila.clave) || cambiando() === fila.clave"
+              (change)="alternar(fila.clave)"
+              [attr.aria-label]="fila.nombre"
+            />
+            <span
+              class="inline-block size-4 translate-x-1 rounded-full bg-white shadow transition-transform"
+              [class.translate-x-6]="activo(fila.clave)"
+            ></span>
+          </label>
+        </li>
+      }
+    </ul>
+  </div>
+</section>

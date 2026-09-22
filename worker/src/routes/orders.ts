@@ -1,4 +1,4 @@
-import { ApiError, json, readJson, requireInt, requireNumber, requireString } from '../http';
+import { ApiError, json, optionalString, readJson, requireInt, requireNumber, requireString } from '../http';
 import { translateConstraint } from '../db-errors';
 import { Env, JwtPayload } from '../types';
 import { optionalAuth, requireRole } from '../auth/middleware';
@@ -15,6 +15,7 @@ import {
 } from '../combos';
 import * as invoices from './invoices';
 import * as payments from './payments';
+import { leerAjuste } from './settings';
 
 /**
  * Misma regla que `src/app/core/models/cart.model.ts`. Editar un pedido
@@ -61,10 +62,22 @@ interface CreateOrderBody {
 const METODOS_WEB = ['transferencia', 'contraentrega', 'entrega_en_tienda'] as const;
 type MetodoWeb = (typeof METODOS_WEB)[number];
 
-/** `'transferencia'` si no viene o viene basura: es el único método que existió hasta ahora. */
-function readMetodoPago(value: unknown): MetodoWeb {
-  return METODOS_WEB.includes(value as MetodoWeb) ? (value as MetodoWeb) : 'transferencia';
+/**
+ * `'transferencia'` si no viene o viene basura: es el único método que existió hasta ahora.
+ *
+ * `permitidos` deja fuera `'contraentrega'` cuando Entregas está apagado: ese
+ * método significa "el domiciliario cobra al tocar la puerta", y sin
+ * domiciliarios no hay quién cobre. Igual que arriba, si el cliente manda algo
+ * fuera de lo permitido, se cae a `'transferencia'` en silencio en vez de
+ * rechazar el pedido — el pago se resuelve después, esto solo decide cómo se
+ * etiqueta.
+ */
+function readMetodoPago(value: unknown, permitidos: readonly MetodoWeb[] = METODOS_WEB): MetodoWeb {
+  return permitidos.includes(value as MetodoWeb) ? (value as MetodoWeb) : 'transferencia';
 }
+
+/** Los métodos que quedan cuando Entregas está apagado: nadie va a tocar una puerta. */
+const METODOS_WEB_SIN_ENTREGAS: readonly MetodoWeb[] = ['transferencia', 'entrega_en_tienda'];
 
 export interface StockRow {
   id: string;
@@ -214,11 +227,27 @@ export function rejectFractional(required: Map<string, number>, products: Map<st
  * paga precio de lista.
  */
 export async function create(request: Request, env: Env): Promise<Response> {
+  // Defensa en profundidad: la tienda pública ya debería estar inaccesible si
+  // este módulo está apagado (ver el guard de ruta en el frontend), pero la
+  // API no puede confiar en que nadie la llame directo saltándose la interfaz.
+  if ((await leerAjuste(env, 'modulo_ecommerce')) === '0') {
+    throw new ApiError(403, 'modulo-desactivado', 'La tienda en línea no está disponible.');
+  }
+  const entregasActivas = (await leerAjuste(env, 'modulo_entregas')) !== '0';
+
   const body = await readJson<CreateOrderBody>(request);
 
   const clienteNombre = requireString(body.clienteNombre, 'clienteNombre', 120);
-  const clienteTelefono = requireString(body.clienteTelefono, 'clienteTelefono', 40);
-  const clienteDireccion = requireString(body.clienteDireccion, 'clienteDireccion', 240);
+  // Sin Entregas, nadie va a llevar el pedido a ningún lado: pedir dirección y
+  // teléfono sería exigir un dato que la interfaz ya dejó de mostrar. Se cae
+  // al mismo literal que ya usa `pos.sell()` para satisfacer la misma columna
+  // NOT NULL — mismo patrón probado, no una columna nueva que aceptar NULL.
+  const clienteTelefono = entregasActivas
+    ? requireString(body.clienteTelefono, 'clienteTelefono', 40)
+    : (optionalString(body.clienteTelefono, 'clienteTelefono', 40) ?? '');
+  const clienteDireccion = entregasActivas
+    ? requireString(body.clienteDireccion, 'clienteDireccion', 240)
+    : (optionalString(body.clienteDireccion, 'clienteDireccion', 240) ?? 'Retiro en tienda');
   // Obligatoria también en la tienda: es la llave con la que se reencuentra
   // al cliente entre una compra y otra, y el dato que se reporta al facturar.
   const clienteCedula = normalizarDocumento(requireString(body.clienteCedula, 'clienteCedula', 40));
@@ -303,13 +332,19 @@ export async function create(request: Request, env: Env): Promise<Response> {
   // reserva evita sobreventa sin importar cómo se vaya a cobrar, y
   // 'verificacion' ya significa "pedido web, pendiente de revisión humana",
   // no "pendiente de comprobante" — el comprobante siempre fue opcional.
-  const metodoPago = readMetodoPago(body.metodoPago);
+  const metodoPago = readMetodoPago(
+    body.metodoPago,
+    entregasActivas ? METODOS_WEB : METODOS_WEB_SIN_ENTREGAS,
+  );
 
   // Sobre el subtotal ya descontado: es el importe que el cliente paga de
   // verdad, y es el que decide si alcanza el envío gratis. Excepto entrega en
-  // tienda, que siempre es envío 0 — no hay domicilio que cobrar.
-  const envio =
-    metodoPago === 'entrega_en_tienda'
+  // tienda, que siempre es envío 0 — no hay domicilio que cobrar. Y sin
+  // Entregas, TODO pedido es recogida: no existe ningún método que implique
+  // domicilio, así que el envío es 0 sin importar cuál se haya elegido.
+  const envio = !entregasActivas
+    ? 0
+    : metodoPago === 'entrega_en_tienda'
       ? 0
       : subtotal >= FREE_SHIPPING_THRESHOLD
         ? 0

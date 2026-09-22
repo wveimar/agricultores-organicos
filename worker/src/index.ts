@@ -66,9 +66,29 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
    * pero servirla desde aquí evita tener que recompilar el frontend para
    * activarla: se pone como `var` en wrangler.jsonc y el navegador la recoge.
    * La clave **secreta** nunca pasa por esta ruta.
+   *
+   * Los cuatro módulos viajan aquí y no en un endpoint de `/admin` porque
+   * tienen que saberse ANTES de iniciar sesión: la tienda pública decide si
+   * existe mirando esto, y el panel arma el menú y los guards de ruta con la
+   * misma respuesta, en el arranque de la aplicación.
    */
   if (pathname === '/api/config' && method === 'GET') {
-    return json({ turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? '' });
+    const [pos, ecommerce, entregas, tesoreriaOn] = await Promise.all([
+      settings.leerAjuste(env, 'modulo_pos'),
+      settings.leerAjuste(env, 'modulo_ecommerce'),
+      settings.leerAjuste(env, 'modulo_entregas'),
+      settings.leerAjuste(env, 'modulo_tesoreria'),
+    ]);
+
+    return json({
+      turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? '',
+      modulos: {
+        pos: pos !== '0',
+        ecommerce: ecommerce !== '0',
+        entregas: entregas !== '0',
+        tesoreria: tesoreriaOn !== '0',
+      },
+    });
   }
 
   if (pathname === '/api/auth/login' && method === 'POST') {

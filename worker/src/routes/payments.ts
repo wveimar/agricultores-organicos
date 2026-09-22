@@ -230,8 +230,11 @@ export function cobrarPedidoStatements(
  */
 export function liquidarPedidoStatement(env: Env, orderId: string) {
   return env.DB.prepare(
+    // `liquidado_en` es la fecha con la que este cobro entra al libro de
+    // Tesorería (migración 0038): la hora en que el billete llegó al cajón,
+    // no la hora en que el cliente pagó en su puerta.
     `UPDATE payments
-        SET liquidado = 1
+        SET liquidado = 1, liquidado_en = datetime('now')
       WHERE liquidado = 0
         AND id IN (SELECT a.payment_id
                      FROM payment_allocations a
@@ -362,7 +365,11 @@ export async function liquidar(env: Env, user: JwtPayload, id: string): Promise<
   requireRole(user, 'GESTOR_PEDIDOS');
 
   const result = await env.DB.prepare(
-    `UPDATE payments SET liquidado = 1 WHERE id = ?1 AND metodo = 'efectivo' AND liquidado = 0`,
+    // Igual que en `liquidarPedidoStatement`: se anota CUÁNDO entró al cajón,
+    // porque esa es la fecha con la que cuenta en el libro (migración 0038).
+    `UPDATE payments
+        SET liquidado = 1, liquidado_en = datetime('now')
+      WHERE id = ?1 AND metodo = 'efectivo' AND liquidado = 0`,
   )
     .bind(id)
     .run();

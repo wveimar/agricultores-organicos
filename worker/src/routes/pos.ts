@@ -15,6 +15,7 @@ import {
 import { expandir, recetasActuales, recetasDelPedido, sentenciasDeInstantanea } from '../combos';
 import { emitirLineasStatement, emitirStatement, notaStatements } from './invoices';
 import { cobrarPedidoStatements } from './payments';
+import { leerAjuste } from './settings';
 
 /**
  * Punto de venta — la caja física de la tienda.
@@ -244,6 +245,13 @@ async function exigirCupo(env: Env, contactId: string, total: number): Promise<v
  */
 export async function sell(request: Request, env: Env, user: JwtPayload): Promise<Response> {
   requireRole(user, 'GESTOR_PEDIDOS');
+
+  // Defensa en profundidad, igual que en `orders.create()`: el menú y la
+  // ruta de Caja ya deberían estar ocultos, pero el endpoint no puede confiar
+  // en eso.
+  if ((await leerAjuste(env, 'modulo_pos')) === '0') {
+    throw new ApiError(403, 'modulo-desactivado', 'La caja no está disponible.');
+  }
 
   const body = await readJson<SellBody>(request);
   const metodo = readMetodoPos(body.metodoPago);

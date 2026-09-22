@@ -56,3 +56,6 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+
+# Credencial generada por worker/tools/crear-superusuario.mjs
+worker/tools/.superusuario.sql

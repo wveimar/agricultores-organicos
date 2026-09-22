@@ -1,8 +1,8 @@
-<section class="mx-auto w-full max-w-6xl px-4 py-6">
+<section class="mx-auto w-full max-w-6xl">
   <header class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div>
-      <h1 class="font-serif text-2xl text-ink">Caja · historial y cierre</h1>
-      <p class="mt-1 text-sm text-ink/60">
+      <h1 class="text-h2 text-ink">Caja · historial y cierre</h1>
+      <p class="mt-1 text-sm text-ink-soft">
         Lo vendido en el mostrador. El cierre de aquí es solo el de esta caja: la tienda web
         tiene el suyo, y abajo se suman las dos.
       </p>
@@ -26,7 +26,7 @@
   <div class="mb-6 rounded-2xl border border-sand bg-white p-5">
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h2 class="font-serif text-lg text-ink">Jornada abierta · mostrador</h2>
+        <h2 class="text-lg text-ink">Jornada abierta · mostrador</h2>
         @if (caja(); as resumen) {
           <p class="mt-1 text-sm text-ink/70">
             {{ resumen.pedidos }} venta(s) · {{ resumen.unidades }} unidad(es)
@@ -61,7 +61,7 @@
   @if (consolidado(); as datos) {
     <div class="mb-6 overflow-hidden rounded-2xl border border-sand bg-white">
       <div class="border-b border-sand px-5 py-4">
-        <h2 class="font-serif text-lg text-ink">Consolidado</h2>
+        <h2 class="text-lg text-ink">Consolidado</h2>
         <p class="mt-1 text-sm text-ink/60">
           Cierres ya hechos, sumando la tienda web y el mostrador.
         </p>
@@ -119,7 +119,7 @@
   <div class="overflow-hidden rounded-2xl border border-sand bg-white">
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-sand px-5 py-4">
       <div>
-        <h2 class="font-serif text-lg text-ink">
+        <h2 class="text-lg text-ink">
           {{ soloHoy() ? 'Ventas de hoy' : 'Últimas ventas' }}
         </h2>
         <p class="mt-1 text-sm text-ink/60">
@@ -224,7 +224,7 @@
 @if (devolviendo(); as venta) {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
     <div class="max-h-full w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6">
-      <h2 class="font-serif text-xl text-ink">Devolución · {{ venta.referencia }}</h2>
+      <h2 class="text-h3 text-ink">Devolución · {{ venta.referencia }}</h2>
       <p class="mt-1 text-sm text-ink/60">
         Marca cuánto vuelve de cada producto. Se emite una nota crédito por lo que se cobró ese
         día y el stock regresa al inventario, todo a la vez.

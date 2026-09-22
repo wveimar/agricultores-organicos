@@ -551,6 +551,20 @@ export interface ApiAjuste {
   readonly valor: string;
 }
 
+/**
+ * Los cuatro interruptores del negocio. Inventario, Contactos y Usuarios no
+ * aparecen aquí porque nunca se apagan — son el núcleo del que dependen los
+ * demás.
+ */
+export interface ModulosActivos {
+  readonly pos: boolean;
+  readonly ecommerce: boolean;
+  readonly entregas: boolean;
+  readonly tesoreria: boolean;
+}
+
+export type ModuloKey = keyof ModulosActivos;
+
 export interface ApiCashSummary {
   readonly pedidos: number;
   readonly unidades: number;
@@ -1300,10 +1314,17 @@ export class ApiClient {
 
   // ──────────────────────────────── Auth ────────────────────────────────
 
-  /** Sitekey pública de Turnstile. Vacía = no está configurada en el servidor. */
-  config(): Observable<{ turnstileSiteKey: string }> {
+  /**
+   * Sitekey pública de Turnstile y los módulos activos.
+   *
+   * Es el único endpoint que se puede llamar ANTES de iniciar sesión, así que
+   * es también donde vive la respuesta a «¿qué partes del sistema existen hoy
+   * en esta instalación?» — la tienda pública y el arranque del panel la
+   * necesitan antes de que corra cualquier guard de ruta.
+   */
+  config(): Observable<{ turnstileSiteKey: string; modulos: ModulosActivos }> {
     return this.http
-      .get<{ turnstileSiteKey: string }>('/api/config')
+      .get<{ turnstileSiteKey: string; modulos: ModulosActivos }>('/api/config')
       .pipe(catchError(handleError));
   }
 
