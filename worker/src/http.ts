@@ -51,6 +51,25 @@ export function json(data: unknown, status = 200, extraHeaders?: HeadersInit): R
 
 export function errorResponse(error: unknown): Response {
   if (error instanceof ApiError) {
+    /**
+     * Un rechazo también se registra, no solo los errores del motor.
+     *
+     * Sin esta línea, un 400 solo aparecía en el registro de accesos como
+     * «POST /api/admin/products 400 Bad Request»: el navegador sabía qué
+     * pasaba y el servidor no dejaba ni rastro. Diagnosticar por qué la API
+     * rechaza algo obligaba a abrir las herramientas del navegador de quien
+     * lo estaba sufriendo, y eso en producción no se puede.
+     *
+     * Se registra el código y el mensaje —que son nuestros y están escritos
+     * para leerse—, nunca el cuerpo de la petición: ahí van contraseñas,
+     * imágenes de 200 KB y datos de clientes.
+     *
+     * Los 401 quedan fuera: una sesión que caduca produce uno cada vez que el
+     * panel refresca, y ese ruido tapa justo lo que se quiere ver.
+     */
+    if (error.status !== 401) {
+      console.warn(`Rechazado ${error.status} · ${error.code} · ${error.message}`);
+    }
     return json(
       { error: { code: error.code, message: error.message, details: error.details } },
       error.status,

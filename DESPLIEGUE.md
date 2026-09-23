@@ -156,13 +156,24 @@ Comprobar: el conteo de productos en remoto coincide con el de local.
 
 ## Paso 6 — Crear el superusuario
 
-```bash
-node worker/tools/crear-superusuario.mjs wveimar.mamian@gmail.com "<la clave>" "Wveimar Mamián"
+```powershell
+node worker/tools/crear-superusuario.mjs wveimar.mamian@gmail.com '<la clave>' 'Wveimar Mamián'
 npx wrangler d1 execute DB --remote --file=worker/tools/.superusuario.sql
 ```
 
+> ⚠️ **La clave va entre comillas simples, siempre.** PowerShell lee un `@`
+> al principio de una palabra suelta como *splatting* de una variable, así que
+> `@gricultoresOrganicos` sin comillas falla con
+> `La variable '$gricultoresOrganicos' no se puede recuperar`. Las comillas
+> simples también evitan que un `$` dentro de la clave se expanda.
+>
+> Con `npm run` hacen falta además los dos guiones:
+> `npm run db:superusuario -- <correo> '<la clave>' '<nombre>'`
+
 El archivo `.superusuario.sql` está en `.gitignore` y lleva el hash, nunca la
-clave. Si ya lo generaste para local, sirve el mismo — es el mismo hash.
+clave. Se puede regenerar las veces que haga falta: el identificador del
+usuario se deriva del correo, así que siempre reemplaza la misma cuenta en vez
+de crear una segunda.
 
 Comprobar que la cuenta nueva entra y devuelve `"roles":["SUPER_ADMIN"]`:
 
