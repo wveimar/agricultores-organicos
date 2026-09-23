@@ -486,6 +486,11 @@ export async function duplicate(
    *   valoraciones que nadie escribió.
    * · `categoria_abc` a 'C' — es una caché de ventas, y este producto no ha
    *   vendido nada todavía.
+   * · `codigo_barras` a NULL — es el único campo de la ficha que identifica un
+   *   producto FÍSICO, y dos no pueden compartirlo: `idx_products_codigo_barras`
+   *   es un índice único. Copiarlo hacía que duplicar cualquier producto con
+   *   código reventara el INSERT y la petición respondiera 500 sin explicar
+   *   nada. Estuvo latente hasta que el catálogo tuvo su primer código.
    */
   const distinto: Record<string, unknown> = {
     id: crypto.randomUUID(),
@@ -496,6 +501,7 @@ export async function duplicate(
     rating: 0,
     review_count: 0,
     categoria_abc: 'C',
+    codigo_barras: null,
     actualizado_en: new Date().toISOString().slice(0, 19).replace('T', ' '),
   };
 

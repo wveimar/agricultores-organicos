@@ -105,7 +105,16 @@ async function productoConStock(minimo = 10) {
   const res = await api(`/api/admin/products?limit=500`);
   const lista = res.body?.products ?? res.body?.productos ?? [];
   return lista.find(
-    (p) => (p.stockActual ?? p.stock ?? 0) >= minimo && p.activo !== 0 && !p.tieneVariantes,
+    (p) =>
+      (p.stockActual ?? p.stock ?? 0) >= minimo &&
+      p.activo !== 0 &&
+      !p.tieneVariantes &&
+      // Se excluye la venta por peso a propósito: este es "el producto
+      // normal" de la suite, y una de las pruebas le manda 0,5 esperando un
+      // rechazo. Antes no se filtraba y funcionaba por el orden del catálogo;
+      // el día que entraron 19 verduras por kilo, la primera fila con stock
+      // pasó a ser una de ellas y la prueba falló sin que nada estuviera roto.
+      p.vendidoPorPeso !== 1,
   );
 }
 
