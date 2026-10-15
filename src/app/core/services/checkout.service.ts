@@ -19,7 +19,7 @@ import {
  * `+57 301 606 6121` el enlace abre WhatsApp sin destinatario, y el cliente
  * cree que envió el mensaje.
  */
-export const WHATSAPP_NUMBER = '573016066121';
+export const WHATSAPP_NUMBER = '573014966662';
 
 /** Datos para la consignación manual. No hay pasarela de pago. */
 export const BANK_DETAILS = {

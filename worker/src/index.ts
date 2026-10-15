@@ -19,6 +19,7 @@ import * as wholesale from './routes/wholesale';
 import * as components from './routes/components';
 import * as passwordReset from './routes/password-reset';
 import * as pos from './routes/pos';
+import * as respaldo from './routes/respaldo';
 import * as settings from './routes/settings';
 
 /**
@@ -422,6 +423,16 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (pathname === '/api/admin/settings' && method === 'PUT') {
       return settings.update(request, env, user);
+    }
+
+    // Copias de seguridad. Ambas son SUPER_ADMIN y lo exige el handler: la de
+    // bajar se lleva la base entera —claves incluidas— y la de restaurar la
+    // reemplaza.
+    if (pathname === '/api/admin/respaldo' && method === 'GET') {
+      return respaldo.descargar(env, user);
+    }
+    if (pathname === '/api/admin/respaldo/restaurar' && method === 'POST') {
+      return respaldo.restaurar(request, env, user);
     }
 
     // Reportes

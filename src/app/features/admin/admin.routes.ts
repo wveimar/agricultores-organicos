@@ -217,6 +217,15 @@ export const ADMIN_ROUTES: Routes = [
         loadComponent: () => import('./modulos/modulos-activos').then((m) => m.ModulosActivosScreen),
       },
       {
+        path: 'respaldos',
+        // Bajar la copia se lleva la base entera, claves de acceso incluidas;
+        // restaurarla reemplaza el negocio completo. Ninguna de las dos es
+        // una tarea de quien atiende la caja.
+        canActivate: [roleGuard('SUPER_ADMIN')],
+        title: 'Copias de seguridad · Panel',
+        loadComponent: () => import('./respaldos/respaldos').then((m) => m.RespaldosScreen),
+      },
+      {
         path: 'sin-acceso',
         title: 'Sin acceso · Panel',
         loadComponent: () => import('./forbidden/forbidden').then((m) => m.Forbidden),

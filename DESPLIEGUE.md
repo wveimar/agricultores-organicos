@@ -147,10 +147,30 @@ descuentos de mayorista, las cuentas de tesorería, los ajustes y las fichas de
 las fincas. **No lleva** pedidos, facturas, cobros, clientes ni usuarios.
 
 Cada tabla se vacía antes de reinsertarse, así que se puede volver a subir
-tantas veces como haga falta: el resultado siempre es el mismo. Es el camino
-para publicar cambios de catálogo más adelante sin tocar nada más.
+tantas veces como haga falta: el resultado siempre es el mismo.
 
-Comprobar: el conteo de productos en remoto coincide con el de local.
+> ⚠️ **Solo funciona sobre una base SIN ventas.** El archivo empieza con
+> `DELETE FROM products`, y en cuanto exista un pedido, una factura o un cobro
+> que apunte a un producto, a un contacto o a una cuenta de tesorería, el
+> borrado choca contra las claves foráneas `RESTRICT` y D1 revierte el archivo
+> entero (`FOREIGN KEY constraint failed`). O sea: **sirve para la carga
+> inicial, no para publicar cambios de catálogo con la tienda ya operando.**
+>
+> Para cambiar precios o productos con ventas registradas, hazlo desde el
+> panel de Inventario, que actualiza fila por fila sin borrar nada.
+
+Dos detalles del formato, por si alguna vez hay que tocar el exportador:
+D1 rechaza sentencias de más de 100 KB, así que las fotos (base64, ~190 KB)
+no van dentro del `INSERT` sino que se añaden después por trozos; y las fichas
+madre se escriben antes que sus variantes, porque `products.parent_id` apunta
+a la propia tabla.
+
+Comprobar: el conteo de productos en remoto coincide con el de local, y el
+total de bytes de imagen también.
+
+```bash
+npx wrangler d1 execute DB --remote --command "SELECT COUNT(*) productos, SUM(length(imagen)) bytes FROM products"
+```
 
 ---
 

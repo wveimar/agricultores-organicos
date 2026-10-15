@@ -19,6 +19,7 @@
  */
 
 const BASE = process.argv[2] ?? 'http://localhost:8788';
+const ES_LOCAL = /localhost|127.0.0.1/.test(BASE);
 const EMAIL = process.argv[3] ?? 'admin@agricultores.co';
 const PASSWORD = process.argv[4] ?? 'demo1234';
 
@@ -39,7 +40,8 @@ const api = async (ruta, opciones = {}) => {
     ...opciones,
     headers: {
       'content-type': 'application/json',
-      'cf-connecting-ip': '198.51.100.77',
+      // Solo en local: contra Cloudflare, falsificarla devuelve 403.
+      ...(ES_LOCAL ? { 'cf-connecting-ip': '198.51.100.77' } : {}),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...opciones.headers,
     },

@@ -65,17 +65,52 @@ const lit = (v) => {
   return `'${String(v).replace(/'/g, "''")}'`;
 };
 
+/**
+ * D1 rechaza cualquier sentencia de más de 100 KB.
+ *
+ * Una foto de producto viaja como data URL en base64 dentro de la fila, y las
+ * del panel rondan los 190 KB. Metida entera en el INSERT, la sentencia pasa
+ * del tope y la carga completa falla con `statement too long: SQLITE_TOOBIG`
+ * —no esa fila sola: el archivo entero, porque D1 lo revierte.
+ *
+ * Por eso los valores largos no van en el INSERT: la fila entra con ese campo
+ * vacío y la foto se añade después a trozos, concatenando. El tamaño del
+ * trozo deja margen de sobra para el resto de la sentencia (el nombre de la
+ * tabla, el WHERE y las comillas escapadas).
+ */
+const TOPE_D1 = 100_000;
+const TROZO = 60_000;
+const ES_LARGO = (v) => typeof v === 'string' && v.length > TROZO;
+
 const bloque = (tabla, filas, where = null) => {
   const lineas = [
     `-- ─────────────── ${tabla} (${filas.length} filas) ───────────────`,
     where ? `DELETE FROM ${tabla} WHERE ${where};` : `DELETE FROM ${tabla};`,
   ];
+
   for (const fila of filas) {
     const cols = Object.keys(fila);
-    lineas.push(
-      `INSERT INTO ${tabla} (${cols.join(', ')}) VALUES (${cols.map((c) => lit(fila[c])).join(', ')});`,
-    );
+    const largas = cols.filter((c) => ES_LARGO(fila[c]));
+
+    // La fila, con los campos largos en blanco.
+    const valores = cols.map((c) => (largas.includes(c) ? `''` : lit(fila[c])));
+    lineas.push(`INSERT INTO ${tabla} (${cols.join(', ')}) VALUES (${valores.join(', ')});`);
+
+    // Y ahora sí, los largos, a pedazos. Se trocea el valor CRUDO y se escapa
+    // cada pedazo: trocear ya escapado podría partir una comilla por la mitad.
+    for (const col of largas) {
+      const texto = String(fila[col]);
+      for (let i = 0; i < texto.length; i += TROZO) {
+        const pedazo = lit(texto.slice(i, i + TROZO));
+        const sentencia = `UPDATE ${tabla} SET ${col} = ${col} || ${pedazo} WHERE id = ${lit(fila['id'])};`;
+        if (sentencia.length > TOPE_D1) {
+          throw new Error(`Trozo demasiado grande en ${tabla}.${col} (${sentencia.length} B)`);
+        }
+        lineas.push(sentencia);
+      }
+    }
   }
+
   lineas.push('');
   return lineas.join('\n');
 };
@@ -103,7 +138,17 @@ partes.push(bloque('contacts', contactos, CONTACTOS_WHERE));
 console.log(`  contacts (fincas + consumidor final) : ${contactos.length}`);
 
 for (const tabla of TABLAS) {
-  const filas = leer(`SELECT * FROM ${tabla} ORDER BY rowid`);
+  /**
+   * Las fichas madre van antes que sus variantes.
+   *
+   * `products.parent_id` apunta a la propia tabla, así que una variante
+   * insertada antes que su madre viola la clave foránea y D1 revierte el
+   * archivo ENTERO. Por orden de creación se cumplía por casualidad —hasta
+   * que una madre se creó después que sus hijas, que es justo lo que pasa
+   * cuando se agrupan productos que ya existían.
+   */
+  const orden = tabla === 'products' ? '(parent_id IS NOT NULL), rowid' : 'rowid';
+  const filas = leer(`SELECT * FROM ${tabla} ORDER BY ${orden}`);
   partes.push(bloque(tabla, filas));
   console.log(`  ${tabla.padEnd(36)} : ${filas.length}`);
 }

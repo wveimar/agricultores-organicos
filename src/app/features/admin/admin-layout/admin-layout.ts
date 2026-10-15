@@ -151,6 +151,9 @@ export class AdminLayout {
     // El interruptor mismo no cuelga de ningún interruptor: siempre visible
     // para quien puede tocarlo, aunque todo lo demás esté apagado.
     { path: '/admin/modulos', label: 'Módulos activos', icon: 'modulos', roles: ['SUPER_ADMIN'] },
+    // Tampoco cuelga de ningún módulo: poder bajar una copia no depende de
+    // qué partes del negocio estén encendidas.
+    { path: '/admin/respaldos', label: 'Copias de seguridad', icon: 'respaldos', roles: ['SUPER_ADMIN'] },
   ];
 
   /** El menú solo muestra lo que el rol puede abrir Y lo que está encendido. */

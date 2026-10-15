@@ -15,6 +15,8 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
  * añadir una sección tocara los chips de la tienda, que no tienen nada que ver.
  */
 const PATHS: Readonly<Record<string, string>> = {
+  // Escudo con una flecha que baja: la copia que se guarda aparte.
+  respaldos: 'M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3Zm0 5v6m0 0l-2.5-2.5M12 14l2.5-2.5',
   // Cajas apiladas: existencias.
   inventario: 'M3 7l9-4 9 4-9 4-9-4Zm0 5l9 4 9-4M3 17l9 4 9-4',
   // Etiqueta con su ojal.
