@@ -1,6 +1,14 @@
 import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ApiClient, ApiErrorBody, ApiProductPhoto } from '../../../../core/api/api-client';
+import { firstValueFrom } from 'rxjs';
+import {
+  MAX_FILE_BYTES,
+  PRODUCT_PRESET,
+  formatBytes,
+  processImage,
+  validateFile,
+} from '../../../../shared/utils/image-file';
 import { ImageField } from '../image-field/image-field';
 
 /**
@@ -32,6 +40,9 @@ export class PhotoGalleryEditor {
   protected readonly nuevaFotoUrl = new FormControl('', { nonNullable: true });
   protected readonly nuevaFotoAlt = signal('');
   protected readonly adding = signal(false);
+
+  protected readonly dragging = signal(false);
+  protected readonly uploading = signal(false);
 
   constructor() {
     queueMicrotask(() => this.load());
@@ -77,6 +88,67 @@ export class PhotoGalleryEditor {
           this.error.set(err.message);
         },
       });
+  }
+
+  protected onDragOver(event: DragEvent): void {
+    if (!event.dataTransfer?.types.includes('Files')) {
+      return;
+    }
+    event.preventDefault();
+    this.dragging.set(true);
+  }
+
+  protected onDragLeave(event: DragEvent): void {
+    const host = event.currentTarget as HTMLElement;
+    if (!host.contains(event.relatedTarget as Node | null)) {
+      this.dragging.set(false);
+    }
+  }
+
+  /**
+   * Cada archivo soltado se valida, se redimensiona (igual que en `ImageField`)
+   * y se sube como foto nueva. En cadena, no en paralelo: cada respuesta trae
+   * la lista completa y el orden de llegada debe ser el de soltado.
+   */
+  protected async onDrop(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    this.dragging.set(false);
+
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (files.length === 0 || this.uploading()) {
+      return;
+    }
+
+    this.error.set(null);
+    this.uploading.set(true);
+    const rechazados: string[] = [];
+
+    for (const file of files) {
+      const invalid = validateFile(file);
+      if (invalid) {
+        rechazados.push(
+          invalid === 'tipo'
+            ? `${file.name}: formato no válido (usa JPG, PNG o WEBP)`
+            : `${file.name}: supera los ${formatBytes(MAX_FILE_BYTES)}`,
+        );
+        continue;
+      }
+
+      try {
+        const { dataUrl } = await processImage(file, PRODUCT_PRESET);
+        const fotos = await firstValueFrom(
+          this.api.createProductPhoto(this.productId(), { url: dataUrl }),
+        );
+        this.photos.set(fotos);
+      } catch (err) {
+        rechazados.push(`${file.name}: ${(err as ApiErrorBody)?.message ?? 'no se pudo subir'}`);
+      }
+    }
+
+    this.uploading.set(false);
+    if (rechazados.length > 0) {
+      this.error.set(rechazados.join(' · '));
+    }
   }
 
   protected remove(photo: ApiProductPhoto): void {

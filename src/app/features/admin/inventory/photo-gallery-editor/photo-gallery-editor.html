@@ -1,4 +1,20 @@
-<div class="space-y-5 rounded-md border border-sand/50 bg-linen/30 p-5">
+<div
+  class="relative space-y-5 rounded-md border bg-linen/30 p-5 transition-colors duration-200"
+  [class.border-sand/50]="!dragging()"
+  [class.border-moss]="dragging()"
+  [class.border-dashed]="dragging()"
+  (dragover)="onDragOver($event)"
+  (dragleave)="onDragLeave($event)"
+  (drop)="onDrop($event)"
+>
+  @if (dragging() || uploading()) {
+    <div
+      class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-bone/85 text-sm font-semibold text-moss"
+    >
+      {{ uploading() ? 'Subiendo fotos…' : 'Suelta las imágenes aquí para añadirlas' }}
+    </div>
+  }
+
   <div>
     <p class="text-sm font-semibold text-ink">Galería de fotos</p>
     <p class="mt-1 text-sm text-ink-soft">
